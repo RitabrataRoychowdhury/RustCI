@@ -13,7 +13,7 @@ use tower_http::{
     trace::TraceLayer,
     compression::CompressionLayer,
 };
-use tracing::{info, debug};
+use tracing::{info, debug, error};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod config;
@@ -59,6 +59,7 @@ impl AppState {
             .timeout(std::time::Duration::from_secs(30))
             .pool_max_idle_per_host(10)
             .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .user_agent("DevOps-CI/1.0")
             .build()
             .expect("Failed to create HTTP client");
 
@@ -74,11 +75,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize structured logging
     init_tracing()?;
     
-    info!("Starting DevOps CI Server...");
+    info!("🚀 Starting DevOps CI Server...");
 
     // Load configuration with better error handling
     let config = Config::from_env()
-        .map_err(|e| AppError::ConfigError(format!("Failed to load configuration: {}", e)))?;
+        .map_err(|e| {
+            error!("Configuration error: {}", e);
+            AppError::ConfigError(format!("Failed to load configuration: {}", e))
+        })?;
+    
+    info!("✅ Configuration loaded successfully");
+    info!("📡 GitHub Client ID: {}", &config.github_client_id[..8]);
+    info!("🌐 Server URL: {}", config.server_url);
+    info!("🔌 Server Port: {}", config.server_port);
     
     let server_port = config.server_port;
     let app_state = AppState::new(config);
@@ -93,6 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| AppError::ServerError(format!("Failed to bind to {}: {}", addr, e)))?;
     
     info!("🚀 Server running on http://localhost:{}", server_port);
+    info!("🔗 GitHub OAuth URL: http://localhost:{}/auth/github", server_port);
     
     // Use axum's serve method with graceful shutdown
     axum::serve(listener, app)
@@ -111,6 +121,8 @@ async fn create_app(state: AppState) -> Result<Router, AppError> {
         .route("/auth/github", get(oauth::github_login))
         .route("/auth/github/callback", get(oauth::github_callback))
         .route("/auth/user", get(oauth::get_user))
+        .route("/api/repos", get(oauth::get_user_repos))
+        .route("/api/repos/:owner/:repo", get(oauth::get_repo_info))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .layer(create_cors_layer())
@@ -121,7 +133,7 @@ async fn create_app(state: AppState) -> Result<Router, AppError> {
 
 fn create_cors_layer() -> CorsLayer {
     CorsLayer::new()
-        .allow_origin(tower_http::cors::Any) // Configure this based on your needs
+        .allow_origin(tower_http::cors::Any)
         .allow_methods([
             axum::http::Method::GET,
             axum::http::Method::POST,
@@ -134,11 +146,10 @@ fn create_cors_layer() -> CorsLayer {
 }
 
 fn init_tracing() -> Result<(), Box<dyn std::error::Error>> {
-    // More sophisticated logging setup
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,tower_http=debug".into()),
+                .unwrap_or_else(|_| "info,tower_http=debug,reqwest=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer().with_target(false))
         .init();
@@ -153,14 +164,20 @@ async fn health_check() -> &'static str {
 async fn detailed_health_check(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
     debug!("Health check requested");
     
-    // You can add more health checks here (database, external services, etc.)
     let health_status = json!({
         "status": "healthy",
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "version": env!("CARGO_PKG_VERSION"),
         "server_port": state.config.server_port,
         "environment": std::env::var("RUST_ENV").unwrap_or_else(|_| "development".to_string()),
-        "uptime": "TODO: implement uptime tracking"
+        "github_configured": !state.config.github_client_id.is_empty(),
+        "endpoints": {
+            "github_login": "/auth/github",
+            "github_callback": "/auth/github/callback",
+            "user_info": "/auth/user?access_token=YOUR_TOKEN",
+            "user_repos": "/api/repos?access_token=YOUR_TOKEN",
+            "repo_info": "/api/repos/owner/repo?access_token=YOUR_TOKEN"
+        }
     });
     
     Ok(Json(health_status))

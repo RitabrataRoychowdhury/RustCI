@@ -1,7 +1,8 @@
 use reqwest::Client;
-use serde_json::Value;
+use serde_json::json;
+use tracing::{debug, info, error};
 
-use crate::dto::{GitHubEmail, GitHubUser};
+use crate::dto::{GitHubEmail, GitHubRepo, GitHubUser, GitHubWebhook, WebhookConfig, WebhookPayload};
 
 pub struct GitHubClient<'a> {
     client: &'a Client,
@@ -14,36 +15,47 @@ impl<'a> GitHubClient<'a> {
 
     /// Get user information from GitHub API
     pub async fn get_user(&self, access_token: &str) -> Result<GitHubUser, Box<dyn std::error::Error>> {
+        debug!("🔄 Fetching user info from GitHub API");
+        
         let response = self
             .client
             .get("https://api.github.com/user")
             .header("Authorization", format!("Bearer {}", access_token))
             .header("User-Agent", "DevOps-CI/1.0")
+            .header("Accept", "application/vnd.github.v3+json")
             .send()
             .await?;
 
         if !response.status().is_success() {
+            let status = response.status();
             let error_text = response.text().await?;
-            return Err(format!("Failed to get user info: {}", error_text).into());
+            error!("❌ Failed to get user info: {} - {}", status, error_text);
+            return Err(format!("Failed to get user info: {} - {}", status, error_text).into());
         }
 
         let user: GitHubUser = response.json().await?;
+        info!("✅ Successfully fetched user info for: {}", user.login);
         Ok(user)
     }
 
     /// Get user's primary email from GitHub API
     pub async fn get_user_primary_email(&self, access_token: &str) -> Result<String, Box<dyn std::error::Error>> {
+        debug!("🔄 Fetching user emails from GitHub API");
+        
         let response = self
             .client
             .get("https://api.github.com/user/emails")
             .header("Authorization", format!("Bearer {}", access_token))
             .header("User-Agent", "DevOps-CI/1.0")
+            .header("Accept", "application/vnd.github.v3+json")
             .send()
             .await?;
 
         if !response.status().is_success() {
+            let status = response.status();
             let error_text = response.text().await?;
-            return Err(format!("Failed to get user emails: {}", error_text).into());
+            error!("❌ Failed to get user emails: {} - {}", status, error_text);
+            return Err(format!("Failed to get user emails: {} - {}", status, error_text).into());
         }
 
         let emails: Vec<GitHubEmail> = response.json().await?;
@@ -56,34 +68,42 @@ impl<'a> GitHubClient<'a> {
             .map(|email| email.email.clone())
             .ok_or("No verified email found")?;
 
+        info!("✅ Found primary email");
         Ok(primary_email)
     }
 
     /// Get user's repositories
-    pub async fn get_user_repos(&self, access_token: &str, per_page: Option<u32>) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
+    pub async fn get_user_repos(&self, access_token: &str, per_page: Option<u32>) -> Result<Vec<GitHubRepo>, Box<dyn std::error::Error>> {
         let per_page = per_page.unwrap_or(30).min(100); // GitHub API limits to 100 per page
+        debug!("🔄 Fetching user repositories (per_page: {})", per_page);
         
-        let url = format!("https://api.github.com/user/repos?per_page={}&sort=updated", per_page);
+        let url = format!("https://api.github.com/user/repos?per_page={}&sort=updated&type=all", per_page);
         
         let response = self
             .client
             .get(&url)
             .header("Authorization", format!("Bearer {}", access_token))
             .header("User-Agent", "DevOps-CI/1.0")
+            .header("Accept", "application/vnd.github.v3+json")
             .send()
             .await?;
 
         if !response.status().is_success() {
+            let status = response.status();
             let error_text = response.text().await?;
-            return Err(format!("Failed to get user repositories: {}", error_text).into());
+            error!("❌ Failed to get user repositories: {} - {}", status, error_text);
+            return Err(format!("Failed to get user repositories: {} - {}", status, error_text).into());
         }
 
-        let repos: Vec<Value> = response.json().await?;
+        let repos: Vec<GitHubRepo> = response.json().await?;
+        info!("✅ Successfully fetched {} repositories", repos.len());
         Ok(repos)
     }
 
     /// Get repository information
-    pub async fn get_repo(&self, access_token: &str, owner: &str, repo: &str) -> Result<Value, Box<dyn std::error::Error>> {
+    pub async fn get_repo(&self, access_token: &str, owner: &str, repo: &str) -> Result<GitHubRepo, Box<dyn std::error::Error>> {
+        debug!("🔄 Fetching repository info for {}/{}", owner, repo);
+        
         let url = format!("https://api.github.com/repos/{}/{}", owner, repo);
         
         let response = self
@@ -91,15 +111,19 @@ impl<'a> GitHubClient<'a> {
             .get(&url)
             .header("Authorization", format!("Bearer {}", access_token))
             .header("User-Agent", "DevOps-CI/1.0")
+            .header("Accept", "application/vnd.github.v3+json")
             .send()
             .await?;
 
         if !response.status().is_success() {
+            let status = response.status();
             let error_text = response.text().await?;
-            return Err(format!("Failed to get repository info: {}", error_text).into());
+            error!("❌ Failed to get repository {}/{}: {} - {}", owner, repo, status, error_text);
+            return Err(format!("Failed to get repository {}/{}: {} - {}", owner, repo, status, error_text).into());
         }
 
-        let repo_info: Value = response.json().await?;
+        let repo_info: GitHubRepo = response.json().await?;
+        info!("✅ Successfully fetched repository info for {}/{}", owner, repo);
         Ok(repo_info)
     }
 
@@ -111,17 +135,27 @@ impl<'a> GitHubClient<'a> {
         repo: &str,
         webhook_url: &str,
         events: Vec<&str>,
-    ) -> Result<Value, Box<dyn std::error::Error>> {
-        let webhook_payload = serde_json::json!({
-            "name": "web",
-            "active": true,
-            "events": events,
-            "config": {
-                "url": webhook_url,
-                "content_type": "json",
-                "insecure_ssl": "0"
-            }
-        });
+        secret: Option<String>,
+    ) -> Result<GitHubWebhook, Box<dyn std::error::Error>> {
+        debug!("🔄 Creating webhook for {}/{}", owner, repo);
+        
+        let mut config = WebhookConfig {
+            url: webhook_url.to_string(),
+            content_type: "json".to_string(),
+            insecure_ssl: "0".to_string(),
+            secret: None,
+        };
+
+        if let Some(secret_value) = secret {
+            config.secret = Some(secret_value);
+        }
+
+        let webhook_payload = WebhookPayload {
+            name: "web".to_string(),
+            active: true,
+            events: events.iter().map(|s| s.to_string()).collect(),
+            config,
+        };
 
         let url = format!("https://api.github.com/repos/{}/{}/hooks", owner, repo);
         
@@ -130,16 +164,73 @@ impl<'a> GitHubClient<'a> {
             .post(&url)
             .header("Authorization", format!("Bearer {}", access_token))
             .header("User-Agent", "DevOps-CI/1.0")
+            .header("Accept", "application/vnd.github.v3+json")
             .json(&webhook_payload)
             .send()
             .await?;
 
         if !response.status().is_success() {
+            let status = response.status();
             let error_text = response.text().await?;
-            return Err(format!("Failed to create webhook: {}", error_text).into());
+            error!("❌ Failed to create webhook for {}/{}: {} - {}", owner, repo, status, error_text);
+            return Err(format!("Failed to create webhook for {}/{}: {} - {}", owner, repo, status, error_text).into());
         }
 
-        let webhook: Value = response.json().await?;
+        let webhook: GitHubWebhook = response.json().await?;
+        info!("✅ Successfully created webhook for {}/{} with ID: {}", owner, repo, webhook.id);
         Ok(webhook)
+    }
+
+    /// List webhooks for a repository
+    pub async fn list_webhooks(&self, access_token: &str, owner: &str, repo: &str) -> Result<Vec<GitHubWebhook>, Box<dyn std::error::Error>> {
+        debug!("🔄 Listing webhooks for {}/{}", owner, repo);
+        
+        let url = format!("https://api.github.com/repos/{}/{}/hooks", owner, repo);
+        
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("User-Agent", "DevOps-CI/1.0")
+            .header("Accept", "application/vnd.github.v3+json")
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await?;
+            error!("❌ Failed to list webhooks for {}/{}: {} - {}", owner, repo, status, error_text);
+            return Err(format!("Failed to list webhooks for {}/{}: {} - {}", owner, repo, status, error_text).into());
+        }
+
+        let webhooks: Vec<GitHubWebhook> = response.json().await?;
+        info!("✅ Successfully listed {} webhooks for {}/{}", webhooks.len(), owner, repo);
+        Ok(webhooks)
+    }
+
+    /// Delete a webhook
+    pub async fn delete_webhook(&self, access_token: &str, owner: &str, repo: &str, hook_id: u64) -> Result<(), Box<dyn std::error::Error>> {
+        debug!("🔄 Deleting webhook {} for {}/{}", hook_id, owner, repo);
+        
+        let url = format!("https://api.github.com/repos/{}/{}/hooks/{}", owner, repo, hook_id);
+        
+        let response = self
+            .client
+            .delete(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("User-Agent", "DevOps-CI/1.0")
+            .header("Accept", "application/vnd.github.v3+json")
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await?;
+            error!("❌ Failed to delete webhook {} for {}/{}: {} - {}", hook_id, owner, repo, status, error_text);
+            return Err(format!("Failed to delete webhook {} for {}/{}: {} - {}", hook_id, owner, repo, status, error_text).into());
+        }
+
+        info!("✅ Successfully deleted webhook {} for {}/{}", hook_id, owner, repo);
+        Ok(())
     }
 }
