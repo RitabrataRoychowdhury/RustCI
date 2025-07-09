@@ -1,9 +1,9 @@
 use mongodb::{
-    bson::{doc, oid::ObjectId, Document, DateTime as BsonDateTime},
+    bson::{doc, oid::ObjectId, DateTime as BsonDateTime},
     options::{ClientOptions, ServerApi, ServerApiVersion},
     Client, Collection, Database,
 };
-use tracing::{info, error};
+use tracing::info;
 
 use crate::{error::AppError, models::User};
 

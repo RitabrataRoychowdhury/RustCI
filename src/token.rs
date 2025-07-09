@@ -1,4 +1,4 @@
-use crate::{error::AppError, models::User};
+use crate::error::AppError;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
@@ -21,10 +21,8 @@ pub fn generate_jwt_token(
     }
 
     let now = Utc::now();
-    let mut iat = now.timestamp() as usize;
-    if iat < 0 {
-        iat = 0;
-    }
+   let iat = now.timestamp().max(0) as usize; // ✅ Cleaner, warning-free
+
 
     let exp = match expires_in.chars().last() {
         Some('m') => {

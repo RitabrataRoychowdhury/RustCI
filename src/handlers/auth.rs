@@ -1,6 +1,6 @@
 use crate::{
     error::{AppError, Result},
-    models::{FilteredUser, User, UserData, UserLoginResponse, UserResponse},
+    models::{User, UserData, UserLoginResponse, UserResponse},
     token::generate_jwt_token,
     AppState,
 };
@@ -14,12 +14,10 @@ use axum_extra::extract::cookie::{Cookie, SameSite};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{info, error};
-use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 pub struct OAuthQuery {
-    code: String,
-    state: Option<String>,
+    code: String
 }
 
 #[derive(Debug, Serialize, Deserialize)]
