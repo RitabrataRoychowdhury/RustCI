@@ -138,6 +138,7 @@ impl DatabaseManager {
 
         // Create new user
         let new_user = User {
+            mongo_id: None, // MongoDB will auto-generate this
             id: uuid::Uuid::new_v4(),
             email: email.clone(),
             name: github_user.name.clone().unwrap_or_else(|| github_user.login.clone()),
