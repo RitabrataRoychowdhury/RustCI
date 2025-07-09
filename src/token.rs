@@ -1,4 +1,4 @@
-use crate::{error::AppError, models::User};
+use crate::error::AppError;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};

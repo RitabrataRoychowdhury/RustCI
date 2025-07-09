@@ -1,10 +1,11 @@
 use mongodb::{
-    bson::{doc, oid::ObjectId, Document},
+    bson::{doc, oid::ObjectId, DateTime as BsonDateTime, Document},
     options::{ClientOptions, ServerApi, ServerApiVersion},
     Client, Collection, Database,
 };
+
 use std::env;
-use tracing::{info, error};
+use tracing::{error, info};
 
 use crate::{error::AppError, models::User};
 
@@ -17,7 +18,7 @@ pub struct DatabaseManager {
 impl DatabaseManager {
     pub async fn new(mongodb_uri: &str, database_name: &str) -> Result<Self, AppError> {
         info!("🔄 Connecting to MongoDB...");
-        
+
         let mut client_options = ClientOptions::parse(mongodb_uri)
             .await
             .map_err(|e| AppError::DatabaseError(format!("Failed to parse MongoDB URI: {}", e)))?;
@@ -27,8 +28,9 @@ impl DatabaseManager {
         client_options.server_api = Some(server_api);
 
         // Create a new client and connect to the server
-        let client = Client::with_options(client_options)
-            .map_err(|e| AppError::DatabaseError(format!("Failed to create MongoDB client: {}", e)))?;
+        let client = Client::with_options(client_options).map_err(|e| {
+            AppError::DatabaseError(format!("Failed to create MongoDB client: {}", e))
+        })?;
 
         // Send a ping to confirm a successful connection
         client
@@ -50,7 +52,7 @@ impl DatabaseManager {
 
     pub async fn create_user(&self, user: &User) -> Result<String, AppError> {
         let collection = self.get_users_collection();
-        
+
         let result = collection
             .insert_one(user, None)
             .await
@@ -58,13 +60,15 @@ impl DatabaseManager {
 
         match result.inserted_id.as_object_id() {
             Some(oid) => Ok(oid.to_hex()),
-            None => Err(AppError::DatabaseError("Failed to get inserted user ID".to_string())),
+            None => Err(AppError::DatabaseError(
+                "Failed to get inserted user ID".to_string(),
+            )),
         }
     }
 
     pub async fn find_user_by_email(&self, email: &str) -> Result<Option<User>, AppError> {
         let collection = self.get_users_collection();
-        
+
         let user = collection
             .find_one(doc! {"email": email}, None)
             .await
@@ -75,10 +79,10 @@ impl DatabaseManager {
 
     pub async fn find_user_by_id(&self, user_id: &str) -> Result<Option<User>, AppError> {
         let collection = self.get_users_collection();
-        
+
         let object_id = ObjectId::parse_str(user_id)
             .map_err(|e| AppError::DatabaseError(format!("Invalid user ID format: {}", e)))?;
-        
+
         let user = collection
             .find_one(doc! {"_id": object_id}, None)
             .await
@@ -89,7 +93,7 @@ impl DatabaseManager {
 
     pub async fn update_user(&self, user_id: &str, user: &User) -> Result<(), AppError> {
         let collection = self.get_users_collection();
-        
+
         let object_id = ObjectId::parse_str(user_id)
             .map_err(|e| AppError::DatabaseError(format!("Invalid user ID format: {}", e)))?;
 
@@ -97,11 +101,11 @@ impl DatabaseManager {
             "$set": {
                 "name": &user.name,
                 "email": &user.email,
-                "photo": &user.photo,
+                "photo": &user.photo,   
                 "verified": user.verified,
                 "provider": &user.provider,
                 "role": &user.role,
-                "updated_at": chrono::Utc::now()
+                "updated_at": BsonDateTime::from(chrono::Utc::now())
             }
         };
 
@@ -115,7 +119,7 @@ impl DatabaseManager {
 
     pub async fn delete_user(&self, user_id: &str) -> Result<(), AppError> {
         let collection = self.get_users_collection();
-        
+
         let object_id = ObjectId::parse_str(user_id)
             .map_err(|e| AppError::DatabaseError(format!("Invalid user ID format: {}", e)))?;
 
@@ -127,9 +131,15 @@ impl DatabaseManager {
         Ok(())
     }
 
-    pub async fn find_or_create_oauth_user(&self, github_user: &crate::handlers::GitHubUserResult) -> Result<User, AppError> {
-        let email = github_user.email.as_ref().unwrap_or(&format!("{}@github.local", github_user.login));
-        
+    pub async fn find_or_create_oauth_user(
+        &self,
+        github_user: &crate::handlers::GitHubUserResult,
+    ) -> Result<User, AppError> {
+        let email = github_user
+            .email
+            .as_ref()
+            .unwrap_or(&format!("{}@github.local", github_user.login));
+
         // Try to find existing user
         if let Some(existing_user) = self.find_user_by_email(email).await? {
             info!("✅ Found existing user: {}", existing_user.email);
@@ -138,9 +148,13 @@ impl DatabaseManager {
 
         // Create new user
         let new_user = User {
+            mongo_id: None, // MongoDB will auto-generate this
             id: uuid::Uuid::new_v4(),
             email: email.clone(),
-            name: github_user.name.clone().unwrap_or_else(|| github_user.login.clone()),
+            name: github_user
+                .name
+                .clone()
+                .unwrap_or_else(|| github_user.login.clone()),
             photo: github_user.avatar_url.clone(),
             verified: true,
             provider: "GitHub".to_string(),
@@ -151,7 +165,7 @@ impl DatabaseManager {
 
         self.create_user(&new_user).await?;
         info!("✅ Created new user: {}", new_user.email);
-        
+
         Ok(new_user)
     }
 }
