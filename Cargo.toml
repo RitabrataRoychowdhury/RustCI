@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # Web framework
-axum = { version = "0.7", features = ["http1", "http2"] }
+axum = { version = "0.7", features = ["http1", "http2", "macros"] }
 tokio = { version = "1.0", features = ["full"] }
 
 # Middleware + Layers
@@ -23,7 +23,7 @@ serde_json = "1.0"
 dotenv = "0.15"
 
 # Utilities
-uuid = { version = "1.0", features = ["v4"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # Logging
 tracing = "0.1"
@@ -33,7 +33,18 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2.4"
 urlencoding = "2.1"
 
-# Date/time handling (for health checks)
+# Date/time handling
 chrono = { version = "0.4", features = ["serde"] }
 
-# HTTP server - Removed hyper as it's not needed with axum 0.7
+# JWT handling
+jsonwebtoken = "9.2"
+
+# Password hashing
+argon2 = "0.5"
+
+# Async traits
+async-trait = "0.1"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
