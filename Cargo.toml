@@ -48,3 +48,13 @@ async-trait = "0.1"
 # Error handling
 anyhow = "1.0"
 thiserror = "1.0"
+# Database
+mongodb = "2.8"
+tokio-stream = "0.1"
+futures = "0.3"
+
+# Time handling
+time = { version = "0.3", features = ["macros", "serde"] }
+
+# Additional axum features
+axum-extra = { version = "0.9", features = ["cookie"] }

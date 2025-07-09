@@ -1,8 +1,11 @@
+use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct User {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub mongo_id: Option<ObjectId>,
     pub id: Uuid,
     pub name: String,
     pub email: String,
@@ -15,6 +18,26 @@ pub struct User {
 }
 
 impl User {
+    pub fn new(
+        name: String,
+        email: String,
+        photo: String,
+        provider: String,
+    ) -> Self {
+        Self {
+            mongo_id: None,
+            id: Uuid::new_v4(),
+            name,
+            email,
+            photo,
+            verified: true,
+            provider,
+            role: "user".to_string(),
+            created_at: Some(chrono::Utc::now()),
+            updated_at: Some(chrono::Utc::now()),
+        }
+    }
+
     pub fn filter_user(&self) -> FilteredUser {
         FilteredUser {
             id: self.id.to_string(),

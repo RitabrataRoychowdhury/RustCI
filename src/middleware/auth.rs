@@ -5,11 +5,12 @@ use crate::{
 };
 use axum::{
     extract::State,
-    http::{header, Request, StatusCode},
+    http::{header, Request},
     middleware::Next,
     response::Response,
 };
 use axum_extra::extract::cookie::CookieJar;
+use tracing::{info, error, debug};
 use uuid::Uuid;
 
 pub async fn auth<B>(
@@ -18,6 +19,8 @@ pub async fn auth<B>(
     mut req: Request<B>,
     next: Next<B>,
 ) -> Result<Response> {
+    debug!("🔐 Authentication middleware triggered");
+    
     let token = cookie_jar
         .get("token")
         .map(|cookie| cookie.value().to_string())
@@ -35,17 +38,28 @@ pub async fn auth<B>(
         });
 
     let token = token.ok_or_else(|| {
+        error!("❌ No authentication token provided");
         AppError::AuthError("You are not logged in, please provide token".to_string())
     })?;
 
+    debug!("🔍 Verifying JWT token");
     let claims = verify_jwt_token(data.env.jwt_secret.clone(), &token)
-        .map_err(|_| AppError::AuthError("Invalid token".to_string()))?;
+        .map_err(|e| {
+            error!("❌ Token verification failed: {}", e);
+            AppError::AuthError("Invalid token".to_string())
+        })?;
 
     let user_id = Uuid::parse_str(&claims.claims.sub)
-        .map_err(|_| AppError::AuthError("Invalid token".to_string()))?;
+        .map_err(|e| {
+            error!("❌ Invalid user ID in token: {}", e);
+            AppError::AuthError("Invalid token".to_string())
+        })?;
 
-    // In a real application, you would fetch the user from the database here
-    // For now, we'll just pass the user_id in the request extensions
+    debug!("✅ Token verified for user ID: {}", user_id);
+    
+    // Insert user_id into request extensions for use in handlers
     req.extensions_mut().insert(user_id);
+    
+    info!("✅ User authenticated successfully: {}", user_id);
     Ok(next.run(req).await)
 }

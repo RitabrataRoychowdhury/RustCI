@@ -1,14 +1,16 @@
-# DevOps CI - GitHub OAuth Integration
+# DevOps CI - GitHub OAuth Integration with MongoDB
 
-A Rust-based DevOps CI/CD tool with GitHub OAuth authentication and webhook integration.
+A modern Rust-based DevOps CI/CD tool with GitHub OAuth authentication and MongoDB integration.
 
 ## 🚀 Features
 
 - ✅ GitHub OAuth authentication
-- ✅ User profile management  
-- ✅ Repository access and management
-- ✅ Webhook creation and management
+- ✅ MongoDB database integration
+- ✅ JWT token-based session management
+- ✅ User profile management
+- ✅ Secure cookie handling
 - ✅ Comprehensive error handling and logging
+- ✅ Modern web UI for authentication
 - 🚧 CI/CD pipeline integration (coming soon)
 
 ## 🛠️ Setup
@@ -16,6 +18,7 @@ A Rust-based DevOps CI/CD tool with GitHub OAuth authentication and webhook inte
 ### Prerequisites
 
 - Rust 1.70+ installed
+- MongoDB Atlas account or local MongoDB instance
 - GitHub OAuth App configured
 
 ### 1. Create GitHub OAuth App
@@ -24,97 +27,141 @@ A Rust-based DevOps CI/CD tool with GitHub OAuth authentication and webhook inte
 2. Click "New OAuth App"
 3. Fill in the details:
    - **Application name**: DevOps CI
-   - **Homepage URL**: `http://localhost:3000`
-   - **Authorization callback URL**: `http://localhost:3000/auth/github/callback`
+   - **Homepage URL**: `http://localhost:8000`
+   - **Authorization callback URL**: `http://localhost:8000/api/sessions/oauth/github/callback`
 4. Save the Client ID and Client Secret
 
-### 2. Environment Configuration
+### 2. MongoDB Setup
+
+You can use either:
+- **MongoDB Atlas** (recommended for production)
+- **Local MongoDB** instance
+
+Your MongoDB connection details are already configured for:
+- **URI**: `mongodb+srv://ritabrataroychowdhury:ritabrata676@cluster0.vlzfl.mongodb.net/`
+- **Database**: `dqms`
+
+### 3. Environment Configuration
 
 Create a `.env` file in the project root:
 
 ```env
+# MongoDB Configuration
+MONGODB_URI=mongodb+srv://ritabrataroychowdhury:ritabrata676@cluster0.vlzfl.mongodb.net/
+MONGODB_DATABASE=dqms
+
+# JWT Configuration
+JWT_SECRET=your_super_secret_jwt_key_here_make_it_very_long_and_secure
+JWT_EXPIRED_IN=60m
+JWT_MAXAGE=60
+
 # GitHub OAuth Configuration
-GITHUB_CLIENT_ID=your_github_client_id_here
-GITHUB_CLIENT_SECRET=your_github_client_secret_here
-GITHUB_REDIRECT_URI=http://localhost:3000/auth/github/callback
+GITHUB_OAUTH_CLIENT_ID=your_github_client_id_here
+GITHUB_OAUTH_CLIENT_SECRET=your_github_client_secret_here
+GITHUB_OAUTH_REDIRECT_URL=http://localhost:8000/api/sessions/oauth/github/callback
 
 # Server Configuration
-SERVER_URL=http://localhost:3000
-SERVER_PORT=3000
+CLIENT_ORIGIN=http://localhost:3000
+PORT=8000
 
 # Environment
-RUST_ENV=development
-RUST_LOG=info,tower_http=debug
+RUST_LOG=info
 ```
 
-### 3. Run the Application
+### 4. Run the Application
 
 ```bash
 # Install dependencies and run
 cargo run
 ```
 
-The server will start on `http://localhost:3000`
+The server will start on `http://localhost:8000`
 
 ## 📡 API Endpoints
 
 ### Authentication
-- `GET /auth/github` - Initiate GitHub OAuth flow
-- `GET /auth/github/callback` - Handle OAuth callback
-- `GET /auth/user?access_token=TOKEN` - Get current user info
-
-### Repository Management
-- `GET /api/repos?access_token=TOKEN` - Get user repositories
-- `GET /api/repos/{owner}/{repo}?access_token=TOKEN` - Get specific repository info
+- `GET /api/sessions/oauth/google` - OAuth login page
+- `GET /api/sessions/oauth/github` - Initiate GitHub OAuth flow
+- `GET /api/sessions/oauth/github/callback` - Handle OAuth callback
+- `GET /api/sessions/me` - Get current user info (requires authentication)
+- `GET /api/sessions/logout` - Logout user
 
 ### System
-- `GET /` - Health check
-- `GET /health` - Detailed health check with system info
+- `GET /api/healthchecker` - Health check with MongoDB status
 
 ## 🔧 Usage Examples
 
 ### 1. Authenticate with GitHub
 
-Visit `http://localhost:3000/auth/github` in your browser to start the OAuth flow.
+Visit `http://localhost:8000/api/sessions/oauth/google` in your browser to see the login page, then click "Login with GitHub".
 
-### 2. Get User Info
+### 2. Get User Info (Protected Route)
 
 ```bash
-curl "http://localhost:3000/auth/user?access_token=YOUR_ACCESS_TOKEN"
+# Using cookie (after login)
+curl -b "token=YOUR_JWT_TOKEN" "http://localhost:8000/api/sessions/me"
+
+# Using Authorization header
+curl -H "Authorization: Bearer YOUR_JWT_TOKEN" "http://localhost:8000/api/sessions/me"
 ```
 
-### 3. List Repositories
+### 3. Health Check
 
 ```bash
-curl "http://localhost:3000/api/repos?access_token=YOUR_ACCESS_TOKEN&per_page=10"
-```
-
-### 4. Get Repository Info
-
-```bash
-curl "http://localhost:3000/api/repos/owner/repo-name?access_token=YOUR_ACCESS_TOKEN"
+curl "http://localhost:8000/api/healthchecker"
 ```
 
 ## 🏗️ Architecture
 
 ```
 src/
-├── config/          # Configuration management
-├── domain/          # Domain models (User, etc.)
-├── dto/             # Data Transfer Objects
-├── handlers/        # HTTP request handlers
-├── infrastructure/  # External service clients (GitHub API)
-├── services/        # Business logic services
-└── utils.rs         # Utility functions
+├── config.rs           # Configuration management
+├── database.rs         # MongoDB connection and operations
+├── error.rs           # Error handling
+├── token.rs           # JWT token management
+├── models/            # Data models
+│   ├── mod.rs
+│   └── user.rs        # User model with MongoDB support
+├── middleware/        # HTTP middleware
+│   ├── mod.rs
+│   └── auth.rs        # Authentication middleware
+├── handlers/          # HTTP request handlers
+│   ├── mod.rs
+│   └── auth.rs        # Authentication handlers
+└── routes/            # Route definitions
+    ├── mod.rs
+    └── auth.rs        # Authentication routes
+```
+
+## 🗄️ Database Schema
+
+### Users Collection
+
+```javascript
+{
+  "_id": ObjectId("..."),
+  "id": "uuid-v4-string",
+  "name": "User Name",
+  "email": "user@example.com",
+  "photo": "https://avatar-url.com/image.jpg",
+  "verified": true,
+  "provider": "GitHub",
+  "role": "user",
+  "created_at": ISODate("..."),
+  "updated_at": ISODate("...")
+}
 ```
 
 ## 🔐 Security Features
 
 - OAuth 2.0 flow with state parameter validation
-- Secure token handling
+- JWT token-based authentication
+- Secure HTTP-only cookies
+- MongoDB connection with authentication
 - CORS configuration
 - Request timeout and rate limiting
 - Comprehensive error handling
+- Structured logging
 
 ## 📊 Logging
 
@@ -128,13 +175,15 @@ Set `RUST_LOG=debug` for verbose logging.
 
 ## 🚧 Roadmap
 
-- [ ] JWT token management
-- [ ] Webhook event processing
+- [ ] User role-based access control
+- [ ] Repository webhook integration
 - [ ] CI/CD pipeline triggers
 - [ ] Multi-provider support (GitLab, Bitbucket)
-- [ ] Database integration
-- [ ] User session management
+- [ ] User session management with Redis
 - [ ] Rate limiting and caching
+- [ ] API documentation with OpenAPI
+- [ ] Docker containerization
+- [ ] Kubernetes deployment manifests
 
 ## 🤝 Contributing
 
@@ -147,3 +196,36 @@ Set `RUST_LOG=debug` for verbose logging.
 ## 📄 License
 
 This project is licensed under CC0 1.0 Universal - see the [LICENSE](LICENSE) file for details.
+
+## 🔧 Development
+
+### Running in Development Mode
+
+```bash
+# With debug logging
+RUST_LOG=debug cargo run
+
+# With auto-reload (install cargo-watch first)
+cargo install cargo-watch
+cargo watch -x run
+```
+
+### Testing
+
+```bash
+# Run tests
+cargo test
+
+# Run tests with output
+cargo test -- --nocapture
+```
+
+### Building for Production
+
+```bash
+# Optimized build
+cargo build --release
+
+# Run optimized binary
+./target/release/RustAutoDevOps
+```
