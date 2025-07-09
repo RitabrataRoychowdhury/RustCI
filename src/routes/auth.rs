@@ -1,3 +1,5 @@
+// routes/auth.rs
+
 use crate::{
     handlers::{
         get_me_handler, github_oauth_callback, github_oauth_handler, google_oauth_handler,
@@ -14,7 +16,8 @@ use axum::{
 };
 use uuid::Uuid;
 
-pub fn auth_router() -> Router<AppState> {
+/// Accepts AppState from main.rs instead of constructing it here
+pub fn auth_router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/oauth/google", get(google_oauth_handler))
         .route("/oauth/github", get(github_oauth_handler))
@@ -25,17 +28,8 @@ pub fn auth_router() -> Router<AppState> {
             get(|Extension(user_id): Extension<Uuid>, state: State<AppState>| {
                 get_me_handler(user_id, state)
             })
-            .route_layer(middleware::from_fn_with_state(
-                AppState {
-                    env: std::sync::Arc::new(crate::config::Config::init()),
-                    db: std::sync::Arc::new(
-                        // This is a placeholder - the actual state will be passed from main
-                        tokio::runtime::Handle::current().block_on(async {
-                            crate::database::DatabaseManager::new("", "").await.unwrap()
-                        })
-                    ),
-                },
-                auth,
-            )),
+            .route_layer(middleware::from_fn_with_state(state.clone(), auth)),
         )
+        .with_state(state) // ✅ Add this to make it Router<AppState>
 }
+

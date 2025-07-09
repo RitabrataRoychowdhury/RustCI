@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn create_app(state: AppState) -> Result<Router, Box<dyn std::error::Error>> {
     let router = Router::new()
         .route("/api/healthchecker", get(health_check_handler))
-        .nest("/api/sessions", auth_router())
+        .nest("/api/sessions", auth_router(state.clone())) // ✅ fixed
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .layer(create_cors_layer(&state.env.client_origin))
@@ -102,6 +102,7 @@ async fn create_app(state: AppState) -> Result<Router, Box<dyn std::error::Error
 
     Ok(router)
 }
+
 
 fn create_cors_layer(client_origin: &str) -> CorsLayer {
     CorsLayer::new()
