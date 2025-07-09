@@ -49,7 +49,8 @@ async-trait = "0.1"
 anyhow = "1.0"
 thiserror = "1.0"
 # Database
-mongodb = { version = "2.8", features = ["chrono-0_4"] }
+mongodb = "2.8.2"
+bson    = { version = "2.8.2", features = ["chrono-0_4"] }
 tokio-stream = "0.1"
 futures = "0.3"
 
