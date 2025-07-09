@@ -1,9 +1,8 @@
 use mongodb::{
-    bson::{doc, oid::ObjectId, Document},
+    bson::{doc, oid::ObjectId, Document, DateTime as BsonDateTime},
     options::{ClientOptions, ServerApi, ServerApiVersion},
     Client, Collection, Database,
 };
-use std::env;
 use tracing::{info, error};
 
 use crate::{error::AppError, models::User};
@@ -93,17 +92,18 @@ impl DatabaseManager {
         let object_id = ObjectId::parse_str(user_id)
             .map_err(|e| AppError::DatabaseError(format!("Invalid user ID format: {}", e)))?;
 
-        let update_doc = doc! {
-            "$set": {
-                "name": &user.name,
-                "email": &user.email,
-                "photo": &user.photo,
-                "verified": user.verified,
-                "provider": &user.provider,
-                "role": &user.role,
-                "updated_at": chrono::Utc::now()
-            }
-        };
+            let update_doc = doc! {
+                "$set": {
+                    "name": &user.name,
+                    "email": &user.email,
+                    "photo": &user.photo,
+                    "verified": user.verified,
+                    "provider": &user.provider,
+                    "role": &user.role,
+                    "updated_at": BsonDateTime::from_system_time(chrono::Utc::now().into())
+                }
+            };
+            
 
         collection
             .update_one(doc! {"_id": object_id}, update_doc, None)
@@ -128,17 +128,21 @@ impl DatabaseManager {
     }
 
     pub async fn find_or_create_oauth_user(&self, github_user: &crate::handlers::GitHubUserResult) -> Result<User, AppError> {
-        let email = github_user.email.as_ref().unwrap_or(&format!("{}@github.local", github_user.login));
-        
+        // Create owned email string, using fallback if needed
+        let email = github_user
+            .email
+            .clone()
+            .unwrap_or_else(|| format!("{}@github.local", github_user.login));
+    
         // Try to find existing user
-        if let Some(existing_user) = self.find_user_by_email(email).await? {
+        if let Some(existing_user) = self.find_user_by_email(&email).await? {
             info!("✅ Found existing user: {}", existing_user.email);
             return Ok(existing_user);
         }
-
+    
         // Create new user
         let new_user = User {
-            mongo_id: None, // MongoDB will auto-generate this
+            mongo_id: None,
             id: uuid::Uuid::new_v4(),
             email: email.clone(),
             name: github_user.name.clone().unwrap_or_else(|| github_user.login.clone()),
@@ -149,10 +153,11 @@ impl DatabaseManager {
             created_at: Some(chrono::Utc::now()),
             updated_at: Some(chrono::Utc::now()),
         };
-
+    
         self.create_user(&new_user).await?;
         info!("✅ Created new user: {}", new_user.email);
-        
+    
         Ok(new_user)
     }
+    
 }

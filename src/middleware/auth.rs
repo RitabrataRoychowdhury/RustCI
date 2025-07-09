@@ -4,6 +4,7 @@ use crate::{
     AppState,
 };
 use axum::{
+    body::Body, // ✅ Added: Needed for `Request<Body>`
     extract::State,
     http::{header, Request},
     middleware::Next,
@@ -13,11 +14,11 @@ use axum_extra::extract::cookie::CookieJar;
 use tracing::{info, error, debug};
 use uuid::Uuid;
 
-pub async fn auth<B>(
+pub async fn auth(
     cookie_jar: CookieJar,
     State(data): State<AppState>,
-    mut req: Request<B>,
-    next: Next<B>,
+    mut req: Request<Body>, // ✅ CHANGED: Specify Body to match `Next`
+    next: Next,             // ✅ Already fixed in previous step
 ) -> Result<Response> {
     debug!("🔐 Authentication middleware triggered");
     
@@ -61,5 +62,6 @@ pub async fn auth<B>(
     req.extensions_mut().insert(user_id);
     
     info!("✅ User authenticated successfully: {}", user_id);
-    Ok(next.run(req).await)
+    
+    Ok(next.run(req).await) // ✅ Will now compile correctly
 }
