@@ -29,30 +29,30 @@ mod ci;
 use config::Config;
 use database::DatabaseManager;
 use routes::{auth_router, ci_router};
+use ci::{engine::CIEngine, executor::PipelineExecutor, workspace::WorkspaceManager, connectors::ConnectorManager};
 
-// Application state shared across handlers
+/// Application state shared across handlers
 #[derive(Clone)]
 pub struct AppState {
     pub env: Arc<Config>,
     pub db: Arc<DatabaseManager>,
+    pub ci_engine: Arc<CIEngine>,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load environment variables
     dotenv().ok();
-    
+
     // Initialize structured logging
     init_tracing()?;
-    
     info!("🚀 Starting DevOps CI Server...");
 
     // Load configuration
     let config = Config::init();
     info!("✅ Configuration loaded successfully");
     info!("🌐 Server will run on port: {}", config.port);
-    info!("🔗 GitHub OAuth configured");
-    
+
     // Initialize database connection
     let db = DatabaseManager::new(&config.mongodb_uri, &config.mongodb_database)
         .await
@@ -60,16 +60,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             error!("❌ Database connection failed: {}", e);
             e
         })?;
-    
     info!("✅ Database connection established");
-    
+
+    // Initialize CI engine components
+    let connector_manager = Arc::new(ConnectorManager::new());
+    let workspace_manager = Arc::new(WorkspaceManager::new("/tmp/ci-workspaces".into()));
+    let executor = Arc::new(PipelineExecutor::new(connector_manager));
+    let ci_engine = Arc::new(CIEngine::new(Arc::new(db.clone()), workspace_manager, executor));
+    info!("✅ CI engine initialized");
+
     // Create application state
     let app_state = AppState {
         env: Arc::new(config.clone()),
         db: Arc::new(db),
+        ci_engine,
     };
-    
-    // Build application with routes and middleware
+
+    // Build application
     let app = create_app(app_state).await?;
 
     // Start server with graceful shutdown
@@ -77,17 +84,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .map_err(|e| format!("Failed to bind to {}: {}", addr, e))?;
-    
-    info!("🚀 Server running on http://localhost:{}", config.port);
-    info!("🔗 OAuth Login: http://localhost:{}/api/sessions/oauth/google", config.port);
-    info!("🔗 GitHub OAuth: http://localhost:{}/api/sessions/oauth/github", config.port);
-    
-    // Use axum's serve method with graceful shutdown
+
+    info!("🚀 Server running on http://{}", addr);
+    info!("🔗 OAuth Login: http://{}/api/sessions/oauth/google", addr);
+    info!("🔗 GitHub OAuth: http://{}/api/sessions/oauth/github", addr);
+
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(|e| format!("Server error: {}", e))?;
-    
+
     info!("✅ Server shutdown complete");
     Ok(())
 }
@@ -104,7 +110,6 @@ async fn create_app(state: AppState) -> Result<Router, Box<dyn std::error::Error
 
     Ok(router)
 }
-
 
 fn create_cors_layer(client_origin: &str) -> CorsLayer {
     CorsLayer::new()
@@ -133,19 +138,18 @@ fn init_tracing() -> Result<(), Box<dyn std::error::Error>> {
         )
         .with(tracing_subscriber::fmt::layer().with_target(false))
         .init();
-    
     Ok(())
 }
 
-async fn health_check_handler(axum::extract::State(data): axum::extract::State<AppState>) -> Result<Json<Value>, StatusCode> {
+async fn health_check_handler(axum::extract::State(state): axum::extract::State<AppState>) -> Result<Json<Value>, StatusCode> {
     debug!("🔍 Health check requested");
-    
-    // Test database connection
-    let db_status = match data.db.database.run_command(mongodb::bson::doc! {"ping": 1}, None).await {
+
+    // Ping MongoDB
+    let db_status = match state.db.database.run_command(mongodb::bson::doc! {"ping": 1}, None).await {
         Ok(_) => "connected",
         Err(_) => "disconnected",
     };
-    
+
     let health_status = json!({
         "status": "success",
         "message": "DevOps CI Server is running! 🚀",
@@ -155,7 +159,7 @@ async fn health_check_handler(axum::extract::State(data): axum::extract::State<A
             "status": db_status,
             "type": "MongoDB"
         },
-        "environment": std::env::var("RUST_ENV").unwrap_or_else(|_| "development".to_string()),
+        "environment": std::env::var("RUST_ENV").unwrap_or_else(|_| "development".into()),
         "endpoints": {
             "oauth_login": "/api/sessions/oauth/google",
             "github_oauth": "/api/sessions/oauth/github",
@@ -164,16 +168,14 @@ async fn health_check_handler(axum::extract::State(data): axum::extract::State<A
             "logout": "/api/sessions/logout"
         }
     });
-    
+
     info!("✅ Health check completed - Database: {}", db_status);
     Ok(Json(health_status))
 }
 
 async fn shutdown_signal() {
     let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
+        signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
     };
 
     #[cfg(unix)]
@@ -188,11 +190,7 @@ async fn shutdown_signal() {
     let terminate = std::future::pending::<()>();
 
     tokio::select! {
-        _ = ctrl_c => {
-            info!("📡 Received Ctrl+C, shutting down gracefully...");
-        },
-        _ = terminate => {
-            info!("📡 Received terminate signal, shutting down gracefully...");
-        },
+        _ = ctrl_c => info!("📡 Received Ctrl+C, shutting down gracefully..."),
+        _ = terminate => info!("📡 Received terminate signal, shutting down gracefully..."),
     }
 }
