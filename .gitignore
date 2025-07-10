@@ -38,3 +38,4 @@ Icon?
 # === dotenv/environment files (optional) ===
 # Uncomment if you store secrets in .env
 #.env
+.env
