@@ -24,10 +24,11 @@ mod models;
 mod middleware;
 mod handlers;
 mod routes;
+mod ci;
 
 use config::Config;
 use database::DatabaseManager;
-use routes::auth_router;
+use routes::{auth_router, ci_router};
 
 // Application state shared across handlers
 #[derive(Clone)]
@@ -94,7 +95,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn create_app(state: AppState) -> Result<Router, Box<dyn std::error::Error>> {
     let router = Router::new()
         .route("/api/healthchecker", get(health_check_handler))
-        .nest("/api/sessions", auth_router(state.clone())) // ✅ fixed
+        .nest("/api/sessions", auth_router(state.clone()))
+        .nest("/api/ci", ci_router())
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .layer(create_cors_layer(&state.env.client_origin))

@@ -3,6 +3,7 @@
 // instead of `use crate::handlers::auth::function_name`
 
 pub mod auth;
+pub mod ci;
 
 // Re-export all public items from the auth module
 pub use auth::*;

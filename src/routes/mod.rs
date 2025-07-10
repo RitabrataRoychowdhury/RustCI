@@ -3,6 +3,8 @@
 // instead of `use crate::routes::auth::auth_router`
 
 pub mod auth;
+pub mod ci;
 
 // Re-export all public items from the auth module
 pub use auth::*;
+pub use ci::*;
