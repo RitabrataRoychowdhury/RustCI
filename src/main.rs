@@ -29,7 +29,12 @@ mod ci;
 use config::Config;
 use database::DatabaseManager;
 use routes::{auth_router, ci_router};
-use ci::{engine::CIEngine, executor::PipelineExecutor, workspace::WorkspaceManager, connectors::ConnectorManager};
+use ci::{
+    engine::CIEngine, 
+    executor::PipelineExecutor, 
+    workspace::WorkspaceManager, 
+    connectors::ConnectorManager
+};
 
 /// Application state shared across handlers
 #[derive(Clone)]

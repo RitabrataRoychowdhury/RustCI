@@ -13,6 +13,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::{info, debug};
 use uuid::Uuid;
 
@@ -194,43 +195,17 @@ pub async fn list_executions(
 /// Get pipeline YAML configuration
 pub async fn get_pipeline_yaml(
     Path(pipeline_id): Path<Uuid>,
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Result<String> {
     debug!("📄 Getting pipeline YAML: {}", pipeline_id);
 
-    // TODO: Implement pipeline retrieval from database
-    // For now, return a sample YAML
-    let sample_yaml = r#"
-name: "Sample Pipeline"
-description: "A sample CI/CD pipeline"
-triggers:
-  - trigger_type: manual
-    config: {}
-stages:
-  - name: "build"
-    steps:
-      - name: "compile"
-        step_type: shell
-        config:
-          command: "echo 'Building application...'"
-  - name: "test"
-    steps:
-      - name: "unit-tests"
-        step_type: shell
-        config:
-          command: "echo 'Running tests...'"
-  - name: "deploy"
-    steps:
-      - name: "deploy-to-staging"
-        step_type: shell
-        config:
-          command: "echo 'Deploying to staging...'"
-environment:
-  NODE_ENV: "production"
-timeout: 3600
-"#;
+    let ci_engine = get_ci_engine(&state)?;
+    let pipeline = ci_engine.get_pipeline(pipeline_id).await?;
+    
+    let yaml_content = pipeline.to_yaml()
+        .map_err(|e| AppError::InternalServerError(format!("Failed to serialize pipeline to YAML: {}", e)))?;
 
-    Ok(sample_yaml.to_string())
+    Ok(yaml_content)
 }
 
 /// Handle webhook triggers
@@ -267,8 +242,6 @@ pub async fn webhook_handler(
 }
 
 // Helper function to get CI engine from app state
-fn get_ci_engine(_state: &AppState) -> Result<&CIEngine> {
-    // TODO: Add CI engine to AppState
-    // For now, return an error
-    Err(AppError::InternalServerError("CI engine not initialized".to_string()))
+fn get_ci_engine(state: &AppState) -> Result<Arc<CIEngine>> {
+    Ok(state.ci_engine.clone())
 }

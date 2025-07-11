@@ -25,4 +25,7 @@ pub fn ci_router() -> Router<AppState> {
         .route("/executions", get(list_executions))
         .route("/executions/:execution_id", get(get_execution))
         .route("/executions/:execution_id/cancel", delete(cancel_execution))
+        
+        // Add a simple test endpoint
+        .route("/test", get(|| async { "CI Engine is working!" }))
 }

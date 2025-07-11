@@ -82,6 +82,10 @@ impl CIEngine {
         Ok(pipeline_id)
     }
 
+    pub async fn get_pipeline(&self, pipeline_id: Uuid) -> Result<CIPipeline> {
+        self.get_pipeline_from_db(pipeline_id).await
+    }
+
     pub async fn trigger_pipeline(
         &self,
         pipeline_id: Uuid,
@@ -314,7 +318,7 @@ impl CIEngine {
         Ok(pipeline.id.unwrap_or_else(|| Uuid::new_v4()))
     }
 
-    async fn get_pipeline(&self, _pipeline_id: Uuid) -> Result<CIPipeline> {
+    async fn get_pipeline_from_db(&self, _pipeline_id: Uuid) -> Result<CIPipeline> {
         // TODO: Implement MongoDB retrieval for pipelines
         Err(AppError::NotFound("Pipeline not found".to_string()))
     }

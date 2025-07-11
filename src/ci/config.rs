@@ -1,9 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
+use mongodb::bson::oid::ObjectId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CIPipeline {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub mongo_id: Option<ObjectId>,
     pub id: Option<Uuid>,
     pub name: String,
     pub description: Option<String>,
@@ -24,17 +27,12 @@ pub struct Trigger {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
 pub enum TriggerType {
-    #[serde(rename = "webhook")]
     Webhook,
-    #[serde(rename = "schedule")]
     Schedule,
-    #[serde(rename = "manual")]
     Manual,
-    #[serde(rename = "git_push")]
     GitPush,
-    #[serde(rename = "pull_request")]
     PullRequest,
 }
 
@@ -69,25 +67,16 @@ pub struct Step {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
 pub enum StepType {
-    #[serde(rename = "shell")]
     Shell,
-    #[serde(rename = "docker")]
     Docker,
-    #[serde(rename = "kubernetes")]
     Kubernetes,
-    #[serde(rename = "aws")]
     AWS,
-    #[serde(rename = "azure")]
     Azure,
-    #[serde(rename = "gcp")]
     GCP,
-    #[serde(rename = "github")]
     GitHub,
-    #[serde(rename = "gitlab")]
     GitLab,
-    #[serde(rename = "custom")]
     Custom,
 }
 
@@ -145,15 +134,11 @@ pub struct NotificationTarget {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
 pub enum NotificationType {
-    #[serde(rename = "email")]
     Email,
-    #[serde(rename = "slack")]
     Slack,
-    #[serde(rename = "webhook")]
     Webhook,
-    #[serde(rename = "github")]
     GitHub,
 }
 
@@ -170,6 +155,7 @@ impl CIPipeline {
     #[allow(dead_code)] // Will be used when CI engine is fully implemented
     pub fn new(name: String) -> Self {
         Self {
+            mongo_id: None,
             id: Some(Uuid::new_v4()),
             name,
             description: None,
