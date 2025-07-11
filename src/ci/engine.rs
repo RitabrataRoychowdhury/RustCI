@@ -11,6 +11,7 @@ use tokio::sync::{RwLock, mpsc};
 use tracing::{info, error, debug, warn};
 use uuid::Uuid;
 use std::collections::HashMap;
+use mongodb::bson::doc;
 
 #[allow(dead_code)] // Will be used when CI engine is fully implemented
 #[derive(Clone)]
@@ -314,37 +315,116 @@ impl CIEngine {
 
     // Database operations (to be implemented)
     async fn store_pipeline(&self, pipeline: &CIPipeline) -> Result<Uuid> {
-        // TODO: Implement MongoDB storage for pipelines
-        Ok(pipeline.id.unwrap_or_else(|| Uuid::new_v4()))
-    }
+    let collection = self.db.database.collection::<CIPipeline>("ci_pipelines");
 
-    async fn get_pipeline_from_db(&self, _pipeline_id: Uuid) -> Result<CIPipeline> {
-        // TODO: Implement MongoDB retrieval for pipelines
-        Err(AppError::NotFound("Pipeline not found".to_string()))
-    }
+    let mut pipeline_to_store = pipeline.clone();
+    let pipeline_id = pipeline_to_store.id.unwrap_or_else(Uuid::new_v4);
+    pipeline_to_store.id = Some(pipeline_id);
+    pipeline_to_store.created_at = Some(chrono::Utc::now());
+    pipeline_to_store.updated_at = Some(chrono::Utc::now());
+
+    // Insert into MongoDB
+    collection
+        .insert_one(&pipeline_to_store, None)
+        .await
+        .map_err(|e| AppError::DatabaseError(format!("Failed to store pipeline: {}", e)))?;
+
+    info!("✅ Pipeline stored in database with ID: {}", pipeline_id);
+    Ok(pipeline_id)
+}
+
+
+    async fn get_pipeline_from_db(&self, pipeline_id: Uuid) -> Result<CIPipeline> {
+    let collection = self.db.database.collection::<CIPipeline>("ci_pipelines");
+
+    let pipeline = collection
+        .find_one(doc! {"id": pipeline_id.to_string()}, None)
+        .await
+        .map_err(|e| AppError::DatabaseError(format!("Failed to retrieve pipeline: {}", e)))?;
+
+    pipeline.ok_or_else(|| AppError::NotFound("Pipeline not found".to_string()))
+}
+
 
     async fn store_execution(&self, execution: &PipelineExecution) -> Result<Uuid> {
-        // TODO: Implement MongoDB storage for executions
-        Ok(execution.id)
-    }
+    let collection = self.db.database.collection::<PipelineExecution>("ci_executions");
 
-    async fn update_execution(&self, _execution: &PipelineExecution) -> Result<()> {
-        // TODO: Implement MongoDB update for executions
-        Ok(())
-    }
+    collection
+        .insert_one(execution, None)
+        .await
+        .map_err(|e| AppError::DatabaseError(format!("Failed to store execution: {}", e)))?;
 
-    async fn get_execution_from_db(&self, _execution_id: Uuid) -> Result<PipelineExecution> {
-        // TODO: Implement MongoDB retrieval for executions
-        Err(AppError::NotFound("Execution not found".to_string()))
-    }
+    info!("✅ Execution stored in database with ID: {}", execution.id);
+    Ok(execution.id)
+}
+
+
+    async fn update_execution(&self, execution: &PipelineExecution) -> Result<()> {
+    let collection = self.db.database.collection::<PipelineExecution>("ci_executions");
+
+    collection
+        .replace_one(doc! {"id": execution.id.to_string()}, execution, None)
+        .await
+        .map_err(|e| AppError::DatabaseError(format!("Failed to update execution: {}", e)))?;
+
+    Ok(())
+}
+
+
+    async fn get_execution_from_db(&self, execution_id: Uuid) -> Result<PipelineExecution> {
+    let collection = self.db.database.collection::<PipelineExecution>("ci_executions");
+
+    let execution = collection
+        .find_one(doc! {"id": execution_id.to_string()}, None)
+        .await
+        .map_err(|e| AppError::DatabaseError(format!("Failed to retrieve execution: {}", e)))?;
+
+    execution.ok_or_else(|| AppError::NotFound("Execution not found".to_string()))
+}
+
 
     async fn get_all_pipelines(&self) -> Result<Vec<CIPipeline>> {
-        // TODO: Implement MongoDB retrieval for all pipelines
-        Ok(Vec::new())
+        let collection = self.db.database.collection::<CIPipeline>("ci_pipelines");
+        
+        let mut cursor = collection
+            .find(doc! {}, None)
+            .await
+            .map_err(|e| AppError::DatabaseError(format!("Failed to retrieve pipelines: {}", e)))?;
+        
+        let mut pipelines = Vec::new();
+        while cursor.advance().await.map_err(|e| AppError::DatabaseError(format!("Failed to iterate pipelines: {}", e)))? {
+            let pipeline = cursor.deserialize_current()
+                .map_err(|e| AppError::DatabaseError(format!("Failed to deserialize pipeline: {}", e)))?;
+            pipelines.push(pipeline);
+        }
+        
+        info!("✅ Retrieved {} pipelines from database", pipelines.len());
+        Ok(pipelines)
     }
 
-    async fn get_executions(&self, _pipeline_id: Option<Uuid>) -> Result<Vec<PipelineExecution>> {
-        // TODO: Implement MongoDB retrieval for executions
-        Ok(Vec::new())
+    async fn get_executions(&self, pipeline_id: Option<Uuid>) -> Result<Vec<PipelineExecution>> {
+    let collection = self.db.database.collection::<PipelineExecution>("ci_executions");
+
+    let filter = if let Some(pid) = pipeline_id {
+        doc! {"pipeline_id": pid.to_string()}
+    } else {
+        doc! {}
+    };
+
+    let mut cursor = collection
+        .find(filter, None)
+        .await
+        .map_err(|e| AppError::DatabaseError(format!("Failed to retrieve executions: {}", e)))?;
+
+    let mut executions = Vec::new();
+    while cursor.advance().await.map_err(|e| AppError::DatabaseError(format!("Failed to iterate executions: {}", e)))? {
+        let execution = cursor.deserialize_current()
+            .map_err(|e| AppError::DatabaseError(format!("Failed to deserialize execution: {}", e)))?;
+        executions.push(execution);
     }
+
+    info!("✅ Retrieved {} executions from database", executions.len());
+    Ok(executions)
+}
+
 }
