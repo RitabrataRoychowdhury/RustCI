@@ -13,6 +13,17 @@ use uuid::Uuid;
 use std::collections::HashMap;
 use mongodb::bson::doc;
 
+
+use mongodb::bson::{Binary, spec::BinarySubtype};
+
+fn uuid_to_mongo_binary(uuid: &Uuid) -> Binary {
+    Binary {
+        subtype: BinarySubtype::Generic, // Subtype 0x00
+        bytes: uuid.as_bytes().to_vec(),
+    }
+}
+
+
 #[allow(dead_code)] // Will be used when CI engine is fully implemented
 #[derive(Clone)]
 pub struct CIEngine {
@@ -338,7 +349,7 @@ impl CIEngine {
     let collection = self.db.database.collection::<CIPipeline>("ci_pipelines");
 
     let pipeline = collection
-        .find_one(doc! {"id": pipeline_id.to_string()}, None)
+        .find_one(doc! {"id": uuid_to_mongo_binary(&pipeline_id)}, None)
         .await
         .map_err(|e| AppError::DatabaseError(format!("Failed to retrieve pipeline: {}", e)))?;
 
@@ -363,7 +374,7 @@ impl CIEngine {
     let collection = self.db.database.collection::<PipelineExecution>("ci_executions");
 
     collection
-        .replace_one(doc! {"id": execution.id.to_string()}, execution, None)
+        .replace_one(doc! {"id": uuid_to_mongo_binary(&execution.id)}, execution, None)
         .await
         .map_err(|e| AppError::DatabaseError(format!("Failed to update execution: {}", e)))?;
 
@@ -375,7 +386,7 @@ impl CIEngine {
     let collection = self.db.database.collection::<PipelineExecution>("ci_executions");
 
     let execution = collection
-        .find_one(doc! {"id": execution_id.to_string()}, None)
+        .find_one(doc! {"id": uuid_to_mongo_binary(&execution_id)}, None)
         .await
         .map_err(|e| AppError::DatabaseError(format!("Failed to retrieve execution: {}", e)))?;
 
@@ -406,7 +417,7 @@ impl CIEngine {
     let collection = self.db.database.collection::<PipelineExecution>("ci_executions");
 
     let filter = if let Some(pid) = pipeline_id {
-        doc! {"pipeline_id": pid.to_string()}
+        doc! {"pipeline_id": uuid_to_mongo_binary(&pid)}
     } else {
         doc! {}
     };
