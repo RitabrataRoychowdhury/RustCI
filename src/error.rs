@@ -32,6 +32,24 @@ pub enum AppError {
     BadRequest(String),
 }
 
+// Add From implementations for common error types
+impl From<std::io::Error> for AppError {
+    fn from(err: std::io::Error) -> Self {
+        AppError::InternalServerError(format!("IO error: {}", err))
+    }
+}
+
+impl From<serde_json::Error> for AppError {
+    fn from(err: serde_json::Error) -> Self {
+        AppError::InternalServerError(format!("JSON error: {}", err))
+    }
+}
+
+impl From<serde_yaml::Error> for AppError {
+    fn from(err: serde_yaml::Error) -> Self {
+        AppError::ValidationError(format!("YAML error: {}", err))
+    }
+}
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {

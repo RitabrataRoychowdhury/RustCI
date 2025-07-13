@@ -167,6 +167,23 @@ impl PipelineExecutor {
             StepType::GitLab => self.execute_gitlab_step(step, workspace, &step_env).await,
             StepType::Custom => self.execute_custom_step(step, workspace, &step_env).await,
         };
+        
+        match result {
+            Ok((code, stdout, stderr)) => {
+                info!(
+                    "✅ Step '{}' succeeded with exit code {}.\nSTDOUT: {}\nSTDERR: {}",
+                    step.name, code, stdout, stderr
+                );
+            }
+            Err(err) => {
+                error!("❌ Step '{}' failed: {}", step.name, err);
+        
+                // Optionally update the PipelineExecution status here
+                let mut exec = execution.write().await;
+                exec.status = ExecutionStatus::Failed;
+                return Err(err);
+            }
+        }        
 
         // Handle special step types for CI/CD operations
         let result = match step.name.as_str() {
@@ -179,18 +196,20 @@ impl PipelineExecutor {
             name if name.starts_with("deploy") || name.starts_with("release") => {
                 self.execute_deployment_step(execution.clone(), step, workspace, &step_env).await
             }
-            _ => result,
-        };
-
-        let result = match &step.step_type {
-            StepType::Docker => self.execute_docker_step(step, workspace, &step_env).await,
-            StepType::Kubernetes => self.execute_kubernetes_step(step, workspace, &step_env).await,
-            StepType::AWS => self.execute_aws_step(step, workspace, &step_env).await,
-            StepType::Azure => self.execute_azure_step(step, workspace, &step_env).await,
-            StepType::GCP => self.execute_gcp_step(step, workspace, &step_env).await,
-            StepType::GitHub => self.execute_github_step(step, workspace, &step_env).await,
-            StepType::GitLab => self.execute_gitlab_step(step, workspace, &step_env).await,
-            StepType::Custom => self.execute_custom_step(step, workspace, &step_env).await,
+            _ => {
+                // Execute step based on type if no special name pattern matches
+                match &step.step_type {
+                    StepType::Shell => self.execute_shell_step(step, workspace, &step_env).await,
+                    StepType::Docker => self.execute_docker_step(step, workspace, &step_env).await,
+                    StepType::Kubernetes => self.execute_kubernetes_step(step, workspace, &step_env).await,
+                    StepType::AWS => self.execute_aws_step(step, workspace, &step_env).await,
+                    StepType::Azure => self.execute_azure_step(step, workspace, &step_env).await,
+                    StepType::GCP => self.execute_gcp_step(step, workspace, &step_env).await,
+                    StepType::GitHub => self.execute_github_step(step, workspace, &step_env).await,
+                    StepType::GitLab => self.execute_gitlab_step(step, workspace, &step_env).await,
+                    StepType::Custom => self.execute_custom_step(step, workspace, &step_env).await,
+                }
+            }
         };
 
         // Update step status
@@ -386,20 +405,20 @@ impl PipelineExecutor {
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
         info!("🚀 Executing deployment step: {}", step.name);
-
+    
         let execution_id = {
             let exec = execution.read().await;
             exec.id
         };
-
+    
         // Create deployment config from step configuration
         let deployment_config = self.create_deployment_config(step, env)?;
-
+    
         let mut deployment_manager = self.deployment_manager.lock().await;
         let deployment_result = deployment_manager
             .deploy(execution_id, &workspace.path, &deployment_config)
             .await?;
-
+    
         let output = format!(
             "Deployment completed:\n- ID: {}\n- Type: {:?}\n- Status: {:?}\n- Services: {}\n- Artifacts: {}",
             deployment_result.deployment_id,
@@ -408,9 +427,10 @@ impl PipelineExecutor {
             deployment_result.services.len(),
             deployment_result.artifacts.len()
         );
-
+    
         Ok((0, output, deployment_result.logs.join("\n")))
     }
+    
 
     fn create_deployment_config(
         &self,

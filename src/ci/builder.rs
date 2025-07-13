@@ -3,8 +3,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::process::Command;
-use tracing::{info, debug, error, warn};
+use tracing::{info, error};
 use serde::{Deserialize, Serialize};
+use std::pin::Pin;
+use futures::Future;
+use tokio::io::AsyncWriteExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuildConfig {
@@ -473,27 +476,65 @@ impl ProjectBuilder {
         Ok(())
     }
 
-    async fn collect_artifacts(&self, directory: &Path, result: &mut BuildResult) -> Result<()> {
-        let mut entries = fs::read_dir(directory).await?;
 
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            let metadata = entry.metadata().await?;
+fn write_cache_file<'a>(
+    &'a self,
+    result: &'a BuildResult,
+) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+    Box::pin(async move {
+        let cache_file_path = self.cache_directory.join("build-cache.json");
 
-            if metadata.is_file() {
-                let artifact_type = self.determine_artifact_type(&path);
-                result.artifacts.push(BuildArtifact {
-                    name: path.file_name().unwrap().to_string_lossy().to_string(),
-                    path: path.clone(),
-                    size_bytes: metadata.len(),
-                    artifact_type,
-                });
-            } else if metadata.is_dir() {
-                // Recursively collect artifacts from subdirectories
-                self.collect_artifacts(&path, result).await?;
-            }
+        if let Some(parent) = cache_file_path.parent() {
+            fs::create_dir_all(parent).await?;
         }
 
+        let json = serde_json::to_string_pretty(result)?;
+        let mut file = fs::File::create(&cache_file_path).await?;
+        file.write_all(json.as_bytes()).await?;
+
+        Ok(())
+    })
+}
+
+    fn collect_artifacts_inner<'a>(
+        &'a self,
+        directory: &'a Path,
+        result: &'a mut BuildResult,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let mut entries = fs::read_dir(directory).await?;
+
+            while let Some(entry) = entries.next_entry().await? {
+                let path = entry.path();
+                let metadata = fs::metadata(&path).await?;
+
+                if metadata.is_file() {
+                    let artifact_type = self.determine_artifact_type(&path);
+                    result.artifacts.push(BuildArtifact {
+                        name: path.file_name()
+                            .map(|f| f.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "unknown".to_string()),
+                        path: path.clone(),
+                        size_bytes: metadata.len(),
+                        artifact_type,
+                    });
+                } else if metadata.is_dir() {
+                    // Recursive call
+                    self.collect_artifacts_inner(&path, result).await?;
+                }
+            }
+
+            Ok(())
+        })
+    }
+
+    pub async fn collect_artifacts(
+        &self,
+        directory: &Path,
+        result: &mut BuildResult,
+    ) -> Result<()> {
+        self.collect_artifacts_inner(directory, result).await?;
+        self.write_cache_file(result).await?;
         Ok(())
     }
 

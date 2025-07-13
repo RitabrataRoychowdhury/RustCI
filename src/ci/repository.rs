@@ -1,5 +1,6 @@
 use crate::error::{AppError, Result};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use tokio::fs;
 use tokio::process::Command;
 use tracing::{info, debug, error};
@@ -277,31 +278,39 @@ impl RepositoryManager {
             return Err(AppError::ExternalServiceError("Failed to get commit date".to_string()));
         }
 
-        let date_str = String::from_utf8_lossy(&output.stdout).trim();
+        let date_string = String::from_utf8_lossy(&output.stdout);
+        let date_str = date_string.trim();
         chrono::DateTime::parse_from_rfc3339(date_str)
             .map(|dt| dt.with_timezone(&chrono::Utc))
             .map_err(|e| AppError::InternalServerError(format!("Failed to parse commit date: {}", e)))
     }
 
-    async fn calculate_directory_size(&self, directory: &Path) -> Result<u64> {
-        let mut total_size = 0u64;
-        let mut entries = fs::read_dir(directory).await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to read directory: {}", e)))?;
+    pub fn calculate_directory_size<'a>(
+        &'a self,
+        directory: &'a Path,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            let mut total_size = 0u64;
 
-        while let Some(entry) = entries.next_entry().await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to read directory entry: {}", e)))? {
-            
-            let metadata = entry.metadata().await
-                .map_err(|e| AppError::InternalServerError(format!("Failed to get file metadata: {}", e)))?;
+            let mut entries = fs::read_dir(directory).await
+                .map_err(|e| AppError::InternalServerError(format!("Failed to read directory: {}", e)))?;
 
-            if metadata.is_file() {
-                total_size += metadata.len();
-            } else if metadata.is_dir() {
-                total_size += self.calculate_directory_size(&entry.path()).await?;
+            while let Some(entry) = entries.next_entry().await
+                .map_err(|e| AppError::InternalServerError(format!("Failed to read directory entry: {}", e)))? {
+                    
+                let metadata = entry.metadata().await
+                    .map_err(|e| AppError::InternalServerError(format!("Failed to get file metadata: {}", e)))?;
+
+                if metadata.is_file() {
+                    total_size += metadata.len();
+                } else if metadata.is_dir() {
+                    // Recurse with `.await?`, boxed
+                    total_size += self.calculate_directory_size(&entry.path()).await?;
+                }
             }
-        }
 
-        Ok(total_size)
+            Ok(total_size)
+        })
     }
 }
 

@@ -4,8 +4,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::process::Command;
-use tracing::{info, debug, error, warn};
+use tracing::info;
 use uuid::Uuid;
+use std::pin::Pin;
+use futures::Future;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeploymentConfig {
@@ -125,6 +127,7 @@ pub enum ServiceStatus {
 
 pub struct LocalDeploymentManager {
     base_deployment_dir: PathBuf,
+    #[allow(dead_code)]
     docker_registry: Option<String>,
     port_manager: PortManager,
 }
@@ -139,7 +142,7 @@ impl LocalDeploymentManager {
     }
 
     pub async fn deploy(
-        &mut self,
+        &mut self, // Keep mutable for port allocation
         execution_id: Uuid,
         workspace_path: &Path,
         config: &DeploymentConfig,
@@ -207,7 +210,7 @@ impl LocalDeploymentManager {
     }
 
     async fn deploy_to_docker(
-        &self,
+        &mut self,
         execution_id: Uuid,
         workspace_path: &Path,
         config: &DeploymentConfig,
@@ -243,8 +246,8 @@ impl LocalDeploymentManager {
     }
 
     async fn deploy_as_local_service(
-        &self,
-        execution_id: Uuid,
+        &mut self, // Changed from &self to &mut self
+        _execution_id: Uuid,
         workspace_path: &Path,
         config: &DeploymentConfig,
         result: &mut DeploymentResult,
@@ -252,8 +255,6 @@ impl LocalDeploymentManager {
         info!("⚙️ Deploying as local service");
         result.status = DeploymentStatus::Deploying;
 
-        // This would start the application directly on the host
-        // Implementation depends on the project type
         let project_type = self.detect_project_type(workspace_path).await?;
         
         match project_type {
@@ -270,7 +271,6 @@ impl LocalDeploymentManager {
                 self.start_java_service(workspace_path, config, result).await?;
             }
             ProjectType::Static => {
-                // For static sites, we might use a simple HTTP server
                 self.start_static_service(workspace_path, config, result).await?;
             }
         }
@@ -292,7 +292,7 @@ impl LocalDeploymentManager {
         let dockerfile_path = if let Some(dockerfile) = &docker_config.dockerfile_path {
             workspace_path.join(dockerfile)
         } else {
-            let generated_dockerfile = self.generate_dockerfile(workspace_path, docker_config).await?;
+            let _generated_dockerfile = self.generate_dockerfile(workspace_path, docker_config).await?;
             workspace_path.join("Dockerfile.generated")
         };
 
@@ -389,77 +389,98 @@ impl LocalDeploymentManager {
         Ok(container_id)
     }
 
-    async fn copy_artifacts(
+    fn copy_artifacts_inner<'a>(
+        &'a self,
+        source_path: &'a Path,
+        target_path: &'a Path,
+        result: &'a mut DeploymentResult,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            info!("📦 Copying artifacts from {} to {}", source_path.display(), target_path.display());
+
+            // Common build output directories to copy
+            let artifact_patterns = [
+                "dist/",
+                "build/",
+                "target/release/",
+                "target/debug/",
+                "out/",
+                "public/",
+                "static/",
+                "*.jar",
+                "*.war",
+                "*.tar.gz",
+                "*.zip",
+            ];
+
+            for pattern in &artifact_patterns {
+                let source_pattern = source_path.join(pattern);
+                if source_pattern.exists() {
+                    let target_artifact = target_path.join(pattern);
+                    
+                    if source_pattern.is_dir() {
+                        self.copy_directory(&source_pattern, &target_artifact).await?;
+                    } else {
+                        if let Some(parent) = target_artifact.parent() {
+                            fs::create_dir_all(parent).await?;
+                        }
+                        fs::copy(&source_pattern, &target_artifact).await?;
+                    }
+
+                    // Record artifact
+                    let metadata = fs::metadata(&target_artifact).await?;
+                    result.artifacts.push(DeploymentArtifact {
+                        name: pattern.to_string(),
+                        path: target_artifact,
+                        artifact_type: if source_pattern.is_dir() {
+                            ArtifactType::StaticFiles
+                        } else {
+                            ArtifactType::Archive
+                        },
+                        size_bytes: metadata.len(),
+                    });
+                }
+            }
+
+            Ok(())
+        })
+    }
+
+    pub async fn copy_artifacts(
         &self,
         source_path: &Path,
         target_path: &Path,
         result: &mut DeploymentResult,
     ) -> Result<()> {
-        info!("📦 Copying artifacts from {} to {}", source_path.display(), target_path.display());
-
-        // Common build output directories to copy
-        let artifact_patterns = [
-            "dist/",
-            "build/",
-            "target/release/",
-            "target/debug/",
-            "out/",
-            "public/",
-            "static/",
-            "*.jar",
-            "*.war",
-            "*.tar.gz",
-            "*.zip",
-        ];
-
-        for pattern in &artifact_patterns {
-            let source_pattern = source_path.join(pattern);
-            if source_pattern.exists() {
-                let target_artifact = target_path.join(pattern);
-                
-                if source_pattern.is_dir() {
-                    self.copy_directory(&source_pattern, &target_artifact).await?;
-                } else {
-                    if let Some(parent) = target_artifact.parent() {
-                        fs::create_dir_all(parent).await?;
-                    }
-                    fs::copy(&source_pattern, &target_artifact).await?;
-                }
-
-                // Record artifact
-                let metadata = fs::metadata(&target_artifact).await?;
-                result.artifacts.push(DeploymentArtifact {
-                    name: pattern.to_string(),
-                    path: target_artifact,
-                    artifact_type: if source_pattern.is_dir() { 
-                        ArtifactType::StaticFiles 
-                    } else { 
-                        ArtifactType::Archive 
-                    },
-                    size_bytes: metadata.len(),
-                });
-            }
-        }
-
-        Ok(())
+        self.copy_artifacts_inner(source_path, target_path, result).await
     }
 
-    async fn copy_directory(&self, source: &Path, target: &Path) -> Result<()> {
-        fs::create_dir_all(target).await?;
-        
-        let mut entries = fs::read_dir(source).await?;
-        while let Some(entry) = entries.next_entry().await? {
-            let source_path = entry.path();
-            let target_path = target.join(entry.file_name());
-            
-            if source_path.is_dir() {
-                self.copy_directory(&source_path, &target_path).await?;
-            } else {
-                fs::copy(&source_path, &target_path).await?;
+    fn copy_directory_inner<'a>(
+        &'a self,
+        source: &'a Path,
+        target: &'a Path,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            fs::create_dir_all(target).await?;
+            let mut entries = fs::read_dir(source).await?;
+
+            while let Some(entry) = entries.next_entry().await? {
+                let source_path = entry.path();
+                let target_path = target.join(entry.file_name());
+
+                if fs::metadata(&source_path).await?.is_dir() {
+                    self.copy_directory_inner(&source_path, &target_path).await?;
+                } else {
+                    fs::copy(&source_path, &target_path).await?;
+                }
             }
-        }
-        
-        Ok(())
+
+            Ok(())
+        })
+    }
+
+    pub async fn copy_directory(&self, source: &Path, target: &Path) -> Result<()> {
+        self.copy_directory_inner(source, target).await
     }
 
     async fn detect_project_type(&self, workspace_path: &Path) -> Result<ProjectType> {
@@ -595,34 +616,318 @@ CMD ["nginx", "-g", "daemon off;"]
 "#, base_image = base_image)
     }
 
-    async fn start_nodejs_service(&self, workspace_path: &Path, config: &DeploymentConfig, result: &mut DeploymentResult) -> Result<()> {
+    async fn start_nodejs_service(&mut self, workspace_path: &Path, config: &DeploymentConfig, result: &mut DeploymentResult) -> Result<()> {
         info!("🟢 Starting Node.js service");
-        // Implementation for starting Node.js service locally
-        // This would use npm start or node directly
+        
+        // Check for package.json and install dependencies if needed
+        if !workspace_path.join("node_modules").exists() {
+            info!("Installing Node.js dependencies...");
+            let install_output = Command::new("npm")
+                .args(["install"])
+                .current_dir(workspace_path)
+                .output()
+                .await
+                .map_err(|e| AppError::ExternalServiceError(format!("Failed to install npm dependencies: {}", e)))?;
+
+            if !install_output.status.success() {
+                let stderr = String::from_utf8_lossy(&install_output.stderr);
+                result.logs.push(format!("npm install failed: {}", stderr));
+                return Err(AppError::ExternalServiceError(format!("npm install failed: {}", stderr)));
+            }
+        }
+
+        let port = if let Some(port_mapping) = config.port_mappings.first() {
+            port_mapping.host_port
+        } else {
+            self.port_manager.allocate_port()?
+        };
+
+        let child = Command::new("npm")
+            .args(["start"])
+            .current_dir(workspace_path)
+            .env("PORT", port.to_string())
+            .spawn()
+            .map_err(|e| AppError::ExternalServiceError(format!("Failed to start Node.js service: {}", e)))?;
+
+        let service = DeployedService {
+            name: "nodejs-service".to_string(),
+            service_type: ServiceType::WebServer,
+            endpoint: format!("http://localhost:{}", port),
+            ports: vec![PortMapping {
+                host_port: port,
+                container_port: port,
+                protocol: "tcp".to_string(),
+            }],
+            container_id: None,
+            process_id: child.id(),
+            status: ServiceStatus::Running,
+        };
+
+        result.services.push(service);
+        result.logs.push(format!("Node.js service started on port {}", port));
         Ok(())
     }
 
-    async fn start_python_service(&self, workspace_path: &Path, config: &DeploymentConfig, result: &mut DeploymentResult) -> Result<()> {
+    async fn start_python_service(&mut self, workspace_path: &Path, config: &DeploymentConfig, result: &mut DeploymentResult) -> Result<()> {
         info!("🐍 Starting Python service");
-        // Implementation for starting Python service locally
+        
+        if workspace_path.join("requirements.txt").exists() {
+            let install_output = Command::new("pip")
+                .args(["install", "-r", "requirements.txt"])
+                .current_dir(workspace_path)
+                .output()
+                .await
+                .map_err(|e| AppError::ExternalServiceError(format!("Failed to install Python dependencies: {}", e)))?;
+
+            if !install_output.status.success() {
+                let stderr = String::from_utf8_lossy(&install_output.stderr);
+                result.logs.push(format!("pip install failed: {}", stderr));
+                return Err(AppError::ExternalServiceError(format!("pip install failed: {}", stderr)));
+            }
+        }
+
+        let port = if let Some(port_mapping) = config.port_mappings.first() {
+            port_mapping.host_port
+        } else {
+            self.port_manager.allocate_port()?
+        };
+
+        let app_file = if workspace_path.join("app.py").exists() {
+            "app.py"
+        } else if workspace_path.join("main.py").exists() {
+            "main.py"
+        } else if workspace_path.join("server.py").exists() {
+            "server.py"
+        } else {
+            return Err(AppError::ValidationError("No Python app entry point found".to_string()));
+        };
+
+        let child = Command::new("python")
+            .args([app_file])
+            .current_dir(workspace_path)
+            .env("PORT", port.to_string())
+            .spawn()
+            .map_err(|e| AppError::ExternalServiceError(format!("Failed to start Python service: {}", e)))?;
+
+        let service = DeployedService {
+            name: "python-service".to_string(),
+            service_type: ServiceType::WebServer,
+            endpoint: format!("http://localhost:{}", port),
+            ports: vec![PortMapping {
+                host_port: port,
+                container_port: port,
+                protocol: "tcp".to_string(),
+            }],
+            container_id: None,
+            process_id: child.id(),
+            status: ServiceStatus::Running,
+        };
+
+        result.services.push(service);
+        result.logs.push(format!("Python service started on port {}", port));
         Ok(())
     }
 
-    async fn start_rust_service(&self, workspace_path: &Path, config: &DeploymentConfig, result: &mut DeploymentResult) -> Result<()> {
+    async fn start_rust_service(&mut self, workspace_path: &Path, config: &DeploymentConfig, result: &mut DeploymentResult) -> Result<()> {
         info!("🦀 Starting Rust service");
-        // Implementation for starting Rust service locally
+        
+        let build_output = Command::new("cargo")
+            .args(["build", "--release"])
+            .current_dir(workspace_path)
+            .output()
+            .await
+            .map_err(|e| AppError::ExternalServiceError(format!("Failed to build Rust project: {}", e)))?;
+
+        if !build_output.status.success() {
+            let stderr = String::from_utf8_lossy(&build_output.stderr);
+            result.logs.push(format!("cargo build failed: {}", stderr));
+            return Err(AppError::ExternalServiceError(format!("cargo build failed: {}", stderr)));
+        }
+
+        let target_dir = workspace_path.join("target").join("release");
+        let mut entries = fs::read_dir(&target_dir).await
+            .map_err(|e| AppError::InternalServerError(format!("Failed to read target directory: {}", e)))?;
+
+        let mut binary_path = None;
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.is_file() && path.extension().is_none() {
+                if let Ok(metadata) = fs::metadata(&path).await {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        if metadata.permissions().mode() & 0o111 != 0 {
+                            binary_path = Some(path);
+                            break;
+                        }
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        binary_path = Some(path);
+                        break;
+                    }
+                }
+            }
+        }
+
+        let binary_path = binary_path
+            .ok_or_else(|| AppError::ValidationError("No executable binary found in target/release".to_string()))?;
+
+        let port = if let Some(port_mapping) = config.port_mappings.first() {
+            port_mapping.host_port
+        } else {
+            self.port_manager.allocate_port()?
+        };
+
+        let child = Command::new(&binary_path)
+            .current_dir(workspace_path)
+            .env("PORT", port.to_string())
+            .spawn()
+            .map_err(|e| AppError::ExternalServiceError(format!("Failed to start Rust service: {}", e)))?;
+
+        let service = DeployedService {
+            name: "rust-service".to_string(),
+            service_type: ServiceType::WebServer,
+            endpoint: format!("http://localhost:{}", port),
+            ports: vec![PortMapping {
+                host_port: port,
+                container_port: port,
+                protocol: "tcp".to_string(),
+            }],
+            container_id: None,
+            process_id: child.id(),
+            status: ServiceStatus::Running,
+        };
+
+        result.services.push(service);
+        result.logs.push(format!("Rust service started on port {}", port));
         Ok(())
     }
 
-    async fn start_java_service(&self, workspace_path: &Path, config: &DeploymentConfig, result: &mut DeploymentResult) -> Result<()> {
+    async fn start_java_service(&mut self, workspace_path: &Path, config: &DeploymentConfig, result: &mut DeploymentResult) -> Result<()> {
         info!("☕ Starting Java service");
-        // Implementation for starting Java service locally
+        
+        // Build the project
+        let build_command = if workspace_path.join("pom.xml").exists() {
+            Command::new("mvn")
+                .args(["clean", "package", "-DskipTests"])
+                .current_dir(workspace_path)
+                .output()
+                .await
+        } else if workspace_path.join("build.gradle").exists() {
+            Command::new("gradle")
+                .args(["build", "-x", "test"])
+                .current_dir(workspace_path)
+                .output()
+                .await
+        } else {
+            return Err(AppError::ValidationError("No Maven or Gradle build file found".to_string()));
+        };
+
+        let build_output = build_command
+            .map_err(|e| AppError::ExternalServiceError(format!("Failed to build Java project: {}", e)))?;
+
+        if !build_output.status.success() {
+            let stderr = String::from_utf8_lossy(&build_output.stderr);
+            result.logs.push(format!("Java build failed: {}", stderr));
+            return Err(AppError::ExternalServiceError(format!("Java build failed: {}", stderr)));
+        }
+
+        let port = if let Some(port_mapping) = config.port_mappings.first() {
+            port_mapping.host_port
+        } else {
+            self.port_manager.allocate_port()?
+        };
+
+        // Find the JAR file
+        let jar_path = if workspace_path.join("target").exists() {
+            // Maven
+            let target_dir = workspace_path.join("target");
+            let mut entries = fs::read_dir(&target_dir).await?;
+            let mut jar_file = None;
+            
+            while let Some(entry) = entries.next_entry().await? {
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "jar") {
+                    jar_file = Some(path);
+                    break;
+                }
+            }
+            jar_file.ok_or_else(|| AppError::ValidationError("No JAR file found in target directory".to_string()))?
+        } else {
+            // Gradle
+            let build_dir = workspace_path.join("build").join("libs");
+            let mut entries = fs::read_dir(&build_dir).await?;
+            let mut jar_file = None;
+            
+            while let Some(entry) = entries.next_entry().await? {
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "jar") {
+                    jar_file = Some(path);
+                    break;
+                }
+            }
+            jar_file.ok_or_else(|| AppError::ValidationError("No JAR file found in build/libs directory".to_string()))?
+        };
+
+        let child = Command::new("java")
+            .args(["-jar", jar_path.to_str().unwrap()])
+            .current_dir(workspace_path)
+            .env("PORT", port.to_string())
+            .spawn()
+            .map_err(|e| AppError::ExternalServiceError(format!("Failed to start Java service: {}", e)))?;
+
+        let service = DeployedService {
+            name: "java-service".to_string(),
+            service_type: ServiceType::WebServer,
+            endpoint: format!("http://localhost:{}", port),
+            ports: vec![PortMapping {
+                host_port: port,
+                container_port: port,
+                protocol: "tcp".to_string(),
+            }],
+            container_id: None,
+            process_id: child.id(),
+            status: ServiceStatus::Running,
+        };
+
+        result.services.push(service);
+        result.logs.push(format!("Java service started on port {}", port));
         Ok(())
     }
 
-    async fn start_static_service(&self, workspace_path: &Path, config: &DeploymentConfig, result: &mut DeploymentResult) -> Result<()> {
+    async fn start_static_service(&mut self, workspace_path: &Path, config: &DeploymentConfig, result: &mut DeploymentResult) -> Result<()> {
         info!("📄 Starting static file service");
-        // Implementation for serving static files
+        
+        let port = if let Some(port_mapping) = config.port_mappings.first() {
+            port_mapping.host_port
+        } else {
+            self.port_manager.allocate_port()?
+        };
+
+        // Use Python's built-in HTTP server for static files
+        let child = Command::new("python")
+            .args(["-m", "http.server", &port.to_string()])
+            .current_dir(workspace_path)
+            .spawn()
+            .map_err(|e| AppError::ExternalServiceError(format!("Failed to start static file server: {}", e)))?;
+
+        let service = DeployedService {
+            name: "static-service".to_string(),
+            service_type: ServiceType::WebServer,
+            endpoint: format!("http://localhost:{}", port),
+            ports: vec![PortMapping {
+                host_port: port,
+                container_port: port,
+                protocol: "tcp".to_string(),
+            }],
+            container_id: None,
+            process_id: child.id(),
+            status: ServiceStatus::Running,
+        };
+
+        result.services.push(service);
+        result.logs.push(format!("Static file service started on port {}", port));
         Ok(())
     }
 
@@ -636,7 +941,10 @@ CMD ["nginx", "-g", "daemon off;"]
         });
 
         let metadata_path = target_dir.join("deployment-metadata.json");
-        fs::write(metadata_path, serde_json::to_string_pretty(&metadata)?).await?;
+        let metadata_json = serde_json::to_string_pretty(&metadata)
+            .map_err(|e| AppError::InternalServerError(format!("Failed to serialize metadata: {}", e)))?;
+        fs::write(metadata_path, metadata_json).await
+            .map_err(|e| AppError::InternalServerError(format!("Failed to write metadata: {}", e)))?;
         
         Ok(())
     }
@@ -681,13 +989,16 @@ impl PortManager {
                 return Ok(port);
             }
             self.next_port += 1;
-            if self.next_port > 65535 {
-                self.next_port = 8000;
-            }
+            self.next_port = if self.next_port == u16::MAX {
+                8000
+            } else {
+                self.next_port + 1
+            };                        
         }
         Err(AppError::InternalServerError("No available ports".to_string()))
     }
 
+    #[allow(dead_code)]
     pub fn release_port(&mut self, port: u16) {
         self.allocated_ports.remove(&port);
     }
