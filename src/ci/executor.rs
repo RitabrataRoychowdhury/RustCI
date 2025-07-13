@@ -3,6 +3,9 @@ use crate::ci::{
     pipeline::{PipelineExecution, ExecutionStatus, LogLevel},
     workspace::Workspace,
     connectors::{ConnectorManager, ConnectorType},
+    repository::{RepositoryManager, RepositoryConfig},
+    builder::{ProjectBuilder, BuildConfig},
+    deployment::{LocalDeploymentManager, DeploymentConfig, DeploymentType},
 };
 use crate::error::{AppError, Result};
 use std::collections::HashMap;
@@ -15,13 +18,25 @@ use tracing::{info, error, debug, warn};
 #[derive(Clone)]
 pub struct PipelineExecutor {
     pub connector_manager: Arc<ConnectorManager>,
+    pub repository_manager: Arc<RepositoryManager>,
+    pub project_builder: Arc<ProjectBuilder>,
+    pub deployment_manager: Arc<tokio::sync::Mutex<LocalDeploymentManager>>,
 }
 
 impl PipelineExecutor {
     #[allow(dead_code)] // Will be used when CI engine is initialized
-    pub fn new(connector_manager: Arc<ConnectorManager>) -> Self {
+    pub fn new(
+        connector_manager: Arc<ConnectorManager>,
+        cache_directory: std::path::PathBuf,
+        deployment_directory: std::path::PathBuf,
+    ) -> Self {
         Self {
             connector_manager,
+            repository_manager: Arc::new(RepositoryManager::new()),
+            project_builder: Arc::new(ProjectBuilder::new(cache_directory)),
+            deployment_manager: Arc::new(tokio::sync::Mutex::new(
+                LocalDeploymentManager::new(deployment_directory)
+            )),
         }
     }
 
@@ -153,6 +168,31 @@ impl PipelineExecutor {
             StepType::Custom => self.execute_custom_step(step, workspace, &step_env).await,
         };
 
+        // Handle special step types for CI/CD operations
+        let result = match step.name.as_str() {
+            name if name.starts_with("clone") || name.starts_with("checkout") => {
+                self.execute_repository_step(step, workspace, &step_env).await
+            }
+            name if name.starts_with("build") || name.starts_with("compile") => {
+                self.execute_build_step(step, workspace, &step_env).await
+            }
+            name if name.starts_with("deploy") || name.starts_with("release") => {
+                self.execute_deployment_step(execution.clone(), step, workspace, &step_env).await
+            }
+            _ => result,
+        };
+
+        let result = match &step.step_type {
+            StepType::Docker => self.execute_docker_step(step, workspace, &step_env).await,
+            StepType::Kubernetes => self.execute_kubernetes_step(step, workspace, &step_env).await,
+            StepType::AWS => self.execute_aws_step(step, workspace, &step_env).await,
+            StepType::Azure => self.execute_azure_step(step, workspace, &step_env).await,
+            StepType::GCP => self.execute_gcp_step(step, workspace, &step_env).await,
+            StepType::GitHub => self.execute_github_step(step, workspace, &step_env).await,
+            StepType::GitLab => self.execute_gitlab_step(step, workspace, &step_env).await,
+            StepType::Custom => self.execute_custom_step(step, workspace, &step_env).await,
+        };
+
         // Update step status
         let (status, exit_code, stdout, stderr) = match result {
             Ok((code, out, err)) => {
@@ -245,6 +285,196 @@ impl PipelineExecutor {
         }
 
         Ok((exit_code, stdout, stderr))
+    }
+
+    async fn execute_repository_step(
+        &self,
+        step: &Step,
+        workspace: &Workspace,
+        env: &HashMap<String, String>,
+    ) -> Result<(i32, String, String)> {
+        info!("📥 Executing repository step: {}", step.name);
+
+        let repo_url = step.config.repository_url.as_ref()
+            .ok_or_else(|| AppError::ValidationError("Repository step requires repository_url".to_string()))?;
+
+        let access_token = env.get("GITHUB_TOKEN")
+            .or_else(|| env.get("ACCESS_TOKEN"))
+            .cloned();
+
+        let repo_config = RepositoryConfig {
+            url: repo_url.clone(),
+            branch: step.config.branch.clone(),
+            commit: step.config.commit.clone(),
+            access_token,
+            ssh_key: None,
+            clone_depth: Some(1), // Shallow clone by default
+            submodules: false,
+        };
+
+        let clone_result = self.repository_manager
+            .clone_repository(&repo_config, &workspace.path)
+            .await?;
+
+        let output = format!(
+            "Repository cloned successfully:\n- Commit: {}\n- Branch: {}\n- Size: {} bytes",
+            clone_result.commit_hash,
+            clone_result.branch,
+            clone_result.size_bytes
+        );
+
+        Ok((0, output, String::new()))
+    }
+
+    async fn execute_build_step(
+        &self,
+        step: &Step,
+        workspace: &Workspace,
+        env: &HashMap<String, String>,
+    ) -> Result<(i32, String, String)> {
+        info!("🔨 Executing build step: {}", step.name);
+
+        // Create build config from step configuration
+        let build_config = if !step.config.command.is_none() || !step.config.script.is_none() {
+            // Custom build commands
+            let commands = if let Some(cmd) = &step.config.command {
+                vec![cmd.clone()]
+            } else if let Some(script) = &step.config.script {
+                script.lines().map(|line| line.to_string()).collect()
+            } else {
+                Vec::new()
+            };
+
+            Some(BuildConfig {
+                build_type: crate::ci::builder::BuildType::Custom,
+                build_commands: commands,
+                environment_variables: env.clone(),
+                build_directory: step.config.working_directory.clone(),
+                output_directory: None,
+                cache_enabled: true,
+                parallel_jobs: None,
+            })
+        } else {
+            None // Auto-detect
+        };
+
+        let build_result = self.project_builder
+            .build_project(&workspace.path, build_config)
+            .await?;
+
+        if build_result.success {
+            let output = format!(
+                "Build completed successfully:\n- Type: {:?}\n- Duration: {}s\n- Artifacts: {}",
+                build_result.build_type,
+                build_result.duration_seconds,
+                build_result.artifacts.len()
+            );
+            Ok((0, output, build_result.logs.join("\n")))
+        } else {
+            Err(AppError::InternalServerError(format!(
+                "Build failed: {}",
+                build_result.logs.join("\n")
+            )))
+        }
+    }
+
+    async fn execute_deployment_step(
+        &self,
+        execution: Arc<RwLock<PipelineExecution>>,
+        step: &Step,
+        workspace: &Workspace,
+        env: &HashMap<String, String>,
+    ) -> Result<(i32, String, String)> {
+        info!("🚀 Executing deployment step: {}", step.name);
+
+        let execution_id = {
+            let exec = execution.read().await;
+            exec.id
+        };
+
+        // Create deployment config from step configuration
+        let deployment_config = self.create_deployment_config(step, env)?;
+
+        let mut deployment_manager = self.deployment_manager.lock().await;
+        let deployment_result = deployment_manager
+            .deploy(execution_id, &workspace.path, &deployment_config)
+            .await?;
+
+        let output = format!(
+            "Deployment completed:\n- ID: {}\n- Type: {:?}\n- Status: {:?}\n- Services: {}\n- Artifacts: {}",
+            deployment_result.deployment_id,
+            deployment_result.deployment_type,
+            deployment_result.status,
+            deployment_result.services.len(),
+            deployment_result.artifacts.len()
+        );
+
+        Ok((0, output, deployment_result.logs.join("\n")))
+    }
+
+    fn create_deployment_config(
+        &self,
+        step: &Step,
+        env: &HashMap<String, String>,
+    ) -> Result<DeploymentConfig> {
+        // Determine deployment type from step configuration
+        let deployment_type = if step.config.image.is_some() || step.config.dockerfile.is_some() {
+            DeploymentType::DockerContainer
+        } else if step.name.contains("local") {
+            DeploymentType::LocalDirectory
+        } else {
+            DeploymentType::Hybrid // Default to both directory and container
+        };
+
+        // Parse port mappings from environment or step config
+        let port_mappings = env.get("PORTS")
+            .map(|ports| {
+                ports.split(',')
+                    .filter_map(|port_str| {
+                        if let Some((host, container)) = port_str.split_once(':') {
+                            if let (Ok(host_port), Ok(container_port)) = (host.parse(), container.parse()) {
+                                return Some(crate::ci::deployment::PortMapping {
+                                    host_port,
+                                    container_port,
+                                    protocol: "tcp".to_string(),
+                                });
+                            }
+                        }
+                        None
+                    })
+                    .collect()
+            })
+            .unwrap_or_else(|| vec![
+                crate::ci::deployment::PortMapping {
+                    host_port: 0, // Auto-allocate
+                    container_port: 8000,
+                    protocol: "tcp".to_string(),
+                }
+            ]);
+
+        let docker_config = if matches!(deployment_type, DeploymentType::DockerContainer | DeploymentType::Hybrid) {
+            Some(crate::ci::deployment::DockerDeploymentConfig {
+                image_name: step.config.image.clone()
+                    .unwrap_or_else(|| format!("ci-app-{}", uuid::Uuid::new_v4())),
+                dockerfile_path: step.config.dockerfile.clone(),
+                build_context: step.config.build_context.clone(),
+                base_image: None,
+                distroless: env.get("DISTROLESS").map(|v| v == "true").unwrap_or(false),
+                registry: step.config.registry.clone(),
+                tags: step.config.tags.clone().unwrap_or_else(|| vec!["latest".to_string()]),
+            })
+        } else {
+            None
+        };
+
+        Ok(DeploymentConfig {
+            deployment_type,
+            target_directory: None, // Will be auto-generated
+            docker_config,
+            port_mappings,
+            environment_variables: env.clone(),
+            health_check: None, // TODO: Add health check configuration
+        })
     }
 
     async fn execute_docker_step(

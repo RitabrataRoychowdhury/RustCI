@@ -5,6 +5,9 @@ pub mod connectors;
 pub mod config;
 pub mod schedulers;
 pub mod workspace;
+pub mod repository;
+pub mod builder;
+pub mod deployment;
 
 // Re-export main types that will be used by the application
 // pub use engine::CIEngine;

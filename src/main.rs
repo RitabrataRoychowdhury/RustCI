@@ -70,7 +70,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize CI engine components
     let connector_manager = Arc::new(ConnectorManager::new());
     let workspace_manager = Arc::new(WorkspaceManager::new("/tmp/ci-workspaces".into()));
-    let executor = Arc::new(PipelineExecutor::new(connector_manager));
+    let executor = Arc::new(PipelineExecutor::new(
+        connector_manager,
+        "/tmp/ci-cache".into(),
+        "/tmp/ci-deployments".into(),
+    ));
     let ci_engine = Arc::new(CIEngine::new(Arc::new(db.clone()), workspace_manager, executor));
     info!("✅ CI engine initialized");
 

@@ -1,0 +1,272 @@
+# Example CI/CD Pipeline Configurations
+
+# 1. Node.js React Application with Docker Deployment
+---
+name: "React App CI/CD"
+description: "Build and deploy a React application"
+triggers:
+  - trigger_type: git_push
+    config:
+      branch_patterns: ["main", "develop"]
+      repository: "https://github.com/user/react-app"
+stages:
+  - name: "Source"
+    steps:
+      - name: "clone-repository"
+        step_type: github
+        config:
+          repository_url: "https://github.com/user/react-app"
+          branch: "main"
+  - name: "Build"
+    steps:
+      - name: "build-react-app"
+        step_type: shell
+        config:
+          command: "npm ci && npm run build"
+  - name: "Deploy"
+    steps:
+      - name: "deploy-to-docker"
+        step_type: custom
+        config:
+          image: "react-app"
+          dockerfile: "Dockerfile"
+          environment:
+            PORTS: "3000:3000"
+            DISTROLESS: "true"
+environment:
+  NODE_ENV: "production"
+  GITHUB_TOKEN: "${GITHUB_TOKEN}"
+
+---
+# 2. Python FastAPI with Local Deployment
+name: "FastAPI Service"
+description: "Build and deploy FastAPI application locally"
+triggers:
+  - trigger_type: webhook
+    config:
+      webhook_url: "/webhook/fastapi-deploy"
+stages:
+  - name: "Source"
+    steps:
+      - name: "clone-repository"
+        step_type: github
+        config:
+          repository_url: "https://github.com/user/fastapi-app"
+          branch: "main"
+  - name: "Build"
+    steps:
+      - name: "build-python-app"
+        step_type: shell
+        config:
+          script: |
+            python -m venv venv
+            source venv/bin/activate
+            pip install -r requirements.txt
+            python -m pytest
+  - name: "Deploy"
+    steps:
+      - name: "deploy-local"
+        step_type: custom
+        config:
+          environment:
+            PORTS: "8000:8000"
+environment:
+  PYTHON_ENV: "production"
+
+---
+# 3. Rust Application with Hybrid Deployment
+name: "Rust Microservice"
+description: "Build Rust application and deploy both locally and in Docker"
+triggers:
+  - trigger_type: manual
+stages:
+  - name: "Source"
+    steps:
+      - name: "clone-repository"
+        step_type: github
+        config:
+          repository_url: "https://github.com/user/rust-service"
+          branch: "main"
+  - name: "Build"
+    steps:
+      - name: "build-rust-app"
+        step_type: shell
+        config:
+          command: "cargo build --release"
+  - name: "Test"
+    steps:
+      - name: "run-tests"
+        step_type: shell
+        config:
+          command: "cargo test"
+  - name: "Deploy"
+    parallel: true
+    steps:
+      - name: "deploy-to-directory"
+        step_type: custom
+        config:
+          target_directory: "/opt/rust-service"
+      - name: "deploy-to-docker"
+        step_type: docker
+        config:
+          image: "rust-service"
+          distroless: true
+          environment:
+            PORTS: "8080:8080"
+environment:
+  RUST_ENV: "production"
+
+---
+# 4. Java Spring Boot Application
+name: "Spring Boot API"
+description: "Build and deploy Spring Boot application"
+triggers:
+  - trigger_type: git_push
+    config:
+      branch_patterns: ["main"]
+      repository: "https://github.com/user/spring-boot-api"
+stages:
+  - name: "Source"
+    steps:
+      - name: "clone-repository"
+        step_type: github
+        config:
+          repository_url: "https://github.com/user/spring-boot-api"
+          branch: "main"
+  - name: "Build"
+    steps:
+      - name: "build-java-app"
+        step_type: shell
+        config:
+          command: "mvn clean package -DskipTests"
+  - name: "Test"
+    steps:
+      - name: "run-tests"
+        step_type: shell
+        config:
+          command: "mvn test"
+  - name: "Deploy"
+    steps:
+      - name: "deploy-spring-boot"
+        step_type: docker
+        config:
+          image: "spring-boot-api"
+          dockerfile: "Dockerfile"
+          environment:
+            PORTS: "8080:8080"
+            SPRING_PROFILES_ACTIVE: "production"
+environment:
+  JAVA_HOME: "/usr/lib/jvm/java-17-openjdk"
+
+---
+# 5. Static Website Deployment
+name: "Static Website"
+description: "Deploy static HTML/CSS/JS website"
+triggers:
+  - trigger_type: git_push
+    config:
+      branch_patterns: ["main"]
+stages:
+  - name: "Source"
+    steps:
+      - name: "clone-repository"
+        step_type: github
+        config:
+          repository_url: "https://github.com/user/static-website"
+          branch: "main"
+  - name: "Build"
+    steps:
+      - name: "build-static-site"
+        step_type: shell
+        config:
+          script: |
+            # Minify CSS and JS if needed
+            echo "Processing static files..."
+  - name: "Deploy"
+    steps:
+      - name: "deploy-static"
+        step_type: custom
+        config:
+          target_directory: "/var/www/html"
+          environment:
+            PORTS: "80:80"
+
+---
+# 6. Multi-Stage Pipeline with Notifications
+name: "Complex Multi-Service App"
+description: "Complex pipeline with multiple services and notifications"
+triggers:
+  - trigger_type: git_push
+    config:
+      branch_patterns: ["main", "staging"]
+  - trigger_type: schedule
+    config:
+      cron_expression: "0 2 * * *"  # Daily at 2 AM
+stages:
+  - name: "Source"
+    steps:
+      - name: "clone-frontend"
+        step_type: github
+        config:
+          repository_url: "https://github.com/user/frontend"
+          branch: "main"
+          working_directory: "frontend"
+      - name: "clone-backend"
+        step_type: github
+        config:
+          repository_url: "https://github.com/user/backend"
+          branch: "main"
+          working_directory: "backend"
+  - name: "Build"
+    parallel: true
+    steps:
+      - name: "build-frontend"
+        step_type: shell
+        config:
+          command: "cd frontend && npm ci && npm run build"
+      - name: "build-backend"
+        step_type: shell
+        config:
+          command: "cd backend && cargo build --release"
+  - name: "Test"
+    parallel: true
+    steps:
+      - name: "test-frontend"
+        step_type: shell
+        config:
+          command: "cd frontend && npm test"
+      - name: "test-backend"
+        step_type: shell
+        config:
+          command: "cd backend && cargo test"
+  - name: "Deploy"
+    steps:
+      - name: "deploy-backend"
+        step_type: docker
+        config:
+          image: "app-backend"
+          dockerfile: "backend/Dockerfile"
+          environment:
+            PORTS: "8000:8000"
+      - name: "deploy-frontend"
+        step_type: docker
+        config:
+          image: "app-frontend"
+          dockerfile: "frontend/Dockerfile"
+          environment:
+            PORTS: "3000:3000"
+environment:
+  NODE_ENV: "production"
+  RUST_ENV: "production"
+  DATABASE_URL: "${DATABASE_URL}"
+notifications:
+  on_success:
+    - target_type: webhook
+      config:
+        webhook_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+  on_failure:
+    - target_type: email
+      config:
+        email: "admin@company.com"
+timeout: 3600  # 1 hour
+retry_count: 2
