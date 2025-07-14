@@ -12,52 +12,47 @@ tokio = { version = "1.0", features = ["full"] }
 tower = { version = "0.4", features = ["util", "timeout"] }
 tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
 
-# HTTP client
-reqwest = { version = "0.11", features = ["json"] }
+# HTTP client – Rustls for TLS (musl-compatible)
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
 
-# Environment and configuration
+# Config and environment
 dotenv = "0.15"
-
-# Utilities
 uuid = { version = "1.0", features = ["v4", "serde"] }
-
-# Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# URL handling
 url = "2.4"
 urlencoding = "2.1"
 
-# Date/time handling
+# Date/time
 chrono = { version = "0.4", features = ["serde"] }
-
-# YAML parsing
-serde_yaml = "0.9"
-
-# JWT handling
-jsonwebtoken = "9.2"
-
-# Password hashing
-argon2 = "0.5"
-
-# Async traits
-async-trait = "0.1"
-
-# Error handling
-anyhow = "1.0"
-thiserror = "1.0"
-# Database
-mongodb = "2.8"
-tokio-stream = "0.1"
-futures = "0.3"
-
-# Time handling
 time = { version = "0.3", features = ["macros", "serde"] }
 
-# Additional axum features
+# Auth
+jsonwebtoken = "9.2"
+argon2 = "0.5"
+base64ct = "=1.7.3" 
+
+# Async support & logging
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Database – MongoDB using Tokio runtime with default rustls TLS support
+mongodb = { version = "2.8", features = ["tokio-runtime"] }
+
+# Streams & extras
+tokio-stream = "0.1"
+futures = "0.3"
 axum-extra = { version = "0.9", features = ["cookie"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
