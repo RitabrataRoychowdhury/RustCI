@@ -5,16 +5,17 @@ use crate::{
         pipeline::{PipelineExecution, TriggerInfo},
     },
     error::{AppError, Result},
+    upload::create_upload_handler,
     AppState,
 };
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     response::Json,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{info, debug};
+use tracing::{debug, info};
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -56,26 +57,59 @@ pub struct TriggerResponse {
     pub message: String,
 }
 
-/// Create a new CI pipeline from YAML configuration
+/// Create a new CI pipeline from YAML configuration (JSON payload)
 pub async fn create_pipeline(
     State(state): State<AppState>,
     Json(request): Json<CreatePipelineRequest>,
 ) -> Result<Json<PipelineResponse>> {
-    info!("🔄 Creating new pipeline from YAML");
-    
+    info!("🔄 Creating new pipeline from JSON YAML content");
+
+    create_pipeline_from_yaml(&state, &request.yaml_content).await
+}
+
+/// Create a new CI pipeline from uploaded YAML file (multipart)
+pub async fn create_pipeline_multipart(
+    State(state): State<AppState>,
+    multipart: Multipart,
+) -> Result<Json<PipelineResponse>> {
+    info!("📁 Creating new pipeline from uploaded YAML file");
+
+    // Create file upload handler
+    let upload_handler = create_upload_handler();
+
+    // Process the multipart upload
+    let yaml_content = upload_handler.handle_yaml_upload(multipart).await?;
+
+    info!(
+        "✅ Successfully processed uploaded YAML file ({} bytes)",
+        yaml_content.len()
+    );
+
+    create_pipeline_from_yaml(&state, &yaml_content).await
+}
+
+/// Shared pipeline creation logic
+async fn create_pipeline_from_yaml(
+    state: &AppState,
+    yaml_content: &str,
+) -> Result<Json<PipelineResponse>> {
     // Parse YAML configuration
-    let pipeline = CIPipeline::from_yaml(&request.yaml_content)
+    let pipeline = CIPipeline::from_yaml(yaml_content)
         .map_err(|e| AppError::ValidationError(format!("Invalid YAML configuration: {}", e)))?;
 
     // Validate pipeline
-    pipeline.validate()
+    pipeline
+        .validate()
         .map_err(|e| AppError::ValidationError(e))?;
 
     // Create pipeline using CI engine
-    let ci_engine = get_ci_engine(&state)?;
+    let ci_engine = get_ci_engine(state)?;
     let pipeline_id = ci_engine.create_pipeline(pipeline.clone()).await?;
 
-    info!("✅ Pipeline created successfully: {} (ID: {})", pipeline.name, pipeline_id);
+    info!(
+        "✅ Pipeline created successfully: {} (ID: {})",
+        pipeline.name, pipeline_id
+    );
 
     Ok(Json(PipelineResponse {
         id: pipeline_id,
@@ -104,13 +138,14 @@ pub async fn trigger_pipeline(
     };
 
     let ci_engine = get_ci_engine(&state)?;
-    let execution_id = ci_engine.trigger_pipeline(
-        pipeline_id,
-        trigger_info,
-        request.environment,
-    ).await?;
+    let execution_id = ci_engine
+        .trigger_pipeline(pipeline_id, trigger_info, request.environment)
+        .await?;
 
-    info!("✅ Pipeline triggered successfully: {} (Execution: {})", pipeline_id, execution_id);
+    info!(
+        "✅ Pipeline triggered successfully: {} (Execution: {})",
+        pipeline_id, execution_id
+    );
 
     Ok(Json(TriggerResponse {
         execution_id,
@@ -148,21 +183,22 @@ pub async fn cancel_execution(
 }
 
 /// List all pipelines
-pub async fn list_pipelines(
-    State(state): State<AppState>,
-) -> Result<Json<Vec<PipelineResponse>>> {
+pub async fn list_pipelines(State(state): State<AppState>) -> Result<Json<Vec<PipelineResponse>>> {
     debug!("📋 Listing all pipelines");
 
     let ci_engine = get_ci_engine(&state)?;
     let pipelines = ci_engine.list_pipelines().await?;
 
-    let response: Vec<PipelineResponse> = pipelines.into_iter().map(|p| PipelineResponse {
-        id: p.id.unwrap_or_else(|| Uuid::new_v4()),
-        name: p.name,
-        description: p.description,
-        created_at: p.created_at,
-        updated_at: p.updated_at,
-    }).collect();
+    let response: Vec<PipelineResponse> = pipelines
+        .into_iter()
+        .map(|p| PipelineResponse {
+            id: p.id.unwrap_or_else(|| Uuid::new_v4()),
+            name: p.name,
+            description: p.description,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+        })
+        .collect();
 
     Ok(Json(response))
 }
@@ -174,20 +210,24 @@ pub async fn list_executions(
 ) -> Result<Json<Vec<ExecutionResponse>>> {
     debug!("📋 Listing executions");
 
-    let pipeline_id = params.get("pipeline_id")
+    let pipeline_id = params
+        .get("pipeline_id")
         .and_then(|id| Uuid::parse_str(id).ok());
 
     let ci_engine = get_ci_engine(&state)?;
     let executions = ci_engine.list_executions(pipeline_id).await?;
 
-    let response: Vec<ExecutionResponse> = executions.into_iter().map(|e| ExecutionResponse {
-        id: e.id,
-        pipeline_id: e.pipeline_id,
-        status: format!("{:?}", e.status).to_lowercase(),
-        started_at: e.started_at,
-        finished_at: e.finished_at,
-        duration: e.duration,
-    }).collect();
+    let response: Vec<ExecutionResponse> = executions
+        .into_iter()
+        .map(|e| ExecutionResponse {
+            id: e.id,
+            pipeline_id: e.pipeline_id,
+            status: format!("{:?}", e.status).to_lowercase(),
+            started_at: e.started_at,
+            finished_at: e.finished_at,
+            duration: e.duration,
+        })
+        .collect();
 
     Ok(Json(response))
 }
@@ -201,9 +241,10 @@ pub async fn get_pipeline_yaml(
 
     let ci_engine = get_ci_engine(&state)?;
     let pipeline = ci_engine.get_pipeline(pipeline_id).await?;
-    
-    let yaml_content = pipeline.to_yaml()
-        .map_err(|e| AppError::InternalServerError(format!("Failed to serialize pipeline to YAML: {}", e)))?;
+
+    let yaml_content = pipeline.to_yaml().map_err(|e| {
+        AppError::InternalServerError(format!("Failed to serialize pipeline to YAML: {}", e))
+    })?;
 
     Ok(yaml_content)
 }
@@ -219,11 +260,17 @@ pub async fn webhook_handler(
     let trigger_info = TriggerInfo {
         trigger_type: "webhook".to_string(),
         triggered_by: Some("webhook".to_string()),
-        commit_hash: payload.get("after").and_then(|v| v.as_str()).map(String::from),
-        branch: payload.get("ref").and_then(|v| v.as_str())
+        commit_hash: payload
+            .get("after")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        branch: payload
+            .get("ref")
+            .and_then(|v| v.as_str())
             .and_then(|r| r.strip_prefix("refs/heads/"))
             .map(String::from),
-        repository: payload.get("repository")
+        repository: payload
+            .get("repository")
             .and_then(|r| r.get("full_name"))
             .and_then(|v| v.as_str())
             .map(String::from),
@@ -231,9 +278,14 @@ pub async fn webhook_handler(
     };
 
     let ci_engine = get_ci_engine(&state)?;
-    let execution_id = ci_engine.trigger_pipeline(pipeline_id, trigger_info, None).await?;
+    let execution_id = ci_engine
+        .trigger_pipeline(pipeline_id, trigger_info, None)
+        .await?;
 
-    info!("✅ Webhook triggered pipeline: {} (Execution: {})", pipeline_id, execution_id);
+    info!(
+        "✅ Webhook triggered pipeline: {} (Execution: {})",
+        pipeline_id, execution_id
+    );
 
     Ok(Json(TriggerResponse {
         execution_id,

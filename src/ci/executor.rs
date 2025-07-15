@@ -1,18 +1,18 @@
 use crate::ci::{
+    builder::{BuildConfig, ProjectBuilder},
     config::{Stage, Step, StepType},
-    pipeline::{PipelineExecution, ExecutionStatus, LogLevel},
-    workspace::Workspace,
     connectors::{ConnectorManager, ConnectorType},
-    repository::{RepositoryManager, RepositoryConfig},
-    builder::{ProjectBuilder, BuildConfig},
-    deployment::{LocalDeploymentManager, DeploymentConfig, DeploymentType},
+    deployment::{DeploymentConfig, DeploymentType, LocalDeploymentManager},
+    pipeline::{ExecutionStatus, LogLevel, PipelineExecution},
+    repository::{RepositoryConfig, RepositoryManager},
+    workspace::Workspace,
 };
 use crate::error::{AppError, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tokio::process::Command;
-use tracing::{info, error, debug, warn};
+use tokio::sync::RwLock;
+use tracing::{debug, error, info, warn};
 
 #[allow(dead_code)] // Will be used when CI engine is fully implemented
 #[derive(Clone)]
@@ -34,9 +34,9 @@ impl PipelineExecutor {
             connector_manager,
             repository_manager: Arc::new(RepositoryManager::new()),
             project_builder: Arc::new(ProjectBuilder::new(cache_directory)),
-            deployment_manager: Arc::new(tokio::sync::Mutex::new(
-                LocalDeploymentManager::new(deployment_directory)
-            )),
+            deployment_manager: Arc::new(tokio::sync::Mutex::new(LocalDeploymentManager::new(
+                deployment_directory,
+            ))),
         }
     }
 
@@ -57,9 +57,11 @@ impl PipelineExecutor {
 
         // Execute steps
         if stage.parallel.unwrap_or(false) {
-            self.execute_steps_parallel(execution, stage, workspace, &env).await
+            self.execute_steps_parallel(execution, stage, workspace, &env)
+                .await
         } else {
-            self.execute_steps_sequential(execution, stage, workspace, &env).await
+            self.execute_steps_sequential(execution, stage, workspace, &env)
+                .await
         }
     }
 
@@ -71,7 +73,8 @@ impl PipelineExecutor {
         env: &HashMap<String, String>,
     ) -> Result<()> {
         for step in &stage.steps {
-            self.execute_step(execution.clone(), &stage.name, step, workspace, env).await?;
+            self.execute_step(execution.clone(), &stage.name, step, workspace, env)
+                .await?;
         }
         Ok(())
     }
@@ -94,7 +97,15 @@ impl PipelineExecutor {
             let executor_clone = self.clone();
 
             let handle = tokio::spawn(async move {
-                executor_clone.execute_step(execution_clone, &stage_name, &step_clone, &workspace_clone, &env_clone).await
+                executor_clone
+                    .execute_step(
+                        execution_clone,
+                        &stage_name,
+                        &step_clone,
+                        &workspace_clone,
+                        &env_clone,
+                    )
+                    .await
             });
 
             handles.push(handle);
@@ -121,7 +132,9 @@ impl PipelineExecutor {
         if overall_success {
             Ok(())
         } else {
-            Err(AppError::InternalServerError("One or more parallel steps failed".to_string()))
+            Err(AppError::InternalServerError(
+                "One or more parallel steps failed".to_string(),
+            ))
         }
     }
 
@@ -155,61 +168,49 @@ impl PipelineExecutor {
             );
         }
 
-        // Execute step based on type
+        // Handle special step types for CI/CD operations based on step type, not just name
         let result = match &step.step_type {
-            StepType::Shell => self.execute_shell_step(step, workspace, &step_env).await,
+            StepType::Shell => {
+                // Check if deployment detection is explicitly disabled
+                if step.config.disable_deployment_detection.unwrap_or(false) {
+                    // Skip all special handling and just execute as shell
+                    self.execute_shell_step(step, workspace, &step_env).await
+                } else {
+                    // For shell steps, check if they need special handling based on name
+                    match step.name.as_str() {
+                        name if name.starts_with("clone") || name.starts_with("checkout") => {
+                            self.execute_repository_step(step, workspace, &step_env).await
+                        }
+                        name if name.starts_with("build") || name.starts_with("compile") => {
+                            self.execute_build_step(step, workspace, &step_env).await
+                        }
+                        _ => {
+                            // Regular shell step - don't trigger deployment logic
+                            self.execute_shell_step(step, workspace, &step_env).await
+                        }
+                    }
+                }
+            }
+            StepType::Custom => {
+                // Only trigger deployment for custom steps that explicitly request it
+                match step.name.as_str() {
+                    name if name.starts_with("deploy") || name.starts_with("release") => {
+                        self.execute_deployment_step(execution.clone(), step, workspace, &step_env).await
+                    }
+                    _ => {
+                        self.execute_custom_step(step, workspace, &step_env).await
+                    }
+                }
+            }
             StepType::Docker => self.execute_docker_step(step, workspace, &step_env).await,
-            StepType::Kubernetes => self.execute_kubernetes_step(step, workspace, &step_env).await,
+            StepType::Kubernetes => {
+                self.execute_kubernetes_step(step, workspace, &step_env).await
+            }
             StepType::AWS => self.execute_aws_step(step, workspace, &step_env).await,
             StepType::Azure => self.execute_azure_step(step, workspace, &step_env).await,
             StepType::GCP => self.execute_gcp_step(step, workspace, &step_env).await,
             StepType::GitHub => self.execute_github_step(step, workspace, &step_env).await,
             StepType::GitLab => self.execute_gitlab_step(step, workspace, &step_env).await,
-            StepType::Custom => self.execute_custom_step(step, workspace, &step_env).await,
-        };
-        
-        match result {
-            Ok((code, stdout, stderr)) => {
-                info!(
-                    "✅ Step '{}' succeeded with exit code {}.\nSTDOUT: {}\nSTDERR: {}",
-                    step.name, code, stdout, stderr
-                );
-            }
-            Err(err) => {
-                error!("❌ Step '{}' failed: {}", step.name, err);
-        
-                // Optionally update the PipelineExecution status here
-                let mut exec = execution.write().await;
-                exec.status = ExecutionStatus::Failed;
-                return Err(err);
-            }
-        }        
-
-        // Handle special step types for CI/CD operations
-        let result = match step.name.as_str() {
-            name if name.starts_with("clone") || name.starts_with("checkout") => {
-                self.execute_repository_step(step, workspace, &step_env).await
-            }
-            name if name.starts_with("build") || name.starts_with("compile") => {
-                self.execute_build_step(step, workspace, &step_env).await
-            }
-            name if name.starts_with("deploy") || name.starts_with("release") => {
-                self.execute_deployment_step(execution.clone(), step, workspace, &step_env).await
-            }
-            _ => {
-                // Execute step based on type if no special name pattern matches
-                match &step.step_type {
-                    StepType::Shell => self.execute_shell_step(step, workspace, &step_env).await,
-                    StepType::Docker => self.execute_docker_step(step, workspace, &step_env).await,
-                    StepType::Kubernetes => self.execute_kubernetes_step(step, workspace, &step_env).await,
-                    StepType::AWS => self.execute_aws_step(step, workspace, &step_env).await,
-                    StepType::Azure => self.execute_azure_step(step, workspace, &step_env).await,
-                    StepType::GCP => self.execute_gcp_step(step, workspace, &step_env).await,
-                    StepType::GitHub => self.execute_github_step(step, workspace, &step_env).await,
-                    StepType::GitLab => self.execute_gitlab_step(step, workspace, &step_env).await,
-                    StepType::Custom => self.execute_custom_step(step, workspace, &step_env).await,
-                }
-            }
         };
 
         // Update step status
@@ -235,7 +236,11 @@ impl PipelineExecutor {
                 step_exec.finish(status.clone(), exit_code, stdout.clone(), stderr.clone());
             }
             exec.add_log(
-                if matches!(status, ExecutionStatus::Success) { LogLevel::Info } else { LogLevel::Error },
+                if matches!(status, ExecutionStatus::Success) {
+                    LogLevel::Info
+                } else {
+                    LogLevel::Error
+                },
                 format!("Step finished: {} with status: {:?}", step.name, status),
                 Some(stage_name.to_string()),
                 Some(step.name.clone()),
@@ -243,7 +248,10 @@ impl PipelineExecutor {
         }
 
         if matches!(status, ExecutionStatus::Failed) && !step.continue_on_error.unwrap_or(false) {
-            return Err(AppError::InternalServerError(format!("Step failed: {}", step.name)));
+            return Err(AppError::InternalServerError(format!(
+                "Step failed: {}",
+                step.name
+            )));
         }
 
         Ok(())
@@ -255,7 +263,7 @@ impl PipelineExecutor {
             None => match &step.config.script {
                 Some(script) => Some(script.clone()),
                 None => None,
-            }
+            },
         }
     }
 
@@ -265,15 +273,26 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let command = step.config.command.as_ref()
+        let command = step
+            .config
+            .command
+            .as_ref()
             .or(step.config.script.as_ref())
-            .ok_or_else(|| AppError::ValidationError("Shell step requires command or script".to_string()))?;
+            .ok_or_else(|| {
+                AppError::ValidationError("Shell step requires command or script".to_string())
+            })?;
 
-        let working_dir = step.config.working_directory.as_ref()
+        let working_dir = step
+            .config
+            .working_directory
+            .as_ref()
             .map(|d| workspace.path.join(d))
             .unwrap_or_else(|| workspace.path.clone());
 
-        debug!("🐚 Executing shell command: {} in directory: {:?}", command, working_dir);
+        debug!(
+            "🐚 Executing shell command: {} in directory: {:?}",
+            command, working_dir
+        );
 
         let mut cmd = if cfg!(target_os = "windows") {
             let mut c = Command::new("cmd");
@@ -286,21 +305,25 @@ impl PipelineExecutor {
         };
 
         cmd.current_dir(&working_dir);
-        
+
         // Set environment variables
         for (key, value) in env {
             cmd.env(key, value);
         }
 
-        let output = cmd.output().await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to execute command: {}", e)))?;
+        let output = cmd.output().await.map_err(|e| {
+            AppError::InternalServerError(format!("Failed to execute command: {}", e))
+        })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         let exit_code = output.status.code().unwrap_or(-1);
 
         if !output.status.success() {
-            return Err(AppError::InternalServerError(format!("Command failed with exit code {}: {}", exit_code, stderr)));
+            return Err(AppError::InternalServerError(format!(
+                "Command failed with exit code {}: {}",
+                exit_code, stderr
+            )));
         }
 
         Ok((exit_code, stdout, stderr))
@@ -314,10 +337,12 @@ impl PipelineExecutor {
     ) -> Result<(i32, String, String)> {
         info!("📥 Executing repository step: {}", step.name);
 
-        let repo_url = step.config.repository_url.as_ref()
-            .ok_or_else(|| AppError::ValidationError("Repository step requires repository_url".to_string()))?;
+        let repo_url = step.config.repository_url.as_ref().ok_or_else(|| {
+            AppError::ValidationError("Repository step requires repository_url".to_string())
+        })?;
 
-        let access_token = env.get("GITHUB_TOKEN")
+        let access_token = env
+            .get("GITHUB_TOKEN")
             .or_else(|| env.get("ACCESS_TOKEN"))
             .cloned();
 
@@ -331,15 +356,14 @@ impl PipelineExecutor {
             submodules: false,
         };
 
-        let clone_result = self.repository_manager
+        let clone_result = self
+            .repository_manager
             .clone_repository(&repo_config, &workspace.path)
             .await?;
 
         let output = format!(
             "Repository cloned successfully:\n- Commit: {}\n- Branch: {}\n- Size: {} bytes",
-            clone_result.commit_hash,
-            clone_result.branch,
-            clone_result.size_bytes
+            clone_result.commit_hash, clone_result.branch, clone_result.size_bytes
         );
 
         Ok((0, output, String::new()))
@@ -377,7 +401,8 @@ impl PipelineExecutor {
             None // Auto-detect
         };
 
-        let build_result = self.project_builder
+        let build_result = self
+            .project_builder
             .build_project(&workspace.path, build_config)
             .await?;
 
@@ -405,20 +430,20 @@ impl PipelineExecutor {
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
         info!("🚀 Executing deployment step: {}", step.name);
-    
+
         let execution_id = {
             let exec = execution.read().await;
             exec.id
         };
-    
+
         // Create deployment config from step configuration
         let deployment_config = self.create_deployment_config(step, env)?;
-    
+
         let mut deployment_manager = self.deployment_manager.lock().await;
         let deployment_result = deployment_manager
             .deploy(execution_id, &workspace.path, &deployment_config)
             .await?;
-    
+
         let output = format!(
             "Deployment completed:\n- ID: {}\n- Type: {:?}\n- Status: {:?}\n- Services: {}\n- Artifacts: {}",
             deployment_result.deployment_id,
@@ -427,10 +452,9 @@ impl PipelineExecutor {
             deployment_result.services.len(),
             deployment_result.artifacts.len()
         );
-    
+
         Ok((0, output, deployment_result.logs.join("\n")))
     }
-    
 
     fn create_deployment_config(
         &self,
@@ -447,12 +471,16 @@ impl PipelineExecutor {
         };
 
         // Parse port mappings from environment or step config
-        let port_mappings = env.get("PORTS")
+        let port_mappings = env
+            .get("PORTS")
             .map(|ports| {
-                ports.split(',')
+                ports
+                    .split(',')
                     .filter_map(|port_str| {
                         if let Some((host, container)) = port_str.split_once(':') {
-                            if let (Ok(host_port), Ok(container_port)) = (host.parse(), container.parse()) {
+                            if let (Ok(host_port), Ok(container_port)) =
+                                (host.parse(), container.parse())
+                            {
                                 return Some(crate::ci::deployment::PortMapping {
                                     host_port,
                                     container_port,
@@ -464,24 +492,34 @@ impl PipelineExecutor {
                     })
                     .collect()
             })
-            .unwrap_or_else(|| vec![
-                crate::ci::deployment::PortMapping {
+            .unwrap_or_else(|| {
+                vec![crate::ci::deployment::PortMapping {
                     host_port: 0, // Auto-allocate
                     container_port: 8000,
                     protocol: "tcp".to_string(),
-                }
-            ]);
+                }]
+            });
 
-        let docker_config = if matches!(deployment_type, DeploymentType::DockerContainer | DeploymentType::Hybrid) {
+        let docker_config = if matches!(
+            deployment_type,
+            DeploymentType::DockerContainer | DeploymentType::Hybrid
+        ) {
             Some(crate::ci::deployment::DockerDeploymentConfig {
-                image_name: step.config.image.clone()
+                image_name: step
+                    .config
+                    .image
+                    .clone()
                     .unwrap_or_else(|| format!("ci-app-{}", uuid::Uuid::new_v4())),
                 dockerfile_path: step.config.dockerfile.clone(),
                 build_context: step.config.build_context.clone(),
                 base_image: None,
                 distroless: env.get("DISTROLESS").map(|v| v == "true").unwrap_or(false),
                 registry: step.config.registry.clone(),
-                tags: step.config.tags.clone().unwrap_or_else(|| vec!["latest".to_string()]),
+                tags: step
+                    .config
+                    .tags
+                    .clone()
+                    .unwrap_or_else(|| vec!["latest".to_string()]),
             })
         } else {
             None
@@ -493,7 +531,8 @@ impl PipelineExecutor {
             docker_config,
             port_mappings,
             environment_variables: env.clone(),
-            health_check: None, // TODO: Add health check configuration
+            health_check: None,        // TODO: Add health check configuration
+            manual_project_type: None, // Auto-detect by default
         })
     }
 
@@ -503,7 +542,10 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self.connector_manager.get_connector(ConnectorType::Docker).await?;
+        let connector = self
+            .connector_manager
+            .get_connector(ConnectorType::Docker)
+            .await?;
         connector.execute_step(step, workspace, env).await
     }
 
@@ -513,7 +555,10 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self.connector_manager.get_connector(ConnectorType::Kubernetes).await?;
+        let connector = self
+            .connector_manager
+            .get_connector(ConnectorType::Kubernetes)
+            .await?;
         connector.execute_step(step, workspace, env).await
     }
 
@@ -523,7 +568,10 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self.connector_manager.get_connector(ConnectorType::AWS).await?;
+        let connector = self
+            .connector_manager
+            .get_connector(ConnectorType::AWS)
+            .await?;
         connector.execute_step(step, workspace, env).await
     }
 
@@ -533,7 +581,10 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self.connector_manager.get_connector(ConnectorType::Azure).await?;
+        let connector = self
+            .connector_manager
+            .get_connector(ConnectorType::Azure)
+            .await?;
         connector.execute_step(step, workspace, env).await
     }
 
@@ -543,7 +594,10 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self.connector_manager.get_connector(ConnectorType::GCP).await?;
+        let connector = self
+            .connector_manager
+            .get_connector(ConnectorType::GCP)
+            .await?;
         connector.execute_step(step, workspace, env).await
     }
 
@@ -553,7 +607,10 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self.connector_manager.get_connector(ConnectorType::GitHub).await?;
+        let connector = self
+            .connector_manager
+            .get_connector(ConnectorType::GitHub)
+            .await?;
         connector.execute_step(step, workspace, env).await
     }
 
@@ -563,7 +620,10 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self.connector_manager.get_connector(ConnectorType::GitLab).await?;
+        let connector = self
+            .connector_manager
+            .get_connector(ConnectorType::GitLab)
+            .await?;
         connector.execute_step(step, workspace, env).await
     }
 
@@ -573,10 +633,14 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let plugin_name = step.config.plugin_name.as_ref()
-            .ok_or_else(|| AppError::ValidationError("Custom step requires plugin_name".to_string()))?;
+        let plugin_name = step.config.plugin_name.as_ref().ok_or_else(|| {
+            AppError::ValidationError("Custom step requires plugin_name".to_string())
+        })?;
 
-        let connector = self.connector_manager.get_custom_connector(plugin_name).await?;
+        let connector = self
+            .connector_manager
+            .get_custom_connector(plugin_name)
+            .await?;
         connector.execute_step(step, workspace, env).await
     }
 }

@@ -1,26 +1,315 @@
-# Stage 1 – Build (with newer Rust)
-FROM rust:1.85-slim as builder
+# RustCI - High-Performance CI/CD Platform
 
-# Install musl target and build deps
-RUN rustup target add x86_64-unknown-linux-musl && \
-    apt-get update && \
-    apt-get install -y musl-tools pkg-config libssl-dev && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+A modern, fast, and reliable CI/CD platform built in Rust that aims to be a better alternative to Jenkins with easier configuration and faster execution.
 
-WORKDIR /app
+## 🚀 Features
 
-# Cache dependencies
-COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release --target x86_64-unknown-linux-musl
-RUN rm -rf src
+- **Fast Pipeline Execution** - Built in Rust for maximum performance
+- **YAML Configuration** - Simple, readable pipeline definitions
+- **Multiple Deployment Types** - Local, Docker, and hybrid deployments
+- **GitHub Integration** - Seamless repository cloning and webhook support
+- **Real-time Monitoring** - Track pipeline executions in real-time
+- **RESTful API** - Complete API for integration and automation
+- **Multipart File Upload** - Upload YAML configurations as files
+- **Service Registry** - Track and manage deployed services
 
-# Build your real code
-COPY . .
-RUN cargo build --release --target x86_64-unknown-linux-musl
-RUN strip target/x86_64-unknown-linux-musl/release/rustautodevops
+## 📋 Quick Start
 
-# Stage 2 – Minimal runtime
-FROM scratch
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/rustautodevops /ci-server
-ENTRYPOINT ["/ci-server"]
+### Prerequisites
+
+- Rust 1.70+ installed
+- Docker (for container deployments)
+- MongoDB (for data persistence)
+- Git (for repository operations)
+
+### Installation
+
+1. **Clone the repository**:
+```bash
+git clone https://github.com/RitabrataRoychowdhury/RustCI.git
+cd RustCI
+```
+
+2. **Set up environment variables**:
+```bash
+cp .env.example .env
+# Edit .env with your configuration
+```
+
+3. **Build and run**:
+```bash
+cargo build --release
+cargo run
+```
+
+The server will start on `http://localhost:8000`
+
+### Docker Deployment
+
+```bash
+# Build the Docker image
+docker build -t rustci:latest .
+
+# Run with Docker Compose
+docker-compose up -d
+```
+
+## 🔧 Configuration
+
+### Environment Variables
+
+```bash
+# Server Configuration
+PORT=8000
+RUST_ENV=development
+RUST_LOG=info
+
+# Database
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DATABASE=rustci
+
+# Authentication
+JWT_SECRET=your-secret-key
+JWT_EXPIRED_IN=1d
+
+# GitHub OAuth (optional)
+GITHUB_OAUTH_CLIENT_ID=your-client-id
+GITHUB_OAUTH_CLIENT_SECRET=your-client-secret
+GITHUB_OAUTH_REDIRECT_URL=http://localhost:8000/api/sessions/oauth/github/callback
+
+# Client
+CLIENT_ORIGIN=http://localhost:3000
+```
+
+## 📖 API Documentation
+
+### Pipeline Management
+
+#### Create Pipeline (JSON)
+```bash
+curl -X POST http://localhost:8000/api/ci/pipelines \
+  -H "Content-Type: application/json" \
+  -d '{
+    "yaml_content": "name: \"My Pipeline\"\ndescription: \"Test pipeline\"\ntriggers:\n  - trigger_type: manual\n    config: {}\nstages:\n  - name: \"Build\"\n    steps:\n      - name: \"build-step\"\n        step_type: shell\n        config:\n          command: \"echo Building...\"\nenvironment: {}\ntimeout: 3600\nretry_count: 0"
+  }'
+```
+
+#### Create Pipeline (Multipart File Upload)
+```bash
+curl -X POST http://localhost:8000/api/ci/pipelines/upload \
+  -F "pipeline=@pipeline.yaml"
+```
+
+#### List Pipelines
+```bash
+curl -X GET http://localhost:8000/api/ci/pipelines
+```
+
+#### Trigger Pipeline
+```bash
+curl -X POST http://localhost:8000/api/ci/pipelines/{pipeline_id}/trigger \
+  -H "Content-Type: application/json" \
+  -d '{
+    "trigger_type": "manual",
+    "environment": {
+      "NODE_ENV": "production"
+    }
+  }'
+```
+
+### Execution Management
+
+#### Get Execution Status
+```bash
+curl -X GET http://localhost:8000/api/ci/executions/{execution_id}
+```
+
+#### List Executions
+```bash
+curl -X GET http://localhost:8000/api/ci/executions
+```
+
+#### Cancel Execution
+```bash
+curl -X DELETE http://localhost:8000/api/ci/executions/{execution_id}/cancel
+```
+
+### Webhook Support
+
+#### GitHub Webhook
+```bash
+curl -X POST http://localhost:8000/api/ci/pipelines/{pipeline_id}/webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ref": "refs/heads/main",
+    "after": "commit-hash",
+    "repository": {
+      "full_name": "user/repo",
+      "clone_url": "https://github.com/user/repo.git"
+    }
+  }'
+```
+
+## 📝 Pipeline Configuration
+
+### Basic Pipeline Structure
+
+```yaml
+name: "My Application Pipeline"
+description: "Build and deploy my application"
+
+triggers:
+  - trigger_type: manual
+    config: {}
+  - trigger_type: webhook
+    config:
+      webhook_url: "/webhook/my-app"
+
+stages:
+  - name: "Source"
+    steps:
+      - name: "clone-repository"
+        step_type: github
+        config:
+          repository_url: "https://github.com/user/repo.git"
+          branch: "main"
+
+  - name: "Build"
+    steps:
+      - name: "build-application"
+        step_type: shell
+        config:
+          command: "npm install && npm run build"
+
+  - name: "Deploy"
+    steps:
+      - name: "deploy-docker"
+        step_type: docker
+        config:
+          image: "my-app"
+          dockerfile: "Dockerfile"
+
+environment:
+  NODE_ENV: "production"
+  PORT: "3000"
+
+timeout: 3600
+retry_count: 1
+```
+
+### Deployment Types
+
+#### Local Directory Deployment
+```yaml
+- name: "deploy-local"
+  step_type: custom
+  config:
+    deployment_type: "local_directory"
+    target_directory: "/opt/myapp"
+```
+
+#### Docker Container Deployment
+```yaml
+- name: "deploy-docker"
+  step_type: docker
+  config:
+    image: "myapp:latest"
+    dockerfile: "Dockerfile"
+    ports:
+      - "8080:8080"
+    environment:
+      - "NODE_ENV=production"
+```
+
+#### Local Service Deployment
+```yaml
+- name: "deploy-service"
+  step_type: custom
+  config:
+    deployment_type: "local_service"
+    service_name: "myapp"
+    port: 8080
+```
+
+## 🏗️ Architecture
+
+### System Components
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Web API       │    │   CI Engine     │    │   Deployment    │
+│   (Axum)        │───▶│   (Pipeline     │───▶│   Manager       │
+│                 │    │    Execution)   │    │                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Database      │    │   File System   │    │   Docker        │
+│   (MongoDB)     │    │   (Workspace)   │    │   (Containers)  │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+### Request Flow
+
+1. **API Request** → Route Handler
+2. **Authentication** → Middleware Validation
+3. **Pipeline Creation** → CI Engine
+4. **Execution** → Pipeline Manager
+5. **Deployment** → Deployment Manager
+6. **Monitoring** → Real-time Status Updates
+
+## 🧪 Testing
+
+### Health Check
+```bash
+curl -X GET http://localhost:8000/api/healthchecker
+```
+
+### Run Tests
+```bash
+cargo test
+```
+
+### Integration Tests
+```bash
+cargo test --test integration
+```
+
+## 🔒 Security
+
+- JWT-based authentication
+- Input validation and sanitization
+- File upload size limits
+- Docker container isolation
+- Environment variable protection
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Support
+
+- **Documentation**: Check the `/docs` directory
+- **Issues**: Report bugs on GitHub Issues
+- **Discussions**: Join GitHub Discussions
+
+## 🗺️ Roadmap
+
+- [ ] Web UI Dashboard
+- [ ] Agent-based Deployments
+- [ ] Kubernetes Integration
+- [ ] Multi-node Clustering
+- [ ] Advanced Monitoring
+- [ ] Plugin System
+
+---
+
+**RustCI** - Built with ❤️ in Rust for speed, reliability, and developer happiness.

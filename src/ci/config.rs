@@ -118,6 +118,9 @@ pub struct StepConfig {
     
     // Environment variables for this step
     pub environment: Option<HashMap<String, String>>,
+    
+    // Deployment configuration
+    pub disable_deployment_detection: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

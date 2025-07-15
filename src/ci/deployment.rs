@@ -17,6 +17,7 @@ pub struct DeploymentConfig {
     pub port_mappings: Vec<PortMapping>,
     pub environment_variables: HashMap<String, String>,
     pub health_check: Option<HealthCheckConfig>,
+    pub manual_project_type: Option<ProjectType>, // Allow manual project type specification
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -255,7 +256,23 @@ impl LocalDeploymentManager {
         info!("⚙️ Deploying as local service");
         result.status = DeploymentStatus::Deploying;
 
-        let project_type = self.detect_project_type(workspace_path).await?;
+        // Use manual project type if specified, otherwise detect automatically
+        let project_type = if let Some(manual_type) = &config.manual_project_type {
+            info!("📋 Using manually specified project type: {:?}", manual_type);
+            manual_type.clone()
+        } else {
+            match self.detect_project_type(workspace_path).await {
+                Ok(detected_type) => detected_type,
+                Err(e) => {
+                    // Enhanced error message with fallback suggestions
+                    let enhanced_error = format!(
+                        "{} Consider adding 'manual_project_type' to your deployment configuration to bypass automatic detection.",
+                        e
+                    );
+                    return Err(AppError::ValidationError(enhanced_error));
+                }
+            }
+        };
         
         match project_type {
             ProjectType::NodeJs => {
@@ -484,19 +501,104 @@ impl LocalDeploymentManager {
     }
 
     async fn detect_project_type(&self, workspace_path: &Path) -> Result<ProjectType> {
+        // Enhanced project type detection with confidence scoring
+        let mut detections = Vec::new();
+        
+        // Check for Node.js indicators
         if workspace_path.join("package.json").exists() {
-            Ok(ProjectType::NodeJs)
-        } else if workspace_path.join("requirements.txt").exists() || workspace_path.join("pyproject.toml").exists() {
-            Ok(ProjectType::Python)
-        } else if workspace_path.join("Cargo.toml").exists() {
-            Ok(ProjectType::Rust)
-        } else if workspace_path.join("pom.xml").exists() || workspace_path.join("build.gradle").exists() {
-            Ok(ProjectType::Java)
-        } else if workspace_path.join("index.html").exists() {
-            Ok(ProjectType::Static)
-        } else {
-            Err(AppError::ValidationError("Unable to detect project type".to_string()))
+            detections.push((ProjectType::NodeJs, 100));
+        } else if workspace_path.join("node_modules").exists() {
+            detections.push((ProjectType::NodeJs, 80));
+        } else if workspace_path.join("yarn.lock").exists() || workspace_path.join("package-lock.json").exists() {
+            detections.push((ProjectType::NodeJs, 70));
         }
+        
+        // Check for Python indicators
+        if workspace_path.join("requirements.txt").exists() {
+            detections.push((ProjectType::Python, 100));
+        } else if workspace_path.join("pyproject.toml").exists() {
+            detections.push((ProjectType::Python, 95));
+        } else if workspace_path.join("setup.py").exists() {
+            detections.push((ProjectType::Python, 90));
+        } else if workspace_path.join("Pipfile").exists() {
+            detections.push((ProjectType::Python, 85));
+        } else if workspace_path.join("poetry.lock").exists() {
+            detections.push((ProjectType::Python, 80));
+        }
+        
+        // Check for Rust indicators
+        if workspace_path.join("Cargo.toml").exists() {
+            detections.push((ProjectType::Rust, 100));
+        } else if workspace_path.join("Cargo.lock").exists() {
+            detections.push((ProjectType::Rust, 90));
+        } else if workspace_path.join("src").join("main.rs").exists() {
+            detections.push((ProjectType::Rust, 85));
+        }
+        
+        // Check for Java indicators
+        if workspace_path.join("pom.xml").exists() {
+            detections.push((ProjectType::Java, 100));
+        } else if workspace_path.join("build.gradle").exists() || workspace_path.join("build.gradle.kts").exists() {
+            detections.push((ProjectType::Java, 100));
+        } else if workspace_path.join("gradlew").exists() {
+            detections.push((ProjectType::Java, 90));
+        } else if workspace_path.join("mvnw").exists() {
+            detections.push((ProjectType::Java, 90));
+        }
+        
+        // Check for static site indicators
+        if workspace_path.join("index.html").exists() {
+            detections.push((ProjectType::Static, 80));
+        } else if workspace_path.join("dist").join("index.html").exists() {
+            detections.push((ProjectType::Static, 70));
+        } else if workspace_path.join("public").join("index.html").exists() {
+            detections.push((ProjectType::Static, 70));
+        }
+        
+        // Additional checks for common patterns
+        if let Ok(entries) = fs::read_dir(workspace_path).await {
+            let mut entry_stream = entries;
+            while let Some(entry) = entry_stream.next_entry().await? {
+                let file_name = entry.file_name();
+                let file_name_str = file_name.to_string_lossy();
+                
+                // Check for common web framework files
+                if file_name_str == "next.config.js" || file_name_str == "nuxt.config.js" {
+                    detections.push((ProjectType::NodeJs, 95));
+                } else if file_name_str == "manage.py" || file_name_str == "wsgi.py" {
+                    detections.push((ProjectType::Python, 90));
+                } else if file_name_str.ends_with(".dockerfile") || file_name_str == "Dockerfile" {
+                    // If there's a Dockerfile, we might not need project detection
+                    continue;
+                }
+            }
+        }
+        
+        // Sort by confidence and return the highest confidence detection
+        detections.sort_by(|a, b| b.1.cmp(&a.1));
+        
+        if let Some((project_type, confidence)) = detections.first() {
+            if *confidence >= 70 {
+                info!("🔍 Detected project type: {:?} (confidence: {}%)", project_type, confidence);
+                return Ok(project_type.clone());
+            }
+        }
+        
+        // If no clear project type detected, provide helpful error message
+        let mut suggestions = Vec::new();
+        suggestions.push("Ensure your project has the appropriate configuration files:".to_string());
+        suggestions.push("  • Node.js: package.json".to_string());
+        suggestions.push("  • Python: requirements.txt, pyproject.toml, or setup.py".to_string());
+        suggestions.push("  • Rust: Cargo.toml".to_string());
+        suggestions.push("  • Java: pom.xml or build.gradle".to_string());
+        suggestions.push("  • Static: index.html".to_string());
+        suggestions.push("Or specify deployment_type manually in your pipeline configuration".to_string());
+        
+        Err(AppError::ValidationError(format!(
+            "Unable to detect project type in directory: {}. {}",
+            workspace_path.display(),
+            suggestions.join(" ")
+        )))
     }
 
     async fn generate_dockerfile(&self, workspace_path: &Path, docker_config: &DockerDeploymentConfig) -> Result<String> {
@@ -958,8 +1060,9 @@ CMD ["nginx", "-g", "daemon off;"]
     }
 }
 
-#[derive(Debug, Clone)]
-enum ProjectType {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectType {
     NodeJs,
     Python,
     Rust,

@@ -38,3 +38,6 @@ Icon?
 # === dotenv/environment files (optional) ===
 # Uncomment if you store secrets in .env
 #.env
+
+#ignore kiro generated files and folders
+.kiro/
