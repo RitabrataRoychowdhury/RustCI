@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
-
 use axum::{
     extract::{Path, Query, State},
     response::Json,

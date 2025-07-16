@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
-    error::{AppError, Result},
+    error::Result,
     models::{GitHubPullRequest, ProjectType},
     AppState,
 };

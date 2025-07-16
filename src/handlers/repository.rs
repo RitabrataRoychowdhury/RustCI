@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{AppError, Result},
-    models::{GitHubRepo, GitHubContent, RepositoryMetadata, ProjectType},
+    models::{GitHubRepo, GitHubContent, ProjectType},
     AppState,
 };
 
