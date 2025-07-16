@@ -41,3 +41,4 @@ Icon?
 
 #ignore kiro generated files and folders
 .kiro/
+.env
