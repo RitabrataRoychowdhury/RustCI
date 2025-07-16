@@ -208,22 +208,17 @@ pub async fn validate_dockerfile_handler(
     // Simulate validation process
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     
-    let validation_result = ValidationResult {
-        success: true,
-        build_logs: vec![
+    let validation_result = ValidationResult::success(
+        vec![
             "Step 1/8 : FROM rust:1.75 as builder".to_string(),
             "Successfully built abc123def456".to_string(),
             "Successfully tagged test-image:latest".to_string(),
         ],
-        run_logs: vec![
+        vec![
             "Container started successfully".to_string(),
             "Application is running on port 8080".to_string(),
         ],
-        errors: vec![],
-        warnings: vec![
-            "Consider using a smaller base image for production".to_string(),
-        ],
-    };
+    );
     
     let duration = start_time.elapsed();
     

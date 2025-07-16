@@ -140,6 +140,18 @@ pub async fn github_oauth_callback(
     // Find or create user in MongoDB
     let user = data.db.find_or_create_oauth_user(&github_user).await?;
 
+    // Create or update workspace for the user
+    let workspace_result = create_or_update_workspace(&user, &github_token.access_token, &data).await;
+    match workspace_result {
+        Ok(workspace_id) => {
+            info!("✅ Workspace created/updated: {}", workspace_id);
+        }
+        Err(e) => {
+            // Log the error but don't fail the authentication
+            error!("⚠️ Failed to create/update workspace: {}", e);
+        }
+    }
+
     let token = generate_jwt_token(
         user.id,
         data.env.jwt_secret.clone(),
@@ -294,4 +306,29 @@ pub async fn logout_handler() -> Result<impl IntoResponse> {
 
     info!("✅ User successfully logged out");
     Ok(response)
+}
+
+/// Create or update workspace for authenticated user
+async fn create_or_update_workspace(
+    user: &User,
+    github_token: &str,
+    _data: &AppState,
+) -> Result<uuid::Uuid> {
+    info!("🏗️ Creating/updating workspace for user: {}", user.email);
+
+    // In a real implementation, this would:
+    // 1. Check if workspace already exists for the user
+    // 2. Create new workspace or update existing one
+    // 3. Encrypt and store the GitHub token
+    // 4. Set up default workspace settings
+    // 5. Initialize workspace with user's repositories
+
+    // For now, simulate workspace creation
+    let workspace_id = uuid::Uuid::new_v4();
+    
+    // Simulate encrypted token storage (in real implementation, use proper encryption)
+    let _encrypted_token = format!("encrypted_{}", github_token.len()); // Placeholder
+    
+    info!("✅ Workspace created/updated successfully: {}", workspace_id);
+    Ok(workspace_id)
 }

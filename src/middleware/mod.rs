@@ -1,8 +1,8 @@
-// This file declares the auth middleware module and re-exports its contents
-// This allows other parts of the code to use `use crate::middleware::auth`
-// instead of `use crate::middleware::auth::auth`
+// This file declares middleware modules and re-exports their contents
+// This allows other parts of the code to use `use crate::middleware::function_name`
 
 pub mod auth;
+pub mod validation;
 
-// Re-export all public items from the auth module
+// Re-export all public items from the modules
 pub use auth::*;

@@ -59,6 +59,9 @@ tokio-stream = "0.1"
 futures = "0.3"
 axum-extra = { version = "0.9", features = ["cookie"] }
 
+# Validation
+regex = "1.10"
+
 [profile.release]
 opt-level = "z"
 lto = true

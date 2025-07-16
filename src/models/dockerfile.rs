@@ -26,6 +26,7 @@ pub struct DockerfileGenerationResult {
 }
 
 impl DockerfileGenerationResult {
+    #[allow(dead_code)]
     pub fn new(
         workspace_id: Uuid,
         repository_id: i64,
@@ -75,6 +76,7 @@ impl ValidationResult {
         }
     }
     
+    #[allow(dead_code)]
     pub fn failure(errors: Vec<String>) -> Self {
         Self {
             success: false,

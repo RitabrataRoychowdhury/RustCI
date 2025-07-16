@@ -82,6 +82,7 @@ pub struct ProjectAnalysisDetails {
 }
 
 /// Get user's GitHub repositories
+#[allow(dead_code)]
 pub async fn get_user_repositories_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,
@@ -93,9 +94,11 @@ pub async fn get_user_repositories_handler(
     let per_page = query.per_page.unwrap_or(30).min(100); // Cap at 100
     let sort = query.sort.unwrap_or_else(|| "updated".to_string());
     let direction = query.direction.unwrap_or_else(|| "desc".to_string());
+    let visibility = query.visibility.unwrap_or_else(|| "all".to_string());
+    let affiliation = query.affiliation.unwrap_or_else(|| "owner,collaborator".to_string());
     
-    tracing::debug!("Repository query - page: {}, per_page: {}, sort: {}, direction: {}", 
-        page, per_page, sort, direction);
+    tracing::debug!("Repository query - page: {}, per_page: {}, sort: {}, direction: {}, visibility: {}, affiliation: {}", 
+        page, per_page, sort, direction, visibility, affiliation);
     
     // This is a placeholder implementation
     // In a real implementation, you'd:
@@ -124,6 +127,7 @@ pub async fn get_user_repositories_handler(
 }
 
 /// Get detailed information about a specific repository
+#[allow(dead_code)]
 pub async fn get_repository_details_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,
@@ -191,6 +195,7 @@ pub async fn get_repository_details_handler(
 }
 
 /// Analyze a repository's project type and structure
+#[allow(dead_code)]
 pub async fn analyze_repository_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,
@@ -239,6 +244,7 @@ pub async fn analyze_repository_handler(
 }
 
 /// Check if a repository has a Dockerfile
+#[allow(dead_code)]
 pub async fn check_dockerfile_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,
@@ -280,6 +286,7 @@ pub async fn check_dockerfile_handler(
 }
 
 /// Get repository contents for a specific path
+#[allow(dead_code)]
 pub async fn get_repository_contents_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,
@@ -323,6 +330,7 @@ pub async fn get_repository_contents_handler(
 }
 
 /// Search repositories by name or description
+#[allow(dead_code)]
 pub async fn search_repositories_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,

@@ -74,6 +74,7 @@ pub struct WorkspaceUpdate {
 }
 
 impl WorkspaceUpdate {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             organization: None,

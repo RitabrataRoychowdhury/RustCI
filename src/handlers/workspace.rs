@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{AppError, Result},
+    middleware::validation::{validate_string_field, validate_url},
     models::{Workspace, RepositoryMetadata},
     AppState,
 };
@@ -87,6 +88,7 @@ pub struct LinkRepositoryRequest {
 }
 
 /// Get current user's workspace
+#[allow(dead_code)]
 pub async fn get_workspace_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,
@@ -98,17 +100,14 @@ pub async fn get_workspace_handler(
     // In a real implementation, you'd inject the workspace service
     
     // This is a placeholder - you'd use the actual workspace service
-    let workspace_info = WorkspaceInfo {
-        id: Uuid::new_v4(),
+    // Using the Workspace model constructor and converting to WorkspaceInfo
+    let workspace = Workspace::new(
         user_id,
-        github_user_id: 12345,
-        github_username: "testuser".to_string(),
-        organization: None,
-        repositories: Vec::new(),
-        repository_count: 0,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-    };
+        12345,
+        "testuser".to_string(),
+        "encrypted_token".to_string(),
+    );
+    let workspace_info = WorkspaceInfo::from(workspace);
     
     let response = WorkspaceResponse {
         status: "success".to_string(),
@@ -122,6 +121,7 @@ pub async fn get_workspace_handler(
 }
 
 /// Update workspace settings
+#[allow(dead_code)]
 pub async fn update_workspace_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,
@@ -129,11 +129,9 @@ pub async fn update_workspace_handler(
 ) -> Result<Json<WorkspaceResponse>> {
     tracing::info!("Updating workspace for user: {}", user_id);
     
-    // Validate request
+    // Validate request using validation middleware
     if let Some(ref org) = request.organization {
-        if org.trim().is_empty() {
-            return Err(AppError::ValidationError("Organization name cannot be empty".to_string()));
-        }
+        validate_string_field(org, "organization", Some(1), Some(100))?;
     }
     
     // This is a placeholder implementation
@@ -167,6 +165,7 @@ pub async fn update_workspace_handler(
 }
 
 /// Get linked repositories
+#[allow(dead_code)]
 pub async fn get_repositories_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,
@@ -206,6 +205,7 @@ pub async fn get_repositories_handler(
 }
 
 /// Link a repository to workspace
+#[allow(dead_code)]
 pub async fn link_repository_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,
@@ -213,18 +213,10 @@ pub async fn link_repository_handler(
 ) -> Result<Json<serde_json::Value>> {
     tracing::info!("Linking repository {} for user: {}", request.repository_name, user_id);
     
-    // Validate request
-    if request.repository_name.trim().is_empty() {
-        return Err(AppError::ValidationError("Repository name cannot be empty".to_string()));
-    }
-    
-    if request.full_name.trim().is_empty() {
-        return Err(AppError::ValidationError("Full repository name cannot be empty".to_string()));
-    }
-    
-    if request.clone_url.trim().is_empty() {
-        return Err(AppError::ValidationError("Clone URL cannot be empty".to_string()));
-    }
+    // Validate request using validation middleware
+    validate_string_field(&request.repository_name, "repository_name", Some(1), Some(100))?;
+    validate_string_field(&request.full_name, "full_name", Some(1), Some(200))?;
+    validate_url(&request.clone_url, "clone_url")?;
     
     // This is a placeholder implementation
     // In a real implementation, you'd:
@@ -263,6 +255,7 @@ pub async fn link_repository_handler(
 }
 
 /// Unlink a repository from workspace
+#[allow(dead_code)]
 pub async fn unlink_repository_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,
@@ -292,6 +285,7 @@ pub async fn unlink_repository_handler(
 }
 
 /// Add shared secret to workspace
+#[allow(dead_code)]
 pub async fn add_secret_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,
@@ -299,14 +293,9 @@ pub async fn add_secret_handler(
 ) -> Result<Json<serde_json::Value>> {
     tracing::info!("Adding secret '{}' for user: {}", request.key, user_id);
     
-    // Validate request
-    if request.key.trim().is_empty() {
-        return Err(AppError::ValidationError("Secret key cannot be empty".to_string()));
-    }
-    
-    if request.value.trim().is_empty() {
-        return Err(AppError::ValidationError("Secret value cannot be empty".to_string()));
-    }
+    // Validate request using validation middleware
+    validate_string_field(&request.key, "key", Some(1), Some(50))?;
+    validate_string_field(&request.value, "value", Some(1), Some(1000))?;
     
     // Validate key format (alphanumeric and underscores only)
     if !request.key.chars().all(|c| c.is_alphanumeric() || c == '_') {
@@ -334,6 +323,7 @@ pub async fn add_secret_handler(
 }
 
 /// Get shared secrets from workspace (returns keys only, not values)
+#[allow(dead_code)]
 pub async fn get_secrets_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,
@@ -368,6 +358,7 @@ pub async fn get_secrets_handler(
 }
 
 /// Delete a shared secret from workspace
+#[allow(dead_code)]
 pub async fn delete_secret_handler(
     Extension(user_id): Extension<Uuid>,
     State(_state): State<AppState>,
@@ -375,10 +366,8 @@ pub async fn delete_secret_handler(
 ) -> Result<Json<serde_json::Value>> {
     tracing::info!("Deleting secret '{}' for user: {}", secret_key, user_id);
     
-    // Validate key
-    if secret_key.trim().is_empty() {
-        return Err(AppError::ValidationError("Secret key cannot be empty".to_string()));
-    }
+    // Validate key using validation middleware
+    validate_string_field(&secret_key, "secret_key", Some(1), Some(50))?;
     
     // This is a placeholder implementation
     // In a real implementation, you'd:
@@ -403,7 +392,7 @@ pub async fn delete_secret_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::StatusCode;
+    
     
     #[test]
     fn test_workspace_info_from_workspace() {
