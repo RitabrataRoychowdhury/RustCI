@@ -104,7 +104,7 @@ pub async fn get_pr_status(
         id: pr_id,
         status: status.clone(),
         pr_number: Some(42), // Simulated PR number
-        url: Some(format!("https://github.com/owner/repo/pull/42")),
+        url: Some("https://github.com/owner/repo/pull/42".to_string()),
         checks_passed: matches!(status, PRStatus::Created | PRStatus::Merged),
         mergeable: matches!(status, PRStatus::Created | PRStatus::Pending),
     };

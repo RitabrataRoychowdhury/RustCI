@@ -1,6 +1,6 @@
 use crate::error::{AppError, Result};
 use axum::extract::Multipart;
-use serde_yaml;
+// Removed redundant import
 use tracing::info;
 
 /// Configuration for file upload handling
@@ -93,7 +93,7 @@ impl FileUploadHandler {
 
     /// Validate file extension
     fn validate_file_extension(&self, file_name: &str) -> Result<()> {
-        let extension = file_name.split('.').last().unwrap_or("").to_lowercase();
+        let extension = file_name.split('.').next_back().unwrap_or("").to_lowercase();
 
         if !self.config.allowed_extensions.contains(&extension) {
             return Err(AppError::UnsupportedFileType(format!(

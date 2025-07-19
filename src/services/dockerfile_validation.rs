@@ -1,9 +1,11 @@
+#![allow(dead_code)]
+
 use async_trait::async_trait;
-use bollard::{Docker, API_DEFAULT_VERSION};
-use bollard::image::{BuildImageOptions, CreateImageOptions};
+use bollard::Docker;
+use bollard::image::BuildImageOptions;
 use bollard::container::{CreateContainerOptions, Config, StartContainerOptions, WaitContainerOptions};
 use futures_util::stream::TryStreamExt;
-use std::collections::HashMap;
+
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::fs;
@@ -93,7 +95,7 @@ impl LocalDockerValidator {
             .map_err(|e| AppError::DockerValidationError(format!("Failed to write Dockerfile: {}", e)))?;
         
         // If context_path is provided, copy files from there
-        if let Some(context) = context_path {
+        if let Some(_context) = context_path {
             // For now, we'll create a simple context with just the Dockerfile
             // In a real implementation, you'd copy the actual project files
             let readme_path = temp_dir.path().join("README.md");
@@ -119,7 +121,7 @@ impl LocalDockerValidator {
         let build_context_tar = self.create_tar_archive(build_context.path()).await?;
         
         let mut build_stream = self.docker_client.build_image(
-            Some(build_options),
+            build_options,
             None,
             Some(build_context_tar.into()),
         );
@@ -183,13 +185,12 @@ impl LocalDockerValidator {
         
         match wait_result {
             Ok(Ok(Some(wait_info))) => {
-                if let Some(exit_code) = wait_info.status_code {
-                    run_logs.push(format!("Container exited with code: {}", exit_code));
-                    if exit_code != 0 {
-                        run_logs.push("Container failed to run successfully".to_string());
-                    } else {
-                        run_logs.push("Container ran successfully".to_string());
-                    }
+                let exit_code = wait_info.status_code;
+                run_logs.push(format!("Container exited with code: {}", exit_code));
+                if exit_code != 0 {
+                    run_logs.push("Container failed to run successfully".to_string());
+                } else {
+                    run_logs.push("Container ran successfully".to_string());
                 }
             }
             Ok(Ok(None)) => {
@@ -217,7 +218,7 @@ impl LocalDockerValidator {
     }
     
     async fn create_tar_archive(&self, dir_path: &std::path::Path) -> Result<Vec<u8>> {
-        use std::io::Write;
+        
         
         let mut tar_data = Vec::new();
         {

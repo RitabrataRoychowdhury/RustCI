@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
 use uuid::Uuid;
@@ -185,12 +187,13 @@ impl WorkspaceService for WorkspaceServiceImpl {
         let workspace = self.workspace_repo.find_by_id(workspace_id).await?
             .ok_or(AppError::WorkspaceNotFound)?;
         
+        let original_len = workspace.repositories.len();
         let repositories: Vec<RepositoryMetadata> = workspace.repositories
             .into_iter()
             .filter(|r| r.id != repository_id)
             .collect();
         
-        if repositories.len() == workspace.repositories.len() {
+        if repositories.len() == original_len {
             return Err(AppError::RepositoryNotFound("Repository not found in workspace".to_string()));
         }
         

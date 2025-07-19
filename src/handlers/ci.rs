@@ -100,7 +100,7 @@ async fn create_pipeline_from_yaml(
     // Validate pipeline
     pipeline
         .validate()
-        .map_err(|e| AppError::ValidationError(e))?;
+        .map_err(AppError::ValidationError)?;
 
     // Create pipeline using CI engine
     let ci_engine = get_ci_engine(state)?;
@@ -192,7 +192,7 @@ pub async fn list_pipelines(State(state): State<AppState>) -> Result<Json<Vec<Pi
     let response: Vec<PipelineResponse> = pipelines
         .into_iter()
         .map(|p| PipelineResponse {
-            id: p.id.unwrap_or_else(|| Uuid::new_v4()),
+            id: p.id.unwrap_or_else(Uuid::new_v4),
             name: p.name,
             description: p.description,
             created_at: p.created_at,

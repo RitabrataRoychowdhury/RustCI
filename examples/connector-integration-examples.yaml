@@ -1,0 +1,355 @@
+# Connector Integration Examples
+# These examples demonstrate how to use the refactored connector system
+
+# 1. Docker Connector Example
+---
+name: "Docker Connector Demo"
+description: "Demonstrates Docker connector capabilities"
+triggers:
+  - trigger_type: git_push
+    config:
+      branch_patterns: ["main", "develop"]
+stages:
+  - name: "Build"
+    steps:
+      - name: "build-with-docker"
+        step_type: docker
+        config:
+          image: "node:18-alpine"
+          command: "npm ci && npm run build"
+          working_directory: "/app"
+          environment:
+            NODE_ENV: "production"
+        timeout: 300
+      - name: "build-custom-dockerfile"
+        step_type: docker
+        config:
+          dockerfile: "Dockerfile.build"
+          build_context: "."
+          command: "make build"
+        timeout: 600
+  - name: "Test"
+    steps:
+      - name: "run-tests"
+        step_type: docker
+        config:
+          image: "node:18-alpine"
+          script: |
+            npm ci
+            npm run test:unit
+            npm run test:integration
+          environment:
+            CI: "true"
+            NODE_ENV: "test"
+environment:
+  DOCKER_BUILDKIT: "1"
+
+---
+# 2. Kubernetes Connector Example
+name: "Kubernetes Connector Demo"
+description: "Demonstrates Kubernetes connector with advanced features"
+triggers:
+  - trigger_type: manual
+stages:
+  - name: "Deploy to Kubernetes"
+    steps:
+      - name: "deploy-with-pvc"
+        step_type: kubernetes
+        config:
+          image: "ubuntu:latest"
+          command: "echo 'Deploying application' && sleep 10"
+          namespace: "ci-cd"
+          parameters:
+            use_pvc: true
+            storage_class: "fast-ssd"
+            storage_size: "10Gi"
+            resource_requests:
+              cpu: "100m"
+              memory: "128Mi"
+            resource_limits:
+              cpu: "500m"
+              memory: "512Mi"
+            service_account: "ci-service-account"
+        timeout: 300
+      - name: "deploy-with-lifecycle-hooks"
+        step_type: kubernetes
+        config:
+          image: "alpine:latest"
+          script: |
+            echo "Starting deployment process"
+            apk add --no-cache curl
+            curl -X POST http://webhook.example.com/start
+            echo "Deployment completed"
+          namespace: "production"
+          parameters:
+            use_pvc: false
+            use_hostpath: true
+            resource_requests:
+              cpu: "200m"
+              memory: "256Mi"
+        timeout: 600
+environment:
+  KUBECONFIG: "/etc/kubernetes/config"
+  KUBECTL_VERSION: "1.28"
+
+---
+# 3. Multi-Connector Pipeline
+name: "Multi-Connector Integration"
+description: "Uses multiple connectors in a single pipeline"
+triggers:
+  - trigger_type: webhook
+    config:
+      webhook_url: "/webhook/multi-connector"
+stages:
+  - name: "Source"
+    steps:
+      - name: "clone-from-github"
+        step_type: github
+        config:
+          repository_url: "https://github.com/user/app"
+          branch: "main"
+          working_directory: "source"
+  - name: "Build"
+    parallel: true
+    steps:
+      - name: "build-backend"
+        step_type: docker
+        config:
+          image: "rust:1.70"
+          command: "cargo build --release"
+          working_directory: "source/backend"
+      - name: "build-frontend"
+        step_type: docker
+        config:
+          image: "node:18"
+          command: "npm ci && npm run build"
+          working_directory: "source/frontend"
+  - name: "Deploy"
+    steps:
+      - name: "deploy-to-kubernetes"
+        step_type: kubernetes
+        config:
+          image: "kubectl:latest"
+          script: |
+            kubectl apply -f k8s/
+            kubectl rollout status deployment/app
+          namespace: "production"
+          parameters:
+            service_account: "deployment-sa"
+      - name: "deploy-to-aws"
+        step_type: aws
+        config:
+          service: "ecs"
+          action: "update-service"
+          parameters:
+            cluster: "production"
+            service: "app-service"
+environment:
+  AWS_REGION: "us-west-2"
+  GITHUB_TOKEN: "${GITHUB_TOKEN}"
+
+---
+# 4. Cloud Connectors Example
+name: "Cloud Connectors Demo"
+description: "Demonstrates AWS, Azure, and GCP connectors"
+triggers:
+  - trigger_type: schedule
+    config:
+      cron_expression: "0 2 * * *"  # Daily at 2 AM
+stages:
+  - name: "AWS Deployment"
+    steps:
+      - name: "deploy-to-ecs"
+        step_type: aws
+        config:
+          service: "ecs"
+          action: "update-service"
+          parameters:
+            cluster: "production"
+            service: "web-service"
+            task_definition: "web-app:latest"
+      - name: "update-lambda"
+        step_type: aws
+        config:
+          service: "lambda"
+          action: "update-function-code"
+          parameters:
+            function_name: "api-handler"
+            zip_file: "dist/lambda.zip"
+  - name: "Azure Deployment"
+    steps:
+      - name: "deploy-to-aci"
+        step_type: azure
+        config:
+          service: "container-instances"
+          action: "create-or-update"
+          parameters:
+            resource_group: "production-rg"
+            container_group: "web-app"
+            image: "myregistry.azurecr.io/web-app:latest"
+  - name: "GCP Deployment"
+    steps:
+      - name: "deploy-to-cloud-run"
+        step_type: gcp
+        config:
+          service: "cloud-run"
+          action: "deploy"
+          parameters:
+            service_name: "web-service"
+            image: "gcr.io/project/web-app:latest"
+            region: "us-central1"
+environment:
+  AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+  AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+  AZURE_CLIENT_ID: "${AZURE_CLIENT_ID}"
+  AZURE_CLIENT_SECRET: "${AZURE_CLIENT_SECRET}"
+  GOOGLE_APPLICATION_CREDENTIALS: "/etc/gcp/service-account.json"
+
+---
+# 5. Git Connectors Example
+name: "Git Operations Demo"
+description: "Demonstrates GitHub and GitLab connectors"
+triggers:
+  - trigger_type: git_push
+    config:
+      branch_patterns: ["feature/*"]
+stages:
+  - name: "Source Management"
+    steps:
+      - name: "sync-to-gitlab"
+        step_type: gitlab
+        config:
+          action: "mirror"
+          source_repo: "https://github.com/user/app"
+          target_repo: "https://gitlab.com/user/app"
+          branch: "main"
+      - name: "create-github-release"
+        step_type: github
+        config:
+          action: "create-release"
+          repository: "user/app"
+          tag: "v${BUILD_NUMBER}"
+          name: "Release v${BUILD_NUMBER}"
+          body: "Automated release from CI/CD pipeline"
+  - name: "Cross-Platform Sync"
+    steps:
+      - name: "update-github-status"
+        step_type: github
+        config:
+          action: "update-status"
+          repository: "user/app"
+          commit: "${GIT_COMMIT}"
+          state: "success"
+          description: "Build completed successfully"
+      - name: "update-gitlab-mr"
+        step_type: gitlab
+        config:
+          action: "update-merge-request"
+          project_id: "12345"
+          merge_request_iid: "${MR_IID}"
+          state: "merge"
+environment:
+  GITHUB_TOKEN: "${GITHUB_TOKEN}"
+  GITLAB_TOKEN: "${GITLAB_TOKEN}"
+  BUILD_NUMBER: "${CI_BUILD_NUMBER}"
+  GIT_COMMIT: "${CI_COMMIT_SHA}"
+
+---
+# 6. Error Handling and Retry Example
+name: "Resilient Pipeline"
+description: "Demonstrates error handling and retry mechanisms"
+triggers:
+  - trigger_type: manual
+stages:
+  - name: "Resilient Operations"
+    steps:
+      - name: "flaky-operation"
+        step_type: kubernetes
+        config:
+          image: "alpine:latest"
+          script: |
+            # Simulate flaky operation
+            if [ $((RANDOM % 3)) -eq 0 ]; then
+              echo "Operation succeeded"
+              exit 0
+            else
+              echo "Operation failed, will retry"
+              exit 1
+            fi
+          namespace: "default"
+        continue_on_error: false
+        timeout: 60
+      - name: "cleanup-on-failure"
+        step_type: docker
+        config:
+          image: "alpine:latest"
+          command: "echo 'Cleaning up resources' && rm -rf /tmp/build-*"
+        continue_on_error: true
+  - name: "Notification"
+    steps:
+      - name: "notify-success"
+        step_type: custom
+        config:
+          plugin_name: "webhook-notifier"
+          parameters:
+            webhook_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+            message: "Pipeline completed successfully"
+retry_count: 2
+timeout: 1800
+
+---
+# 7. Performance and Resource Management
+name: "Resource-Optimized Pipeline"
+description: "Demonstrates resource management and performance optimization"
+triggers:
+  - trigger_type: git_push
+    config:
+      branch_patterns: ["main"]
+stages:
+  - name: "Optimized Build"
+    parallel: true
+    steps:
+      - name: "build-with-resource-limits"
+        step_type: kubernetes
+        config:
+          image: "maven:3.8-openjdk-17"
+          command: "mvn clean package -DskipTests"
+          namespace: "build"
+          parameters:
+            resource_requests:
+              cpu: "500m"
+              memory: "1Gi"
+            resource_limits:
+              cpu: "2"
+              memory: "4Gi"
+            use_pvc: true
+            storage_size: "20Gi"
+            storage_class: "fast-ssd"
+        timeout: 900
+      - name: "parallel-tests"
+        step_type: docker
+        config:
+          image: "maven:3.8-openjdk-17"
+          script: |
+            mvn test -Dtest.parallel=true -Dtest.thread.count=4
+          environment:
+            MAVEN_OPTS: "-Xmx2g -XX:+UseG1GC"
+        timeout: 600
+  - name: "Efficient Deployment"
+    steps:
+      - name: "zero-downtime-deploy"
+        step_type: kubernetes
+        config:
+          image: "kubectl:latest"
+          script: |
+            kubectl set image deployment/app app=myapp:${BUILD_TAG}
+            kubectl rollout status deployment/app --timeout=300s
+          namespace: "production"
+          parameters:
+            service_account: "deployment-sa"
+            resource_requests:
+              cpu: "100m"
+              memory: "128Mi"
+environment:
+  BUILD_TAG: "${CI_COMMIT_SHORT_SHA}"
+  MAVEN_OPTS: "-Dmaven.repo.local=/workspace/.m2/repository"

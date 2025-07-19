@@ -301,7 +301,7 @@ impl DocumentationGenerator {
                     param.description
                 ));
             }
-            docs.push_str("\n");
+            docs.push('\n');
         }
 
         // Request body

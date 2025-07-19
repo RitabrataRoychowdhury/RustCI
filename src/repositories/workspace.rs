@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use mongodb::{
-    bson::{doc, oid::ObjectId},
+    bson::doc,
     Collection, Database,
 };
 use std::sync::Arc;
@@ -101,7 +103,7 @@ impl WorkspaceRepository for MongoWorkspaceRepository {
         
         let mut update_doc = doc! {
             "$set": {
-                "updated_at": updates.updated_at
+                "updated_at": mongodb::bson::DateTime::from_system_time(updates.updated_at.into())
             }
         };
         
@@ -110,7 +112,9 @@ impl WorkspaceRepository for MongoWorkspaceRepository {
         }
         
         if let Some(shared_secrets) = &updates.shared_secrets {
-            update_doc.get_document_mut("$set").unwrap().insert("shared_secrets", shared_secrets);
+            let bson_secrets = mongodb::bson::to_bson(shared_secrets)
+                .map_err(|e| AppError::DatabaseError(format!("Failed to serialize shared_secrets: {}", e)))?;
+            update_doc.get_document_mut("$set").unwrap().insert("shared_secrets", bson_secrets);
         }
         
         let options = mongodb::options::FindOneAndUpdateOptions::builder()
@@ -122,7 +126,7 @@ impl WorkspaceRepository for MongoWorkspaceRepository {
             .find_one_and_update(filter, update_doc, options)
             .await
             .map_err(|e| AppError::DatabaseError(format!("Failed to update workspace: {}", e)))?
-            .ok_or_else(|| AppError::WorkspaceNotFound)?;
+            .ok_or(AppError::WorkspaceNotFound)?;
         
         Ok(updated_workspace)
     }
@@ -158,10 +162,10 @@ impl WorkspaceRepository for MongoWorkspaceRepository {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::models::Workspace;
-    use chrono::Utc;
-    use std::collections::HashMap;
+    // use super::*;
+    // use crate::models::Workspace;
+    // use chrono::Utc;
+    // use std::collections::HashMap;
     
     // Note: These tests would require a test MongoDB instance
     // For now, they serve as documentation of expected behavior

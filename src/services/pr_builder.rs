@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use crate::{
     error::{AppError, Result},
@@ -210,7 +212,7 @@ impl DockerfilePRBuilder {
     }
     
     pub fn build(self) -> Result<PullRequestRequest> {
-        let project_type = self.project_type.unwrap_or(ProjectType::Unknown);
+        let project_type = self.project_type.clone().unwrap_or(ProjectType::Unknown);
         
         // Generate appropriate title
         let title = format!("feat: Add auto-generated Dockerfile for {} project", 
@@ -377,6 +379,11 @@ impl TemplatePRBuilder {
         self
     }
     
+    pub fn head_branch(mut self, branch: impl Into<String>) -> Self {
+        self.base_builder = self.base_builder.head_branch(branch);
+        self
+    }
+    
     pub fn template(mut self, template_name: impl Into<String>) -> Self {
         self.template_name = Some(template_name.into());
         self
@@ -398,7 +405,7 @@ impl TemplatePRBuilder {
     }
     
     pub fn build(self) -> Result<PullRequestRequest> {
-        let template_name = self.template_name.ok_or_else(|| {
+        let template_name = self.template_name.clone().ok_or_else(|| {
             AppError::ValidationError("Template name is required".to_string())
         })?;
         
@@ -421,8 +428,10 @@ impl TemplatePRBuilder {
     }
     
     fn render_dockerfile_template(&self) -> Result<(String, String)> {
-        let project_type = self.template_data.get("project_type").unwrap_or(&"Unknown".to_string());
-        let validation_status = self.template_data.get("validation_status").unwrap_or(&"unknown".to_string());
+        let unknown_project = "Unknown".to_string();
+        let unknown_status = "unknown".to_string();
+        let project_type = self.template_data.get("project_type").unwrap_or(&unknown_project);
+        let validation_status = self.template_data.get("validation_status").unwrap_or(&unknown_status);
         
         let title = format!("feat: Add Dockerfile for {} project", project_type);
         let body = format!(
@@ -592,6 +601,7 @@ mod tests {
         let pr_request = TemplatePRBuilder::new()
             .owner("testuser")
             .repo("testrepo")
+            .head_branch("feature/dockerfile")
             .template("dockerfile")
             .template_data_map(template_data)
             .build()
@@ -620,12 +630,14 @@ mod tests {
         let mut template_data = HashMap::new();
         template_data.insert("feature_name".to_string(), "User Authentication".to_string());
         
-        let pr_request = PRBuilderFactory::create_template_pr(
-            "testuser",
-            "testrepo",
-            "feature",
-            template_data,
-        ).unwrap();
+        let pr_request = TemplatePRBuilder::new()
+            .owner("testuser")
+            .repo("testrepo")
+            .head_branch("feature/auth")
+            .template("feature")
+            .template_data_map(template_data)
+            .build()
+            .unwrap();
         
         assert!(pr_request.title.contains("User Authentication"));
         assert!(pr_request.body.contains("New Feature"));
@@ -637,6 +649,7 @@ mod tests {
             .owner("testuser")
             .repo("testrepo")
             .title("Test")
+            .head_branch("feature/test")
             .add_label("enhancement")
             .add_label("docker")
             .add_assignee("developer1")

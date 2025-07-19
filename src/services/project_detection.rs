@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::{
     error::{AppError, Result},
     models::{GitHubContent, ProjectType},
@@ -185,7 +187,7 @@ impl GoProjectDetector {
 impl ProjectTypeDetector for GoProjectDetector {
     fn detect(&self, files: &[GitHubContent]) -> Result<ProjectType> {
         let has_go_mod = files.iter().any(|f| f.name == "go.mod");
-        let has_go_sum = files.iter().any(|f| f.name == "go.sum");
+        let _has_go_sum = files.iter().any(|f| f.name == "go.sum");
         let has_go_files = files.iter().any(|f| f.name.ends_with(".go"));
         let has_main_go = files.iter().any(|f| f.name == "main.go");
         
@@ -297,6 +299,9 @@ mod tests {
             path: name.to_string(),
             sha: "test_sha".to_string(),
             size: 100,
+            url: format!("https://api.github.com/repos/test/test/contents/{}", name),
+            html_url: format!("https://github.com/test/test/blob/main/{}", name),
+            git_url: format!("https://api.github.com/repos/test/test/git/blobs/test_sha"),
             file_type: file_type.to_string(),
             download_url: None,
             content: None,

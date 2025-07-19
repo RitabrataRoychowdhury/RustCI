@@ -80,7 +80,7 @@ pub enum StepType {
     Custom,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StepConfig {
     // Shell commands
     pub command: Option<String>,

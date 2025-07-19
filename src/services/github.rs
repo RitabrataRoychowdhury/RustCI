@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::json;
@@ -136,7 +138,8 @@ impl GitHubService for GitHubServiceImpl {
                 Err(AppError::GitHubApiError("Failed to parse repository contents".to_string()))
             }
         } else {
-            let error_text = response_text;
+            let error_text = response.text().await
+                .map_err(|e| AppError::GitHubApiError(format!("Failed to read error response: {}", e)))?;
             Err(AppError::GitHubApiError(format!("GitHub API error: {}", error_text)))
         }
     }
@@ -217,6 +220,7 @@ impl GitHubService for GitHubServiceImpl {
         let headers = self.create_headers(access_token);
         
         // Encode content to base64
+        use base64ct::Encoding;
         let encoded_content = base64ct::Base64::encode_string(content.as_bytes());
         
         let body = json!({
@@ -290,10 +294,11 @@ impl GitHubService for GitHubServiceImpl {
             .map_err(|e| AppError::GitHubApiError(format!("Failed to delete branch: {}", e)))?;
         
         if !response.status().is_success() {
+            let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
             return Err(AppError::GitHubApiError(format!(
                 "Failed to delete branch ({}): {}",
-                response.status(),
+                status,
                 error_text
             )));
         }

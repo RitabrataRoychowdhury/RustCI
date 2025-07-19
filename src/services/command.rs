@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -71,7 +73,10 @@ impl CommandInvoker {
         
         tracing::info!("Executing {} commands", self.commands.len());
         
-        for command in self.commands.drain(..) {
+        // Take all commands to avoid borrowing issues
+        let commands = std::mem::take(&mut self.commands);
+        
+        for command in commands {
             let start_time = std::time::Instant::now();
             let command_id = command.command_id();
             let description = command.description();
@@ -450,7 +455,7 @@ impl DockerfilePRWorkflowCommand {
 #[async_trait]
 impl Command for DockerfilePRWorkflowCommand {
     async fn execute(&self) -> Result<CommandResult> {
-        let mut invoker = CommandInvoker::new();
+        let _invoker = CommandInvoker::new();
         
         // Add all sub-commands
         for command in &self.commands {
@@ -677,7 +682,7 @@ mod tests {
     
     #[tokio::test]
     async fn test_command_invoker() {
-        let mut invoker = CommandInvoker::new();
+        let invoker = CommandInvoker::new();
         
         assert_eq!(invoker.pending_commands_count(), 0);
         assert_eq!(invoker.executed_commands_count(), 0);

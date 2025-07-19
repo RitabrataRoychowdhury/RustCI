@@ -67,6 +67,19 @@ pub enum AppError {
     
     #[error("Authorization error: {0}")]
     AuthorizationError(String),
+    
+    // Connector-specific error types
+    #[error("Permission denied: {0}")]
+    PermissionDenied(String),
+    
+    #[error("Kubernetes error: {0}")]
+    KubernetesError(String),
+    
+    #[error("Connector configuration error: {0}")]
+    ConnectorConfigError(String),
+    
+    #[error("Feature not implemented: {0}")]
+    Unimplemented(String),
 }
 
 // Add From implementations for common error types
@@ -114,6 +127,11 @@ impl IntoResponse for AppError {
             AppError::RepositoryNotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::AuthenticationError(msg) => (StatusCode::UNAUTHORIZED, msg),
             AppError::AuthorizationError(msg) => (StatusCode::FORBIDDEN, msg),
+            // Connector-specific error types
+            AppError::PermissionDenied(msg) => (StatusCode::FORBIDDEN, msg),
+            AppError::KubernetesError(msg) => (StatusCode::BAD_GATEWAY, msg),
+            AppError::ConnectorConfigError(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg),
+            AppError::Unimplemented(msg) => (StatusCode::NOT_IMPLEMENTED, msg),
         };
 
         let body = Json(json!({

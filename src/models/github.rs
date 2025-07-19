@@ -32,6 +32,9 @@ pub struct GitHubContent {
     pub path: String,
     pub sha: String,
     pub size: i64,
+    pub url: String,
+    pub html_url: String,
+    pub git_url: String,
     #[serde(rename = "type")]
     pub file_type: String,
     pub download_url: Option<String>,

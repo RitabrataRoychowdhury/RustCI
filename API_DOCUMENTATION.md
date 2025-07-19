@@ -23,11 +23,13 @@ Authorization: Bearer YOUR_JWT_TOKEN
 Check if the API is running.
 
 **cURL Example:**
+
 ```bash
 curl -X GET http://localhost:8000/api/healthchecker
 ```
 
 **Response:**
+
 ```json
 {
   "status": "success",
@@ -42,6 +44,7 @@ curl -X GET http://localhost:8000/api/healthchecker
 Create a new pipeline from JSON payload.
 
 **Request Body:**
+
 ```json
 {
   "yaml_content": "string"
@@ -49,6 +52,7 @@ Create a new pipeline from JSON payload.
 ```
 
 **cURL Example:**
+
 ```bash
 curl -X POST http://localhost:8000/api/ci/pipelines \
   -H "Content-Type: application/json" \
@@ -58,6 +62,7 @@ curl -X POST http://localhost:8000/api/ci/pipelines \
 ```
 
 **Response:**
+
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -75,12 +80,14 @@ Create a new pipeline from uploaded YAML file.
 **Request:** Multipart form data with file field named "pipeline"
 
 **cURL Example:**
+
 ```bash
 curl -X POST http://localhost:8000/api/ci/pipelines/upload \
   -F "pipeline=@pipeline.yaml"
 ```
 
 **Response:**
+
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -96,11 +103,13 @@ curl -X POST http://localhost:8000/api/ci/pipelines/upload \
 List all pipelines.
 
 **cURL Example:**
+
 ```bash
 curl -X GET http://localhost:8000/api/ci/pipelines
 ```
 
 **Response:**
+
 ```json
 [
   {
@@ -118,11 +127,13 @@ curl -X GET http://localhost:8000/api/ci/pipelines
 Get pipeline YAML configuration.
 
 **cURL Example:**
+
 ```bash
 curl -X GET http://localhost:8000/api/ci/pipelines/550e8400-e29b-41d4-a716-446655440000/yaml
 ```
 
 **Response:**
+
 ```yaml
 name: "Test Pipeline"
 description: "A simple test pipeline"
@@ -148,6 +159,7 @@ retry_count: 0
 Trigger a pipeline execution.
 
 **Request Body:**
+
 ```json
 {
   "trigger_type": "string",
@@ -161,6 +173,7 @@ Trigger a pipeline execution.
 ```
 
 **cURL Example:**
+
 ```bash
 curl -X POST http://localhost:8000/api/ci/pipelines/550e8400-e29b-41d4-a716-446655440000/trigger \
   -H "Content-Type: application/json" \
@@ -175,6 +188,7 @@ curl -X POST http://localhost:8000/api/ci/pipelines/550e8400-e29b-41d4-a716-4466
 ```
 
 **Response:**
+
 ```json
 {
   "execution_id": "660e8400-e29b-41d4-a716-446655440001",
@@ -189,6 +203,7 @@ Trigger pipeline via webhook (GitHub format).
 **Request Body:** GitHub webhook payload
 
 **cURL Example:**
+
 ```bash
 curl -X POST http://localhost:8000/api/ci/pipelines/550e8400-e29b-41d4-a716-446655440000/webhook \
   -H "Content-Type: application/json" \
@@ -206,6 +221,7 @@ curl -X POST http://localhost:8000/api/ci/pipelines/550e8400-e29b-41d4-a716-4466
 ```
 
 **Response:**
+
 ```json
 {
   "execution_id": "660e8400-e29b-41d4-a716-446655440001",
@@ -220,11 +236,13 @@ curl -X POST http://localhost:8000/api/ci/pipelines/550e8400-e29b-41d4-a716-4466
 Get execution status and details.
 
 **cURL Example:**
+
 ```bash
 curl -X GET http://localhost:8000/api/ci/executions/660e8400-e29b-41d4-a716-446655440001
 ```
 
 **Response:**
+
 ```json
 {
   "id": "660e8400-e29b-41d4-a716-446655440001",
@@ -255,9 +273,11 @@ curl -X GET http://localhost:8000/api/ci/executions/660e8400-e29b-41d4-a716-4466
 List all executions or filter by pipeline.
 
 **Query Parameters:**
+
 - `pipeline_id` (optional): Filter by pipeline ID
 
 **cURL Examples:**
+
 ```bash
 # List all executions
 curl -X GET http://localhost:8000/api/ci/executions
@@ -267,6 +287,7 @@ curl -X GET "http://localhost:8000/api/ci/executions?pipeline_id=550e8400-e29b-4
 ```
 
 **Response:**
+
 ```json
 [
   {
@@ -285,11 +306,13 @@ curl -X GET "http://localhost:8000/api/ci/executions?pipeline_id=550e8400-e29b-4
 Cancel a running execution.
 
 **cURL Example:**
+
 ```bash
 curl -X DELETE http://localhost:8000/api/ci/executions/660e8400-e29b-41d4-a716-446655440001/cancel
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Execution cancelled successfully",
@@ -304,11 +327,13 @@ curl -X DELETE http://localhost:8000/api/ci/executions/660e8400-e29b-41d4-a716-4
 Test CI engine connectivity.
 
 **cURL Example:**
+
 ```bash
 curl -X GET http://localhost:8000/api/ci/test
 ```
 
 **Response:**
+
 ```
 CI Engine is working!
 ```
@@ -320,6 +345,7 @@ CI Engine is working!
 Initiate GitHub OAuth flow.
 
 **cURL Example:**
+
 ```bash
 curl -X GET http://localhost:8000/api/sessions/oauth/github
 ```
@@ -333,6 +359,7 @@ GitHub OAuth callback (handled by browser).
 Get current user information (requires authentication).
 
 **cURL Example:**
+
 ```bash
 curl -X GET http://localhost:8000/api/sessions/me \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
@@ -455,9 +482,11 @@ retry_count: 1
 Real-time execution updates will be available via WebSocket:
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8000/api/ci/executions/660e8400-e29b-41d4-a716-446655440001/stream');
+const ws = new WebSocket(
+  "ws://localhost:8000/api/ci/executions/660e8400-e29b-41d4-a716-446655440001/stream"
+);
 ws.onmessage = (event) => {
   const update = JSON.parse(event.data);
-  console.log('Execution update:', update);
+  console.log("Execution update:", update);
 };
 ```

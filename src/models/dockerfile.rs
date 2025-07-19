@@ -66,6 +66,7 @@ pub struct ValidationResult {
 }
 
 impl ValidationResult {
+    #[allow(dead_code)]
     pub fn success(build_logs: Vec<String>, run_logs: Vec<String>) -> Self {
         Self {
             success: true,

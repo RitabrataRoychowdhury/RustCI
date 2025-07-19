@@ -22,7 +22,12 @@ Dockerfile
 # Documentation that's not needed in container
 README.md
 LICENSE
-*.md
+SYSTEM_DESIGN.md
+API_DOCUMENTATION.md
+integration_validation.md
+
+# Keep docs/ and examples/ as they might be needed by the application
+# *.md
 
 # Test files
 tests/

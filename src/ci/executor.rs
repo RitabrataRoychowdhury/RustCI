@@ -1,7 +1,7 @@
 use crate::ci::{
     builder::{BuildConfig, ProjectBuilder},
     config::{Stage, Step, StepType},
-    connectors::{ConnectorManager, ConnectorType},
+    connectors::ConnectorManager,
     deployment::{DeploymentConfig, DeploymentType, LocalDeploymentManager},
     pipeline::{ExecutionStatus, LogLevel, PipelineExecution},
     repository::{RepositoryConfig, RepositoryManager},
@@ -17,7 +17,7 @@ use tracing::{debug, error, info, warn};
 #[allow(dead_code)] // Will be used when CI engine is fully implemented
 #[derive(Clone)]
 pub struct PipelineExecutor {
-    pub connector_manager: Arc<ConnectorManager>,
+    pub connector_manager: Arc<tokio::sync::Mutex<ConnectorManager>>,
     pub repository_manager: Arc<RepositoryManager>,
     pub project_builder: Arc<ProjectBuilder>,
     pub deployment_manager: Arc<tokio::sync::Mutex<LocalDeploymentManager>>,
@@ -26,12 +26,12 @@ pub struct PipelineExecutor {
 impl PipelineExecutor {
     #[allow(dead_code)] // Will be used when CI engine is initialized
     pub fn new(
-        connector_manager: Arc<ConnectorManager>,
+        connector_manager: ConnectorManager,
         cache_directory: std::path::PathBuf,
         deployment_directory: std::path::PathBuf,
     ) -> Self {
         Self {
-            connector_manager,
+            connector_manager: Arc::new(tokio::sync::Mutex::new(connector_manager)),
             repository_manager: Arc::new(RepositoryManager::new()),
             project_builder: Arc::new(ProjectBuilder::new(cache_directory)),
             deployment_manager: Arc::new(tokio::sync::Mutex::new(LocalDeploymentManager::new(
@@ -542,11 +542,9 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self
-            .connector_manager
-            .get_connector(ConnectorType::Docker)
-            .await?;
-        connector.execute_step(step, workspace, env).await
+        let mut connector_manager = self.connector_manager.lock().await;
+        let result = connector_manager.execute_step(step, workspace, env).await?;
+        Ok((result.exit_code, result.stdout, result.stderr))
     }
 
     async fn execute_kubernetes_step(
@@ -555,11 +553,9 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self
-            .connector_manager
-            .get_connector(ConnectorType::Kubernetes)
-            .await?;
-        connector.execute_step(step, workspace, env).await
+        let mut connector_manager = self.connector_manager.lock().await;
+        let result = connector_manager.execute_step(step, workspace, env).await?;
+        Ok((result.exit_code, result.stdout, result.stderr))
     }
 
     async fn execute_aws_step(
@@ -568,11 +564,9 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self
-            .connector_manager
-            .get_connector(ConnectorType::AWS)
-            .await?;
-        connector.execute_step(step, workspace, env).await
+        let mut connector_manager = self.connector_manager.lock().await;
+        let result = connector_manager.execute_step(step, workspace, env).await?;
+        Ok((result.exit_code, result.stdout, result.stderr))
     }
 
     async fn execute_azure_step(
@@ -581,11 +575,9 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self
-            .connector_manager
-            .get_connector(ConnectorType::Azure)
-            .await?;
-        connector.execute_step(step, workspace, env).await
+        let mut connector_manager = self.connector_manager.lock().await;
+        let result = connector_manager.execute_step(step, workspace, env).await?;
+        Ok((result.exit_code, result.stdout, result.stderr))
     }
 
     async fn execute_gcp_step(
@@ -594,11 +586,9 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self
-            .connector_manager
-            .get_connector(ConnectorType::GCP)
-            .await?;
-        connector.execute_step(step, workspace, env).await
+        let mut connector_manager = self.connector_manager.lock().await;
+        let result = connector_manager.execute_step(step, workspace, env).await?;
+        Ok((result.exit_code, result.stdout, result.stderr))
     }
 
     async fn execute_github_step(
@@ -607,11 +597,9 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self
-            .connector_manager
-            .get_connector(ConnectorType::GitHub)
-            .await?;
-        connector.execute_step(step, workspace, env).await
+        let mut connector_manager = self.connector_manager.lock().await;
+        let result = connector_manager.execute_step(step, workspace, env).await?;
+        Ok((result.exit_code, result.stdout, result.stderr))
     }
 
     async fn execute_gitlab_step(
@@ -620,11 +608,9 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let connector = self
-            .connector_manager
-            .get_connector(ConnectorType::GitLab)
-            .await?;
-        connector.execute_step(step, workspace, env).await
+        let mut connector_manager = self.connector_manager.lock().await;
+        let result = connector_manager.execute_step(step, workspace, env).await?;
+        Ok((result.exit_code, result.stdout, result.stderr))
     }
 
     async fn execute_custom_step(
@@ -633,14 +619,8 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let plugin_name = step.config.plugin_name.as_ref().ok_or_else(|| {
-            AppError::ValidationError("Custom step requires plugin_name".to_string())
-        })?;
-
-        let connector = self
-            .connector_manager
-            .get_custom_connector(plugin_name)
-            .await?;
-        connector.execute_step(step, workspace, env).await
+        let mut connector_manager = self.connector_manager.lock().await;
+        let result = connector_manager.execute_step(step, workspace, env).await?;
+        Ok((result.exit_code, result.stdout, result.stderr))
     }
 }

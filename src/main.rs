@@ -27,7 +27,12 @@ mod models;
 mod middleware;
 mod handlers;
 mod routes;
+mod repositories;
+mod services;
 mod ci;
+
+#[cfg(test)]
+mod integration_tests;
 
 use config::Config;
 use database::DatabaseManager;
@@ -71,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("✅ Database connection established");
 
     // Initialize CI engine components
-    let connector_manager = Arc::new(ConnectorManager::new());
+    let connector_manager = ConnectorManager::new();
     let workspace_manager = Arc::new(WorkspaceManager::new("/tmp/ci-workspaces".into()));
     let executor = Arc::new(PipelineExecutor::new(
         connector_manager,

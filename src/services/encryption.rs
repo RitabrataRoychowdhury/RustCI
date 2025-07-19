@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key, Nonce,
@@ -14,6 +16,7 @@ pub trait EncryptionService: Send + Sync {
     async fn decrypt(&self, ciphertext: &str) -> Result<String>;
 }
 
+#[derive(Debug)]
 pub struct AesGcmEncryptionService {
     key: Key<Aes256Gcm>,
 }

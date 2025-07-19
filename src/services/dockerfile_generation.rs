@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
 use crate::{
     error::{AppError, Result},
-    models::{ProjectType, ProjectInfo},
+    models::{ProjectInfo, ProjectType},
 };
 
 pub trait DockerfileGenerator: Send + Sync {
@@ -24,8 +26,11 @@ impl DockerfileGeneratorFactory {
             ProjectType::Unknown => Box::new(GenericDockerfileGenerator::new()),
         }
     }
-    
-    pub fn generate_dockerfile(project_type: ProjectType, project_info: &ProjectInfo) -> Result<String> {
+
+    pub fn generate_dockerfile(
+        project_type: ProjectType,
+        project_info: &ProjectInfo,
+    ) -> Result<String> {
         let generator = Self::create_generator(project_type);
         generator.generate(project_info)
     }
@@ -46,7 +51,7 @@ impl DockerfileGenerator for RustDockerfileGenerator {
         let customized = self.customize_for_project(template, project_info);
         Ok(customized)
     }
-    
+
     fn get_template(&self) -> &str {
         r#"# Auto-generated Dockerfile for Rust project
 # Build stage
@@ -97,15 +102,17 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 CMD ["./app"]
 "#
     }
-    
+
     fn customize_for_project(&self, template: &str, project_info: &ProjectInfo) -> String {
         template
             .replace("{{binary_name}}", &project_info.binary_name)
             .replace("{{port}}", &project_info.port.to_string())
     }
-    
-    fn get_default_port(&self) -> u16 { 8080 }
-    
+
+    fn get_default_port(&self) -> u16 {
+        8080
+    }
+
     fn get_default_binary_name(&self, project_name: &str) -> String {
         project_name.replace("-", "_")
     }
@@ -126,7 +133,7 @@ impl DockerfileGenerator for NodeDockerfileGenerator {
         let customized = self.customize_for_project(template, project_info);
         Ok(customized)
     }
-    
+
     fn get_template(&self) -> &str {
         r#"# Auto-generated Dockerfile for Node.js project
 # Build stage
@@ -179,15 +186,17 @@ ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "{{binary_name}}"]
 "#
     }
-    
+
     fn customize_for_project(&self, template: &str, project_info: &ProjectInfo) -> String {
         template
             .replace("{{binary_name}}", &project_info.binary_name)
             .replace("{{port}}", &project_info.port.to_string())
     }
-    
-    fn get_default_port(&self) -> u16 { 3000 }
-    
+
+    fn get_default_port(&self) -> u16 {
+        3000
+    }
+
     fn get_default_binary_name(&self, _project_name: &str) -> String {
         "index.js".to_string()
     }
@@ -208,7 +217,7 @@ impl DockerfileGenerator for PythonDockerfileGenerator {
         let customized = self.customize_for_project(template, project_info);
         Ok(customized)
     }
-    
+
     fn get_template(&self) -> &str {
         r#"# Auto-generated Dockerfile for Python project
 FROM python:3.11-slim
@@ -256,15 +265,17 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 CMD ["python", "{{binary_name}}"]
 "#
     }
-    
+
     fn customize_for_project(&self, template: &str, project_info: &ProjectInfo) -> String {
         template
             .replace("{{binary_name}}", &project_info.binary_name)
             .replace("{{port}}", &project_info.port.to_string())
     }
-    
-    fn get_default_port(&self) -> u16 { 8000 }
-    
+
+    fn get_default_port(&self) -> u16 {
+        8000
+    }
+
     fn get_default_binary_name(&self, _project_name: &str) -> String {
         "main.py".to_string()
     }
@@ -285,7 +296,7 @@ impl DockerfileGenerator for JavaDockerfileGenerator {
         let customized = self.customize_for_project(template, project_info);
         Ok(customized)
     }
-    
+
     fn get_template(&self) -> &str {
         r#"# Auto-generated Dockerfile for Java project
 # Build stage
@@ -327,15 +338,17 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 CMD ["java", "-jar", "./{{binary_name}}.jar"]
 "#
     }
-    
+
     fn customize_for_project(&self, template: &str, project_info: &ProjectInfo) -> String {
         template
             .replace("{{binary_name}}", &project_info.binary_name)
             .replace("{{port}}", &project_info.port.to_string())
     }
-    
-    fn get_default_port(&self) -> u16 { 8080 }
-    
+
+    fn get_default_port(&self) -> u16 {
+        8080
+    }
+
     fn get_default_binary_name(&self, project_name: &str) -> String {
         format!("{}-app", project_name)
     }
@@ -356,7 +369,7 @@ impl DockerfileGenerator for GoDockerfileGenerator {
         let customized = self.customize_for_project(template, project_info);
         Ok(customized)
     }
-    
+
     fn get_template(&self) -> &str {
         r#"# Auto-generated Dockerfile for Go project
 # Build stage
@@ -406,15 +419,17 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 CMD ["./{{binary_name}}"]
 "#
     }
-    
+
     fn customize_for_project(&self, template: &str, project_info: &ProjectInfo) -> String {
         template
             .replace("{{binary_name}}", &project_info.binary_name)
             .replace("{{port}}", &project_info.port.to_string())
     }
-    
-    fn get_default_port(&self) -> u16 { 8080 }
-    
+
+    fn get_default_port(&self) -> u16 {
+        8080
+    }
+
     fn get_default_binary_name(&self, project_name: &str) -> String {
         project_name.to_string()
     }
@@ -435,7 +450,7 @@ impl DockerfileGenerator for GenericDockerfileGenerator {
         let customized = self.customize_for_project(template, project_info);
         Ok(customized)
     }
-    
+
     fn get_template(&self) -> &str {
         r#"# Auto-generated generic Dockerfile
 FROM ubuntu:22.04
@@ -468,15 +483,17 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 CMD ["echo", "Please customize this Dockerfile for your specific application"]
 "#
     }
-    
+
     fn customize_for_project(&self, template: &str, project_info: &ProjectInfo) -> String {
         template
             .replace("{{binary_name}}", &project_info.binary_name)
             .replace("{{port}}", &project_info.port.to_string())
     }
-    
-    fn get_default_port(&self) -> u16 { 8080 }
-    
+
+    fn get_default_port(&self) -> u16 {
+        8080
+    }
+
     fn get_default_binary_name(&self, project_name: &str) -> String {
         project_name.to_string()
     }
@@ -490,15 +507,17 @@ pub fn create_project_info_with_defaults(
     custom_binary_name: Option<String>,
 ) -> ProjectInfo {
     let generator = DockerfileGeneratorFactory::create_generator(project_type);
-    
+
     let port = custom_port.unwrap_or_else(|| generator.get_default_port());
-    let binary_name = custom_binary_name.unwrap_or_else(|| generator.get_default_binary_name(project_name));
-    
+    let binary_name =
+        custom_binary_name.unwrap_or_else(|| generator.get_default_binary_name(project_name));
+
     ProjectInfo {
         binary_name,
         port,
-        additional_dependencies: Vec::new(),
-        build_args: std::collections::HashMap::new(),
+        dependencies: Vec::new(),
+        build_command: None,
+        run_command: None,
     }
 }
 
@@ -513,20 +532,21 @@ impl DockerfileGenerationService {
             cache: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
     }
-    
+
     pub fn generate_dockerfile(
         &self,
         project_type: ProjectType,
         project_info: &ProjectInfo,
         use_cache: bool,
     ) -> Result<String> {
-        let cache_key = format!("{:?}_{}_{}_{}", 
-            project_type, 
-            project_info.binary_name, 
+        let cache_key = format!(
+            "{:?}_{}_{}_{}",
+            project_type,
+            project_info.binary_name,
             project_info.port,
-            project_info.additional_dependencies.join(",")
+            project_info.dependencies.join(",")
         );
-        
+
         if use_cache {
             if let Ok(cache) = self.cache.read() {
                 if let Some(cached_dockerfile) = cache.get(&cache_key) {
@@ -534,48 +554,54 @@ impl DockerfileGenerationService {
                 }
             }
         }
-        
-        let dockerfile = DockerfileGeneratorFactory::generate_dockerfile(project_type, project_info)?;
-        
+
+        let dockerfile =
+            DockerfileGeneratorFactory::generate_dockerfile(project_type, project_info)?;
+
         // Cache the result
         if let Ok(mut cache) = self.cache.write() {
             cache.insert(cache_key, dockerfile.clone());
         }
-        
+
         Ok(dockerfile)
     }
-    
+
     pub fn clear_cache(&self) {
         if let Ok(mut cache) = self.cache.write() {
             cache.clear();
         }
     }
-    
+
     pub fn validate_dockerfile_syntax(&self, dockerfile_content: &str) -> Result<Vec<String>> {
         let mut warnings = Vec::new();
-        
+
         // Basic syntax validation
         if !dockerfile_content.contains("FROM") {
-            return Err(AppError::DockerfileGenerationFailed("Dockerfile must contain a FROM instruction".to_string()));
+            return Err(AppError::DockerfileGenerationFailed(
+                "Dockerfile must contain a FROM instruction".to_string(),
+            ));
         }
-        
+
         // Check for best practices
         if !dockerfile_content.contains("USER") {
             warnings.push("Consider adding a USER instruction for security".to_string());
         }
-        
+
         if !dockerfile_content.contains("HEALTHCHECK") {
             warnings.push("Consider adding a HEALTHCHECK instruction".to_string());
         }
-        
+
         if dockerfile_content.contains("ADD") && !dockerfile_content.contains("COPY") {
             warnings.push("Consider using COPY instead of ADD when possible".to_string());
         }
-        
-        if dockerfile_content.lines().any(|line| line.trim().starts_with("RUN apt-get update") && !line.contains("rm -rf /var/lib/apt/lists/*")) {
+
+        if dockerfile_content.lines().any(|line| {
+            line.trim().starts_with("RUN apt-get update")
+                && !line.contains("rm -rf /var/lib/apt/lists/*")
+        }) {
             warnings.push("Consider cleaning apt cache after apt-get update".to_string());
         }
-        
+
         Ok(warnings)
     }
 }
@@ -583,142 +609,148 @@ impl DockerfileGenerationService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
-    
+
     fn create_test_project_info() -> ProjectInfo {
         ProjectInfo {
             binary_name: "test-app".to_string(),
             port: 8080,
-            additional_dependencies: Vec::new(),
-            build_args: HashMap::new(),
+            dependencies: Vec::new(),
+            build_command: None,
+            run_command: None,
         }
     }
-    
+
     #[test]
     fn test_rust_dockerfile_generation() {
         let generator = RustDockerfileGenerator::new();
         let project_info = create_test_project_info();
-        
+
         let dockerfile = generator.generate(&project_info).unwrap();
-        
+
         assert!(dockerfile.contains("FROM rust:1.75"));
         assert!(dockerfile.contains("test-app"));
         assert!(dockerfile.contains("8080"));
         assert!(dockerfile.contains("HEALTHCHECK"));
         assert!(dockerfile.contains("USER appuser"));
     }
-    
+
     #[test]
     fn test_node_dockerfile_generation() {
         let generator = NodeDockerfileGenerator::new();
         let project_info = create_test_project_info();
-        
+
         let dockerfile = generator.generate(&project_info).unwrap();
-        
+
         assert!(dockerfile.contains("FROM node:18-alpine"));
         assert!(dockerfile.contains("test-app"));
         assert!(dockerfile.contains("8080"));
         assert!(dockerfile.contains("dumb-init"));
     }
-    
+
     #[test]
     fn test_python_dockerfile_generation() {
         let generator = PythonDockerfileGenerator::new();
         let project_info = create_test_project_info();
-        
+
         let dockerfile = generator.generate(&project_info).unwrap();
-        
+
         assert!(dockerfile.contains("FROM python:3.11-slim"));
         assert!(dockerfile.contains("test-app"));
         assert!(dockerfile.contains("8080"));
         assert!(dockerfile.contains("PYTHONUNBUFFERED"));
     }
-    
+
     #[test]
     fn test_java_dockerfile_generation() {
         let generator = JavaDockerfileGenerator::new();
         let project_info = create_test_project_info();
-        
+
         let dockerfile = generator.generate(&project_info).unwrap();
-        
+
         assert!(dockerfile.contains("FROM maven:3.9-openjdk-17"));
         assert!(dockerfile.contains("test-app"));
         assert!(dockerfile.contains("8080"));
         assert!(dockerfile.contains("mvn clean package"));
     }
-    
+
     #[test]
     fn test_go_dockerfile_generation() {
         let generator = GoDockerfileGenerator::new();
         let project_info = create_test_project_info();
-        
+
         let dockerfile = generator.generate(&project_info).unwrap();
-        
+
         assert!(dockerfile.contains("FROM golang:1.21-alpine"));
         assert!(dockerfile.contains("test-app"));
         assert!(dockerfile.contains("8080"));
         assert!(dockerfile.contains("go mod download"));
     }
-    
+
     #[test]
     fn test_factory_pattern() {
         let rust_generator = DockerfileGeneratorFactory::create_generator(ProjectType::Rust);
         let node_generator = DockerfileGeneratorFactory::create_generator(ProjectType::Node);
-        
+
         assert_eq!(rust_generator.get_default_port(), 8080);
         assert_eq!(node_generator.get_default_port(), 3000);
     }
-    
+
     #[test]
     fn test_dockerfile_generation_service() {
         let service = DockerfileGenerationService::new();
         let project_info = create_test_project_info();
-        
-        let dockerfile1 = service.generate_dockerfile(ProjectType::Rust, &project_info, true).unwrap();
-        let dockerfile2 = service.generate_dockerfile(ProjectType::Rust, &project_info, true).unwrap();
-        
+
+        let dockerfile1 = service
+            .generate_dockerfile(ProjectType::Rust, &project_info, true)
+            .unwrap();
+        let dockerfile2 = service
+            .generate_dockerfile(ProjectType::Rust, &project_info, true)
+            .unwrap();
+
         // Should be the same due to caching
         assert_eq!(dockerfile1, dockerfile2);
-        
+
         service.clear_cache();
     }
-    
+
     #[test]
     fn test_dockerfile_validation() {
         let service = DockerfileGenerationService::new();
-        
-        let valid_dockerfile = "FROM ubuntu:20.04\nUSER appuser\nHEALTHCHECK CMD curl -f http://localhost:8080/health";
-        let warnings = service.validate_dockerfile_syntax(valid_dockerfile).unwrap();
+
+        let valid_dockerfile =
+            "FROM ubuntu:20.04\nUSER appuser\nHEALTHCHECK CMD curl -f http://localhost:8080/health";
+        let warnings = service
+            .validate_dockerfile_syntax(valid_dockerfile)
+            .unwrap();
         assert!(warnings.is_empty());
-        
+
         let invalid_dockerfile = "RUN echo hello";
         let result = service.validate_dockerfile_syntax(invalid_dockerfile);
         assert!(result.is_err());
-        
-        let dockerfile_with_warnings = "FROM ubuntu:20.04\nRUN apt-get update && apt-get install -y curl";
-        let warnings = service.validate_dockerfile_syntax(dockerfile_with_warnings).unwrap();
+
+        let dockerfile_with_warnings =
+            "FROM ubuntu:20.04\nRUN apt-get update && apt-get install -y curl";
+        let warnings = service
+            .validate_dockerfile_syntax(dockerfile_with_warnings)
+            .unwrap();
         assert!(!warnings.is_empty());
     }
-    
+
     #[test]
     fn test_create_project_info_with_defaults() {
-        let project_info = create_project_info_with_defaults(
-            ProjectType::Node,
-            "my-app",
-            None,
-            None,
-        );
-        
+        let project_info =
+            create_project_info_with_defaults(ProjectType::Node, "my-app", None, None);
+
         assert_eq!(project_info.port, 3000); // Node.js default
         assert_eq!(project_info.binary_name, "index.js"); // Node.js default
-        
+
         let custom_project_info = create_project_info_with_defaults(
             ProjectType::Rust,
             "my-rust-app",
             Some(9000),
             Some("custom-binary".to_string()),
         );
-        
+
         assert_eq!(custom_project_info.port, 9000);
         assert_eq!(custom_project_info.binary_name, "custom-binary");
     }
