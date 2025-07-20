@@ -1,6 +1,6 @@
-# RustCI - High-Performance CI/CD Platform
+# RustCI
 
-A modern, fast, and reliable CI/CD platform built in Rust that aims to be a better alternative to Jenkins with easier configuration and faster execution.
+A high-performance CI/CD platform built in Rust that serves as a modern alternative to Jenkins.
 
 ## 🚀 Features
 
@@ -295,11 +295,34 @@ cargo test --test integration
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+## 📚 Documentation
+
+Complete documentation is available in the [`docs/`](./docs/) directory:
+
+### Getting Started
+- **[Installation & Setup](./docs/getting-started/installation.md)** - Complete installation guide for all platforms
+- **[Quick Start Guide](./docs/getting-started/quick-start.md)** - Get up and running in minutes
+
+### API Reference
+- **[Complete API Documentation](./docs/api/README.md)** - Full API reference with cURL examples
+
+### Deployment Guides
+- **[Kubernetes Deployment](./docs/deployment/kubernetes.md)** - Deploy to Kubernetes clusters
+- **[General Deployment Guide](./docs/deployment/guide.md)** - All deployment options and configurations
+
+### Architecture & Development
+- **[System Architecture](./docs/architecture/system-design.md)** - Comprehensive system design documentation
+- **[Connector System](./docs/architecture/connectors.md)** - Extensible connector architecture guide
+
+### Examples & Integration
+- **[Pipeline Examples](./docs/examples/README.md)** - Working pipeline examples for different use cases
+- **[Integration Validation](./docs/integration/validation.md)** - Testing and validation procedures
+
 ## 🆘 Support
 
-- **Documentation**: Check the `/docs` directory
-- **Issues**: Report bugs on GitHub Issues
-- **Discussions**: Join GitHub Discussions
+- **Documentation**: Complete guides in [`docs/`](./docs/)
+- **Examples**: Working examples in [`docs/examples/`](./docs/examples/)
+- **Issues**: Report bugs and request features via GitHub Issues
 
 ## 🗺️ Roadmap
 

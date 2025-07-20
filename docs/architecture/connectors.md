@@ -525,4 +525,4 @@ When contributing to the connector system:
 
 ## License
 
-This connector system is part of the RustAutoDevOps project and follows the same license terms.
+This connector system is part of the RustCI project and follows the same license terms.

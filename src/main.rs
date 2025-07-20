@@ -21,7 +21,6 @@ mod database;
 mod error;
 mod token;
 mod upload;
-mod docs;
 mod service_registry;
 mod models;
 mod middleware;
