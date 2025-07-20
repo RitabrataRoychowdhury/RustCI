@@ -1,0 +1,94 @@
+{{- if .Values.cicd.kubernetes.rbac.create }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.cicd.kubernetes.serviceAccount.name | default "rustci-k8s-connector" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rustci.labels" . | nindent 4 }}
+    component: kubernetes-connector
+
+---
+{{- if .Values.cicd.kubernetes.rbac.clusterRole }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "rustci.fullname" . }}-k8s-connector
+  labels:
+    {{- include "rustci.labels" . | nindent 4 }}
+    component: kubernetes-connector
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/status"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "create", "delete", "patch", "update"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "rustci.fullname" . }}-k8s-connector
+  labels:
+    {{- include "rustci.labels" . | nindent 4 }}
+    component: kubernetes-connector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "rustci.fullname" . }}-k8s-connector
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.cicd.kubernetes.serviceAccount.name | default "rustci-k8s-connector" }}
+    namespace: {{ .Release.Namespace }}
+
+{{- else }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "rustci.fullname" . }}-k8s-connector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rustci.labels" . | nindent 4 }}
+    component: kubernetes-connector
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/status"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "create", "delete", "patch", "update"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "rustci.fullname" . }}-k8s-connector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rustci.labels" . | nindent 4 }}
+    component: kubernetes-connector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "rustci.fullname" . }}-k8s-connector
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.cicd.kubernetes.serviceAccount.name | default "rustci-k8s-connector" }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}
