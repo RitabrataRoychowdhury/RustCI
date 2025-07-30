@@ -1,0 +1,50 @@
+name: "K3s Test App Deploy"
+description: "Build and deploy test application using K3s"
+triggers:
+  - trigger_type: manual
+    config: {}
+
+stages:
+  - name: "Build and Deploy"
+    steps:
+      - name: "build-and-load-image"
+        step_type: shell
+        config:
+          command: |
+            cd test-app && \
+            docker build -t rustci-test-app:latest . && \
+            docker save rustci-test-app:latest | k3s ctr images import -
+            
+      - name: "cleanup-existing-deployment"
+        step_type: shell
+        config:
+          command: |
+            kubectl delete deployment rustci-test-app --ignore-not-found=true && \
+            kubectl delete service rustci-test-app --ignore-not-found=true && \
+            kubectl delete service rustci-test-app-nodeport --ignore-not-found=true
+            
+      - name: "deploy-to-k3s"
+        step_type: shell
+        config:
+          deployment_type: custom
+          command: |
+            cd test-app && \
+            kubectl apply -f k8s-manifests/deployment.yaml && \
+            kubectl apply -f k8s-manifests/service.yaml && \
+            kubectl rollout status deployment/rustci-test-app --timeout=300s
+            
+      - name: "verify-deployment"
+        step_type: shell
+        config:
+          deployment_type: custom
+          command: |
+            kubectl get pods -l app=rustci-test-app && \
+            kubectl get service rustci-test-app && \
+            kubectl port-forward service/rustci-test-app 8080:8080 &
+            sleep 10 && \
+            curl -f http://localhost:8080/health && \
+            pkill -f 'kubectl port-forward'
+
+environment: {}
+timeout: 1800
+retry_count: 0

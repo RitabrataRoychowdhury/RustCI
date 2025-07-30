@@ -1,0 +1,70 @@
+name: "Security Scan"
+description: "Run security scans and vulnerability checks"
+triggers:
+  - trigger_type: manual
+    config: {}
+  - trigger_type: scheduled
+    config:
+      cron: "0 2 * * *"  # Daily at 2 AM
+
+stages:
+  - name: "Security Analysis"
+    steps:
+      - name: "dependency-audit"
+        step_type: shell
+        config:
+          command: |
+            cargo audit --json > audit-report.json && \
+            cargo audit
+            
+      - name: "license-check"
+        step_type: shell
+        config:
+          command: |
+            cargo license --json > license-report.json && \
+            cargo license
+            
+      - name: "static-analysis"
+        step_type: shell
+        config:
+          command: |
+            cargo clippy -- -W clippy::all -W clippy::pedantic -W clippy::nursery
+            
+      - name: "build-docker-image"
+        step_type: shell
+        config:
+          command: |
+            docker build -t rustci-security-scan:latest .
+            
+      - name: "container-vulnerability-scan"
+        step_type: shell
+        config:
+          command: |
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v $(pwd):/tmp aquasec/trivy:latest image \
+            --format json --output /tmp/trivy-report.json \
+            rustci-security-scan:latest
+            
+      - name: "secrets-scan"
+        step_type: shell
+        config:
+          command: |
+            docker run --rm -v $(pwd):/src trufflesecurity/trufflehog:latest \
+            filesystem /src --json > secrets-report.json
+            
+      - name: "generate-security-report"
+        step_type: shell
+        config:
+          deployment_type: custom
+          command: |
+            echo "=== Security Scan Summary ===" > security-summary.txt && \
+            echo "Audit Report:" >> security-summary.txt && \
+            jq '.vulnerabilities | length' audit-report.json >> security-summary.txt && \
+            echo "Container Vulnerabilities:" >> security-summary.txt && \
+            jq '.Results[0].Vulnerabilities | length' trivy-report.json >> security-summary.txt && \
+            cat security-summary.txt
+
+environment:
+  CARGO_AUDIT_DATABASE: "~/.cargo/advisory-db"
+timeout: 1800
+retry_count: 0

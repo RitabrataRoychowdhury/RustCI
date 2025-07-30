@@ -1,0 +1,85 @@
+name: "Performance Testing"
+description: "Run load tests and performance benchmarks"
+triggers:
+  - trigger_type: manual
+    config: {}
+
+stages:
+  - name: "Setup and Test"
+    steps:
+      - name: "build-and-start-app"
+        step_type: shell
+        config:
+          command: |
+            cargo build --release && \
+            docker build -t rustci-perf-test:latest . && \
+            docker rm -f rustci-perf || true && \
+            docker run -d --name rustci-perf -p 8082:8000 \
+            -e RUST_ENV=testing \
+            -e MONGODB_URI=${TEST_MONGODB_URI} \
+            -e PORT=8000 \
+            rustci-perf-test:latest
+            
+      - name: "wait-for-startup"
+        step_type: shell
+        config:
+          command: |
+            sleep 15 && \
+            curl -f http://localhost:8082/health
+            
+      - name: "run-load-test"
+        step_type: shell
+        config:
+          command: |
+            docker run --rm --network host \
+            -v $(pwd)/load-tests:/load-tests \
+            grafana/k6:latest run \
+            --out json=load-test-results.json \
+            /load-tests/api-load-test.js
+            
+      - name: "run-stress-test"
+        step_type: shell
+        config:
+          command: |
+            docker run --rm --network host \
+            -v $(pwd)/load-tests:/load-tests \
+            grafana/k6:latest run \
+            --out json=stress-test-results.json \
+            /load-tests/stress-test.js
+            
+      - name: "benchmark-database-operations"
+        step_type: shell
+        config:
+          command: |
+            cargo bench --bench database_benchmarks > benchmark-results.txt
+            
+      - name: "memory-profiling"
+        step_type: shell
+        config:
+          command: |
+            docker stats rustci-perf --no-stream --format \
+            "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}" \
+            > memory-profile.txt
+            
+      - name: "generate-performance-report"
+        step_type: shell
+        config:
+          deployment_type: custom
+          command: |
+            echo "=== Performance Test Summary ===" > performance-summary.txt && \
+            echo "Load Test Results:" >> performance-summary.txt && \
+            jq '.metrics.http_req_duration.avg' load-test-results.json >> performance-summary.txt && \
+            echo "Stress Test Results:" >> performance-summary.txt && \
+            jq '.metrics.http_req_failed.rate' stress-test-results.json >> performance-summary.txt && \
+            cat performance-summary.txt
+            
+      - name: "cleanup"
+        step_type: shell
+        config:
+          command: |
+            docker rm -f rustci-perf || true
+
+environment:
+  TEST_MONGODB_URI: "mongodb://localhost:27017"
+timeout: 2400
+retry_count: 0

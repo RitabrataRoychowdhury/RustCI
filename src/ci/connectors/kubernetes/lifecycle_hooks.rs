@@ -1,12 +1,12 @@
 //! Kubernetes lifecycle hooks with MongoDB integration
-//! 
+//!
 //! This module provides lifecycle hook functionality that integrates with MongoDB
 //! to track job execution state, metrics, and custom data operations.
 
+use super::super::traits::{ExecutionResult, LifecycleHook, LifecycleHookType, MongoOperation};
 use crate::error::{AppError, Result};
-use crate::database::DatabaseManager;
-use super::super::traits::{LifecycleHook, LifecycleHookType, MongoOperation, ExecutionResult};
-use mongodb::bson::{doc, Document, DateTime as BsonDateTime};
+use crate::infrastructure::database::DatabaseManager;
+use mongodb::bson::{doc, DateTime as BsonDateTime, Document};
 use std::collections::HashMap;
 use tracing::{debug, info};
 use uuid::Uuid;
@@ -30,11 +30,16 @@ impl LifecycleHookManager {
         execution_id: &Uuid,
         workspace_id: &Uuid,
     ) -> Result<()> {
-        info!("🔄 Executing {} pre-execution hooks for step: {}", hooks.len(), step_name);
+        info!(
+            "🔄 Executing {} pre-execution hooks for step: {}",
+            hooks.len(),
+            step_name
+        );
 
         for hook in hooks {
             if matches!(hook.hook_type, LifecycleHookType::PreExecution) {
-                self.execute_hook(hook, step_name, execution_id, workspace_id, None).await?;
+                self.execute_hook(hook, step_name, execution_id, workspace_id, None)
+                    .await?;
             }
         }
 
@@ -50,7 +55,11 @@ impl LifecycleHookManager {
         workspace_id: &Uuid,
         result: &ExecutionResult,
     ) -> Result<()> {
-        info!("🔄 Executing {} post-execution hooks for step: {}", hooks.len(), step_name);
+        info!(
+            "🔄 Executing {} post-execution hooks for step: {}",
+            hooks.len(),
+            step_name
+        );
 
         for hook in hooks {
             let should_execute = match hook.hook_type {
@@ -61,7 +70,8 @@ impl LifecycleHookManager {
             };
 
             if should_execute {
-                self.execute_hook(hook, step_name, execution_id, workspace_id, Some(result)).await?;
+                self.execute_hook(hook, step_name, execution_id, workspace_id, Some(result))
+                    .await?;
             }
         }
 
@@ -77,43 +87,74 @@ impl LifecycleHookManager {
         workspace_id: &Uuid,
         result: Option<&ExecutionResult>,
     ) -> Result<()> {
-        debug!("🪝 Executing lifecycle hook: {} (type: {:?})", hook.name, hook.hook_type);
+        debug!(
+            "🪝 Executing lifecycle hook: {} (type: {:?})",
+            hook.name, hook.hook_type
+        );
 
         // Prepare document data
-        let doc_data = self.prepare_hook_data(hook, step_name, execution_id, workspace_id, result)?;
+        let doc_data =
+            self.prepare_hook_data(hook, step_name, execution_id, workspace_id, result)?;
 
         // Get collection
-        let collection = self.db_manager.database.collection::<Document>(&hook.mongodb_collection);
+        let collection = self
+            .db_manager
+            .database
+            .collection::<Document>(&hook.mongodb_collection);
 
         // Execute MongoDB operation
         match hook.mongodb_operation {
             MongoOperation::Insert => {
-                debug!("📝 Inserting document into collection: {}", hook.mongodb_collection);
+                debug!(
+                    "📝 Inserting document into collection: {}",
+                    hook.mongodb_collection
+                );
                 collection.insert_one(doc_data, None).await.map_err(|e| {
                     AppError::DatabaseError(format!("Failed to insert lifecycle hook data: {}", e))
                 })?;
             }
             MongoOperation::Update => {
-                debug!("🔄 Updating document in collection: {}", hook.mongodb_collection);
+                debug!(
+                    "🔄 Updating document in collection: {}",
+                    hook.mongodb_collection
+                );
                 let filter = doc! { "execution_id": execution_id.to_string() };
                 let update = doc! { "$set": doc_data };
-                collection.update_one(filter, update, None).await.map_err(|e| {
-                    AppError::DatabaseError(format!("Failed to update lifecycle hook data: {}", e))
-                })?;
+                collection
+                    .update_one(filter, update, None)
+                    .await
+                    .map_err(|e| {
+                        AppError::DatabaseError(format!(
+                            "Failed to update lifecycle hook data: {}",
+                            e
+                        ))
+                    })?;
             }
             MongoOperation::FindAndUpdate => {
-                debug!("🔍 Find and update document in collection: {}", hook.mongodb_collection);
+                debug!(
+                    "🔍 Find and update document in collection: {}",
+                    hook.mongodb_collection
+                );
                 let filter = doc! { "execution_id": execution_id.to_string() };
                 let update = doc! { "$set": doc_data };
                 let options = mongodb::options::FindOneAndUpdateOptions::builder()
                     .upsert(true)
                     .build();
-                collection.find_one_and_update(filter, update, options).await.map_err(|e| {
-                    AppError::DatabaseError(format!("Failed to find and update lifecycle hook data: {}", e))
-                })?;
+                collection
+                    .find_one_and_update(filter, update, options)
+                    .await
+                    .map_err(|e| {
+                        AppError::DatabaseError(format!(
+                            "Failed to find and update lifecycle hook data: {}",
+                            e
+                        ))
+                    })?;
             }
             MongoOperation::Delete => {
-                debug!("🗑️ Deleting document from collection: {}", hook.mongodb_collection);
+                debug!(
+                    "🗑️ Deleting document from collection: {}",
+                    hook.mongodb_collection
+                );
                 let filter = doc! { "execution_id": execution_id.to_string() };
                 collection.delete_one(filter, None).await.map_err(|e| {
                     AppError::DatabaseError(format!("Failed to delete lifecycle hook data: {}", e))
@@ -142,7 +183,10 @@ impl LifecycleHookManager {
         doc.insert("step_name", step_name);
         doc.insert("execution_id", execution_id.to_string());
         doc.insert("workspace_id", workspace_id.to_string());
-        doc.insert("timestamp", BsonDateTime::from_system_time(chrono::Utc::now().into()));
+        doc.insert(
+            "timestamp",
+            BsonDateTime::from_system_time(chrono::Utc::now().into()),
+        );
 
         // Add custom data from hook configuration
         for (key, value) in &hook.data {
@@ -153,7 +197,7 @@ impl LifecycleHookManager {
         if let Some(exec_result) = result {
             doc.insert("exit_code", exec_result.exit_code);
             doc.insert("success", exec_result.is_success());
-            
+
             // Add metadata
             for (key, value) in &exec_result.metadata {
                 doc.insert(format!("metadata_{}", key), value);
@@ -189,7 +233,7 @@ impl LifecycleHookManager {
     pub fn create_metrics_hook() -> LifecycleHook {
         let mut data = HashMap::new();
         data.insert("metric_type".to_string(), "job_execution".to_string());
-        
+
         LifecycleHook {
             name: "metrics_collection".to_string(),
             hook_type: LifecycleHookType::PostExecution,
@@ -203,7 +247,7 @@ impl LifecycleHookManager {
     pub fn create_failure_tracking_hook() -> LifecycleHook {
         let mut data = HashMap::new();
         data.insert("event_type".to_string(), "job_failure".to_string());
-        
+
         LifecycleHook {
             name: "failure_tracking".to_string(),
             hook_type: LifecycleHookType::OnFailure,
@@ -217,20 +261,20 @@ impl LifecycleHookManager {
     pub fn validate_hook(&self, hook: &LifecycleHook) -> Result<()> {
         if hook.name.is_empty() {
             return Err(AppError::ValidationError(
-                "Lifecycle hook name cannot be empty".to_string()
+                "Lifecycle hook name cannot be empty".to_string(),
             ));
         }
 
         if hook.mongodb_collection.is_empty() {
             return Err(AppError::ValidationError(
-                "MongoDB collection name cannot be empty".to_string()
+                "MongoDB collection name cannot be empty".to_string(),
             ));
         }
 
         // Validate collection name format (MongoDB naming rules)
         if hook.mongodb_collection.starts_with('.') || hook.mongodb_collection.contains('$') {
             return Err(AppError::ValidationError(
-                "Invalid MongoDB collection name format".to_string()
+                "Invalid MongoDB collection name format".to_string(),
             ));
         }
 
@@ -239,26 +283,42 @@ impl LifecycleHookManager {
 
     /// Get execution statistics from MongoDB
     pub async fn get_execution_stats(&self, workspace_id: &Uuid) -> Result<ExecutionStats> {
-        debug!("📊 Getting execution statistics for workspace: {}", workspace_id);
+        debug!(
+            "📊 Getting execution statistics for workspace: {}",
+            workspace_id
+        );
 
-        let collection = self.db_manager.database.collection::<Document>("job_executions");
+        let collection = self
+            .db_manager
+            .database
+            .collection::<Document>("job_executions");
         let filter = doc! { "workspace_id": workspace_id.to_string() };
 
         // Count total executions
-        let total_executions = collection.count_documents(filter.clone(), None).await
+        let total_executions = collection
+            .count_documents(filter.clone(), None)
+            .await
             .map_err(|e| AppError::DatabaseError(format!("Failed to count executions: {}", e)))?;
 
         // Count successful executions
         let mut success_filter = filter.clone();
         success_filter.insert("success", true);
-        let successful_executions = collection.count_documents(success_filter, None).await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to count successful executions: {}", e)))?;
+        let successful_executions = collection
+            .count_documents(success_filter, None)
+            .await
+            .map_err(|e| {
+                AppError::DatabaseError(format!("Failed to count successful executions: {}", e))
+            })?;
 
         // Count failed executions
         let mut failure_filter = filter.clone();
         failure_filter.insert("success", false);
-        let failed_executions = collection.count_documents(failure_filter, None).await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to count failed executions: {}", e)))?;
+        let failed_executions = collection
+            .count_documents(failure_filter, None)
+            .await
+            .map_err(|e| {
+                AppError::DatabaseError(format!("Failed to count failed executions: {}", e))
+            })?;
 
         Ok(ExecutionStats {
             total_executions,
@@ -275,6 +335,7 @@ impl LifecycleHookManager {
 
 /// Execution statistics structure
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ExecutionStats {
     pub total_executions: u64,
     pub successful_executions: u64,
@@ -289,10 +350,14 @@ mod tests {
 
     #[test]
     fn test_create_execution_tracking_hook() {
-        let hook = LifecycleHookManager::create_execution_tracking_hook(LifecycleHookType::PreExecution);
+        let hook =
+            LifecycleHookManager::create_execution_tracking_hook(LifecycleHookType::PreExecution);
         assert_eq!(hook.name, "execution_tracking_preexecution");
         assert_eq!(hook.mongodb_collection, "job_executions");
-        assert!(matches!(hook.mongodb_operation, MongoOperation::FindAndUpdate));
+        assert!(matches!(
+            hook.mongodb_operation,
+            MongoOperation::FindAndUpdate
+        ));
     }
 
     #[test]

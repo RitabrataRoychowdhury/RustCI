@@ -1,0 +1,106 @@
+name: "Docker Connector Test Pipeline"
+description: "Test pipeline for validating Docker connector functionality"
+
+variables:
+  IMAGE_NAME: "rustci-test-app"
+  IMAGE_TAG: "latest"
+  CONTAINER_NAME: "rustci-test-container"
+
+stages:
+  - name: "build"
+    description: "Build Docker image"
+    steps:
+      - name: "create-dockerfile"
+        type: "shell"
+        command: |
+          cat > Dockerfile.test << EOF
+          FROM alpine:latest
+          RUN apk add --no-cache curl
+          COPY test-app.sh /usr/local/bin/
+          RUN chmod +x /usr/local/bin/test-app.sh
+          EXPOSE 8080
+          CMD ["/usr/local/bin/test-app.sh"]
+          EOF
+
+      - name: "create-test-app"
+        type: "shell"
+        command: |
+          cat > test-app.sh << 'EOF'
+          #!/bin/sh
+          echo "RustCI Test App Starting..."
+          while true; do
+            echo "$(date): Health check OK"
+            sleep 30
+          done
+          EOF
+
+      - name: "build-image"
+        type: "docker"
+        action: "build"
+        dockerfile: "Dockerfile.test"
+        image: "${IMAGE_NAME}:${IMAGE_TAG}"
+        context: "."
+
+  - name: "test"
+    description: "Test Docker container operations"
+    steps:
+      - name: "run-container"
+        type: "docker"
+        action: "run"
+        image: "${IMAGE_NAME}:${IMAGE_TAG}"
+        container_name: "${CONTAINER_NAME}"
+        ports:
+          - "8080:8080"
+        detach: true
+        environment:
+          - "TEST_ENV=docker-connector-test"
+
+      - name: "health-check"
+        type: "shell"
+        command: |
+          sleep 5
+          docker logs ${CONTAINER_NAME}
+          if docker ps | grep -q ${CONTAINER_NAME}; then
+            echo "Container is running successfully"
+          else
+            echo "Container failed to start"
+            exit 1
+          fi
+
+      - name: "exec-test"
+        type: "docker"
+        action: "exec"
+        container: "${CONTAINER_NAME}"
+        command: "echo 'Docker exec test successful'"
+
+  - name: "cleanup"
+    description: "Clean up test resources"
+    steps:
+      - name: "stop-container"
+        type: "docker"
+        action: "stop"
+        container: "${CONTAINER_NAME}"
+
+      - name: "remove-container"
+        type: "docker"
+        action: "remove"
+        container: "${CONTAINER_NAME}"
+
+      - name: "remove-image"
+        type: "docker"
+        action: "rmi"
+        image: "${IMAGE_NAME}:${IMAGE_TAG}"
+
+      - name: "cleanup-files"
+        type: "shell"
+        command: |
+          rm -f Dockerfile.test test-app.sh
+
+on_failure:
+  - name: "emergency-cleanup"
+    type: "shell"
+    command: |
+      docker stop ${CONTAINER_NAME} 2>/dev/null || true
+      docker rm ${CONTAINER_NAME} 2>/dev/null || true
+      docker rmi ${IMAGE_NAME}:${IMAGE_TAG} 2>/dev/null || true
+      rm -f Dockerfile.test test-app.sh

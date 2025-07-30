@@ -1,7 +1,7 @@
+use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
-use mongodb::bson::oid::ObjectId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CIPipeline {
@@ -86,39 +86,39 @@ pub struct StepConfig {
     pub command: Option<String>,
     pub script: Option<String>,
     pub working_directory: Option<String>,
-    
+
     // Docker configuration
     pub image: Option<String>,
     pub dockerfile: Option<String>,
     pub build_context: Option<String>,
     pub registry: Option<String>,
     pub tags: Option<Vec<String>>,
-    
+
     // Kubernetes configuration
     pub namespace: Option<String>,
     pub manifest: Option<String>,
     pub helm_chart: Option<String>,
     pub values: Option<HashMap<String, serde_json::Value>>,
-    
+
     // Cloud provider configurations
     pub region: Option<String>,
     pub service: Option<String>,
     pub action: Option<String>,
     pub parameters: Option<HashMap<String, serde_json::Value>>,
-    
+
     // Git operations
     pub repository_url: Option<String>,
     pub branch: Option<String>,
     pub commit: Option<String>,
     pub credentials: Option<String>,
-    
+
     // Custom plugin configuration
     pub plugin_name: Option<String>,
     pub plugin_config: Option<HashMap<String, serde_json::Value>>,
-    
+
     // Environment variables for this step
     pub environment: Option<HashMap<String, String>>,
-    
+
     // Deployment configuration
     pub disable_deployment_detection: Option<bool>,
 }
@@ -197,12 +197,18 @@ impl CIPipeline {
             }
 
             if stage.steps.is_empty() {
-                return Err(format!("Stage '{}' must have at least one step", stage.name));
+                return Err(format!(
+                    "Stage '{}' must have at least one step",
+                    stage.name
+                ));
             }
 
             for (j, step) in stage.steps.iter().enumerate() {
                 if step.name.is_empty() {
-                    return Err(format!("Step {} in stage '{}' name cannot be empty", j, stage.name));
+                    return Err(format!(
+                        "Step {} in stage '{}' name cannot be empty",
+                        j, stage.name
+                    ));
                 }
             }
         }

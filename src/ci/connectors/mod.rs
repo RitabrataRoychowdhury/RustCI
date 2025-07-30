@@ -1,32 +1,32 @@
 //! Connector system for CI/CD pipeline execution
-//! 
+//!
 //! This module provides a modular, extensible architecture for executing
 //! CI/CD steps across different platforms and services using the Strategy,
 //! Factory, and Facade design patterns.
 //!
 //! ## Architecture
-//! 
+//!
 //! The connector system is built around three main design patterns:
 //! - **Strategy Pattern**: Each connector implements the `Connector` trait
 //! - **Factory Pattern**: `ConnectorFactory` creates connector instances
 //! - **Facade Pattern**: `ConnectorManager` provides a unified interface
 //!
 //! ## Usage
-//! 
+//!
 //! ```rust,no_run
 //! use crate::ci::connectors::{ConnectorManager, ConnectorType};
-//! 
+//!
 //! let mut manager = ConnectorManager::new();
 //! let connector = manager.get_connector(ConnectorType::Docker)?;
 //! ```
 
-pub mod traits;
-pub mod factory;
-pub mod manager;
-pub mod docker;
-pub mod kubernetes;
 pub mod cloud;
+pub mod docker;
+pub mod factory;
 pub mod git;
+pub mod kubernetes;
+pub mod manager;
+pub mod traits;
 
 #[cfg(test)]
 pub mod tests;
@@ -35,12 +35,8 @@ pub mod tests;
 pub mod integration_tests;
 
 // Re-export core types and traits for easy access
-pub use traits::{
-    Connector, ConnectorType, ExecutionResult, KubernetesConfig,
-    LifecycleHook, LifecycleHookType, MongoOperation, SecurityContext
-};
-pub use factory::{ConnectorFactory, BuiltInConnectorFactory};
 pub use manager::ConnectorManager;
+pub use traits::Connector;
 
 // Re-export connector implementations
 pub use docker::DockerConnector;

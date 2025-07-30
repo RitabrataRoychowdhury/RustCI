@@ -1,11 +1,11 @@
 //! Kubernetes YAML generation utilities
-//! 
+//!
 //! This module provides functions to generate Kubernetes Job manifests
 //! with proper configuration for CI/CD step execution.
 
-use crate::error::{AppError, Result};
-use crate::ci::{config::Step, workspace::Workspace};
 use super::super::traits::KubernetesConfig;
+use crate::ci::{config::Step, workspace::Workspace};
+use crate::error::{AppError, Result};
 use std::collections::HashMap;
 use tracing::debug;
 use uuid::Uuid;
@@ -24,10 +24,9 @@ impl KubernetesYamlGenerator {
         debug!("🏗️ Generating Kubernetes Job YAML for step: {}", step.name);
 
         let job_name = Self::generate_job_name(&step.name);
-        let image = step.config.image.as_ref()
-            .ok_or_else(|| AppError::ValidationError(
-                "Kubernetes step requires image to be specified".to_string()
-            ))?;
+        let image = step.config.image.as_ref().ok_or_else(|| {
+            AppError::ValidationError("Kubernetes step requires image to be specified".to_string())
+        })?;
 
         let command = Self::build_command(step)?;
         let env_vars = Self::build_environment_variables(env);
@@ -102,7 +101,7 @@ spec:
             .chars()
             .map(|c| if c.is_alphanumeric() { c } else { '-' })
             .collect::<String>();
-        
+
         let uuid_suffix = Uuid::new_v4().to_string()[..8].to_string();
         format!("ci-{}-{}", sanitized, uuid_suffix)
     }
@@ -112,7 +111,13 @@ spec:
         input
             .chars()
             .take(63) // Kubernetes label value limit
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                    c
+                } else {
+                    '-'
+                }
+            })
             .collect::<String>()
             .trim_matches('-')
             .to_string()
@@ -121,12 +126,18 @@ spec:
     /// Build command array for the container
     fn build_command(step: &Step) -> Result<String> {
         let command = if let Some(cmd) = &step.config.command {
-            format!("[\"/bin/sh\", \"-c\", \"{}\"]", Self::escape_yaml_string(cmd))
+            format!(
+                "[\"/bin/sh\", \"-c\", \"{}\"]",
+                Self::escape_yaml_string(cmd)
+            )
         } else if let Some(script) = &step.config.script {
-            format!("[\"/bin/sh\", \"-c\", \"{}\"]", Self::escape_yaml_string(script))
+            format!(
+                "[\"/bin/sh\", \"-c\", \"{}\"]",
+                Self::escape_yaml_string(script)
+            )
         } else {
             return Err(AppError::ValidationError(
-                "Kubernetes step requires command or script".to_string()
+                "Kubernetes step requires command or script".to_string(),
             ));
         };
 
@@ -154,7 +165,7 @@ spec:
     /// Build volume mounts section
     fn build_volume_mounts(_workspace: &Workspace, config: &KubernetesConfig) -> String {
         let mut mounts = String::from("volumeMounts:\n");
-        
+
         // Add workspace volume mount
         if config.use_hostpath || config.use_pvc {
             mounts.push_str("        - name: workspace\n          mountPath: /workspace\n");
@@ -169,7 +180,7 @@ spec:
     /// Build volumes section
     fn build_volumes(workspace: &Workspace, config: &KubernetesConfig) -> String {
         let mut volumes = String::from("volumes:\n");
-        
+
         // Add workspace volume
         if config.use_hostpath {
             volumes.push_str(&format!(
@@ -187,16 +198,12 @@ spec:
     }
 
     /// Generate PersistentVolumeClaim YAML for workspace storage
-    pub fn generate_pvc_yaml(
-        workspace_id: &str,
-        config: &KubernetesConfig,
-    ) -> Result<String> {
+    pub fn generate_pvc_yaml(workspace_id: &str, config: &KubernetesConfig) -> Result<String> {
         debug!("🗂️ Generating PVC YAML for workspace: {}", workspace_id);
 
-        let storage_size = config.storage_size.as_ref()
-            .ok_or_else(|| AppError::ValidationError(
-                "Storage size must be specified for PVC".to_string()
-            ))?;
+        let storage_size = config.storage_size.as_ref().ok_or_else(|| {
+            AppError::ValidationError("Storage size must be specified for PVC".to_string())
+        })?;
 
         let storage_class_spec = if let Some(storage_class) = &config.storage_class {
             format!("  storageClassName: {}\n", storage_class)
@@ -233,8 +240,14 @@ spec:
 
     /// Build resource requirements section
     fn build_resource_requirements(config: &KubernetesConfig) -> String {
-        let has_requests = config.resource_requests.as_ref().map_or(false, |r| !r.is_empty());
-        let has_limits = config.resource_limits.as_ref().map_or(false, |r| !r.is_empty());
+        let has_requests = config
+            .resource_requests
+            .as_ref()
+            .is_some_and(|r| !r.is_empty());
+        let has_limits = config
+            .resource_limits
+            .as_ref()
+            .is_some_and(|r| !r.is_empty());
 
         if !has_requests && !has_limits {
             return String::new();
@@ -267,7 +280,7 @@ spec:
     fn build_init_containers(_step: &Step, config: &KubernetesConfig) -> Result<String> {
         if let Some(repo_url) = &config.repo_url {
             debug!("🔄 Adding git init container for repo: {}", repo_url);
-            
+
             let init_container = format!(
                 r#"initContainers:
       - name: git-clone
@@ -286,7 +299,7 @@ spec:
       "#,
                 Self::escape_yaml_string(repo_url)
             );
-            
+
             Ok(init_container)
         } else {
             Ok(String::new())
@@ -351,23 +364,23 @@ data:
     fn build_pod_security_context(config: &KubernetesConfig) -> String {
         if let Some(security_context) = &config.security_context {
             let mut context = String::from("securityContext:\n");
-            
+
             if let Some(run_as_user) = security_context.run_as_user {
                 context.push_str(&format!("        runAsUser: {}\n", run_as_user));
             }
-            
+
             if let Some(run_as_group) = security_context.run_as_group {
                 context.push_str(&format!("        runAsGroup: {}\n", run_as_group));
             }
-            
+
             if let Some(run_as_non_root) = security_context.run_as_non_root {
                 context.push_str(&format!("        runAsNonRoot: {}\n", run_as_non_root));
             }
-            
+
             if let Some(fs_group) = security_context.fs_group {
                 context.push_str(&format!("        fsGroup: {}\n", fs_group));
             }
-            
+
             if let Some(supplemental_groups) = &security_context.supplemental_groups {
                 if !supplemental_groups.is_empty() {
                     context.push_str("        supplementalGroups:\n");
@@ -376,7 +389,7 @@ data:
                     }
                 }
             }
-            
+
             context.push_str("      ");
             context
         } else {
@@ -387,28 +400,31 @@ data:
     /// Build container security context section
     fn build_container_security_context(config: &KubernetesConfig) -> String {
         let mut context = String::from("securityContext:\n");
-        
+
         // Default security settings
         context.push_str("          runAsNonRoot: false\n");
         context.push_str("          allowPrivilegeEscalation: false\n");
         context.push_str("          readOnlyRootFilesystem: false\n");
-        
+
         // Override with custom settings if provided
         if let Some(security_context) = &config.security_context {
             if let Some(run_as_user) = security_context.run_as_user {
                 context.push_str(&format!("          runAsUser: {}\n", run_as_user));
             }
-            
+
             if let Some(run_as_group) = security_context.run_as_group {
                 context.push_str(&format!("          runAsGroup: {}\n", run_as_group));
             }
-            
+
             if let Some(run_as_non_root) = security_context.run_as_non_root {
                 // Override the default
-                context = context.replace("runAsNonRoot: false", &format!("runAsNonRoot: {}", run_as_non_root));
+                context = context.replace(
+                    "runAsNonRoot: false",
+                    &format!("runAsNonRoot: {}", run_as_non_root),
+                );
             }
         }
-        
+
         context
     }
 
@@ -416,17 +432,18 @@ data:
     pub fn validate_yaml_syntax(yaml: &str) -> Result<()> {
         // Basic YAML validation - check for common issues
         let lines: Vec<&str> = yaml.lines().collect();
-        
+
         for (i, line) in lines.iter().enumerate() {
             let line_num = i + 1;
-            
+
             // Check for tabs (YAML doesn't allow tabs for indentation)
             if line.contains('\t') {
-                return Err(AppError::ValidationError(
-                    format!("YAML contains tab character at line {}", line_num)
-                ));
+                return Err(AppError::ValidationError(format!(
+                    "YAML contains tab character at line {}",
+                    line_num
+                )));
             }
-            
+
             // Check for trailing spaces (can cause issues)
             if line.ends_with(' ') && !line.trim().is_empty() {
                 debug!("⚠️ YAML line {} has trailing spaces", line_num);
@@ -439,11 +456,10 @@ data:
                 debug!("✅ YAML syntax validation passed");
                 Ok(())
             }
-            Err(e) => {
-                Err(AppError::ValidationError(
-                    format!("Invalid YAML syntax: {}", e)
-                ))
-            }
+            Err(e) => Err(AppError::ValidationError(format!(
+                "Invalid YAML syntax: {}",
+                e
+            ))),
         }
     }
 }
@@ -487,16 +503,34 @@ mod tests {
 
     #[test]
     fn test_sanitize_label() {
-        assert_eq!(KubernetesYamlGenerator::sanitize_label("test-step"), "test-step");
-        assert_eq!(KubernetesYamlGenerator::sanitize_label("Test Step!"), "Test-Step");
-        assert_eq!(KubernetesYamlGenerator::sanitize_label("test_step.name"), "test_step.name");
+        assert_eq!(
+            KubernetesYamlGenerator::sanitize_label("test-step"),
+            "test-step"
+        );
+        assert_eq!(
+            KubernetesYamlGenerator::sanitize_label("Test Step!"),
+            "Test-Step"
+        );
+        assert_eq!(
+            KubernetesYamlGenerator::sanitize_label("test_step.name"),
+            "test_step.name"
+        );
     }
 
     #[test]
     fn test_escape_yaml_string() {
-        assert_eq!(KubernetesYamlGenerator::escape_yaml_string("hello"), "hello");
-        assert_eq!(KubernetesYamlGenerator::escape_yaml_string("hello \"world\""), "hello \\\"world\\\"");
-        assert_eq!(KubernetesYamlGenerator::escape_yaml_string("line1\nline2"), "line1\\nline2");
+        assert_eq!(
+            KubernetesYamlGenerator::escape_yaml_string("hello"),
+            "hello"
+        );
+        assert_eq!(
+            KubernetesYamlGenerator::escape_yaml_string("hello \"world\""),
+            "hello \\\"world\\\""
+        );
+        assert_eq!(
+            KubernetesYamlGenerator::escape_yaml_string("line1\nline2"),
+            "line1\\nline2"
+        );
     }
 
     #[test]
@@ -508,7 +542,7 @@ mod tests {
 
         let yaml = KubernetesYamlGenerator::generate_job_yaml(&step, &workspace, &env, &config);
         assert!(yaml.is_ok());
-        
+
         let yaml_content = yaml.unwrap();
         assert!(yaml_content.contains("kind: Job"));
         assert!(yaml_content.contains("image: ubuntu:latest"));

@@ -93,7 +93,11 @@ impl FileUploadHandler {
 
     /// Validate file extension
     fn validate_file_extension(&self, file_name: &str) -> Result<()> {
-        let extension = file_name.split('.').next_back().unwrap_or("").to_lowercase();
+        let extension = file_name
+            .split('.')
+            .next_back()
+            .unwrap_or("")
+            .to_lowercase();
 
         if !self.config.allowed_extensions.contains(&extension) {
             return Err(AppError::UnsupportedFileType(format!(
@@ -145,7 +149,7 @@ impl FileUploadHandler {
         let mut missing_fields = Vec::new();
 
         for field in &required_fields {
-            if !yaml_map.contains_key(&serde_yaml::Value::String(field.to_string())) {
+            if !yaml_map.contains_key(serde_yaml::Value::String(field.to_string())) {
                 missing_fields.push(field.to_string());
             }
         }
@@ -159,7 +163,7 @@ impl FileUploadHandler {
         }
 
         // Validate stages structure
-        if let Some(stages) = yaml_map.get(&serde_yaml::Value::String("stages".to_string())) {
+        if let Some(stages) = yaml_map.get(serde_yaml::Value::String("stages".to_string())) {
             let stages_array = stages.as_sequence().ok_or_else(|| {
                 AppError::ValidationError("'stages' must be an array".to_string())
             })?;
@@ -176,14 +180,14 @@ impl FileUploadHandler {
                     AppError::ValidationError(format!("Stage {} must be an object", i + 1))
                 })?;
 
-                if !stage_map.contains_key(&serde_yaml::Value::String("name".to_string())) {
+                if !stage_map.contains_key(serde_yaml::Value::String("name".to_string())) {
                     return Err(AppError::ValidationError(format!(
                         "Stage {} missing required 'name' field",
                         i + 1
                     )));
                 }
 
-                if !stage_map.contains_key(&serde_yaml::Value::String("steps".to_string())) {
+                if !stage_map.contains_key(serde_yaml::Value::String("steps".to_string())) {
                     return Err(AppError::ValidationError(format!(
                         "Stage {} missing required 'steps' field",
                         i + 1

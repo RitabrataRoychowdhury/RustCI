@@ -1,0 +1,9 @@
+// Integration tests
+pub mod api;
+pub mod cluster_integration_tests;
+pub mod database;
+pub mod docker_runner_tests;
+pub mod kubernetes_runner_tests;
+pub mod local_runner_tests;
+pub mod runner_lifecycle_tests;
+pub mod runner_pool_integration_tests;

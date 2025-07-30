@@ -1,5 +1,5 @@
 //! Cloud connector implementations
-//! 
+//!
 //! This module contains connector implementations for major cloud providers:
 //! - AWS (Amazon Web Services)
 //! - Azure (Microsoft Azure)

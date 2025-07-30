@@ -11,9 +11,10 @@ stages:
     step_type: shell
     config:
       command: |
-        rm -rf /tmp/rustci && \
-        git clone https://github.com/RitabrataRoychowdhury/RustCI.git /tmp/rustci && \
-        cd /tmp/rustci && \
+        echo "Current directory: $(pwd)" && \
+        echo "Workspace contents:" && \
+        ls -la && \
+        git clone https://github.com/RitabrataRoychowdhury/RustCI.git . && \
         echo "Repository cloned successfully" && \
         ls -la
 
@@ -21,7 +22,7 @@ stages:
     step_type: shell
     config:
       command: |
-        cd /tmp/rustci && \
+        echo "Current directory: $(pwd)" && \
         echo "Building Docker image..." && \
         docker build -t rustci:latest . && \
         echo "Docker image built successfully" && \

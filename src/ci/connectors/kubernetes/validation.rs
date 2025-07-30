@@ -1,11 +1,11 @@
 //! Kubernetes validation utilities
-//! 
+//!
 //! This module provides validation functions for Kubernetes configurations,
 //! cluster connectivity, and resource availability.
 
-use crate::error::{AppError, Result};
-use crate::ci::config::Step;
 use super::super::traits::KubernetesConfig;
+use crate::ci::config::Step;
+use crate::error::{AppError, Result};
 use std::collections::HashMap;
 use tokio::process::Command;
 use tracing::{debug, info, warn};
@@ -17,18 +17,18 @@ impl KubernetesValidator {
     /// Validate that kubectl is available and configured
     pub async fn validate_kubectl_available() -> Result<()> {
         debug!("🔍 Validating kubectl availability");
-        
+
         let output = Command::new("kubectl")
             .args(["version", "--client", "--short"])
             .output()
             .await
-            .map_err(|e| AppError::ConnectorConfigError(
-                format!("kubectl not found on system: {}", e)
-            ))?;
+            .map_err(|e| {
+                AppError::ConnectorConfigError(format!("kubectl not found on system: {}", e))
+            })?;
 
         if !output.status.success() {
             return Err(AppError::ConnectorConfigError(
-                "kubectl is not properly configured".to_string()
+                "kubectl is not properly configured".to_string(),
             ));
         }
 
@@ -40,20 +40,21 @@ impl KubernetesValidator {
     /// Validate cluster connectivity
     pub async fn validate_cluster_connectivity() -> Result<()> {
         debug!("🔍 Validating Kubernetes cluster connectivity");
-        
+
         let output = Command::new("kubectl")
             .args(["cluster-info"])
             .output()
             .await
-            .map_err(|e| AppError::KubernetesError(
-                format!("Failed to check cluster info: {}", e)
-            ))?;
+            .map_err(|e| {
+                AppError::KubernetesError(format!("Failed to check cluster info: {}", e))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppError::KubernetesError(
-                format!("Cannot connect to Kubernetes cluster: {}", stderr)
-            ));
+            return Err(AppError::KubernetesError(format!(
+                "Cannot connect to Kubernetes cluster: {}",
+                stderr
+            )));
         }
 
         info!("✅ Kubernetes cluster connectivity validated");
@@ -63,25 +64,25 @@ impl KubernetesValidator {
     /// Validate namespace exists and is accessible
     pub async fn validate_namespace(namespace: &str) -> Result<()> {
         debug!("🔍 Validating namespace: {}", namespace);
-        
+
         let output = Command::new("kubectl")
             .args(["get", "namespace", namespace])
             .output()
             .await
-            .map_err(|e| AppError::KubernetesError(
-                format!("Failed to check namespace: {}", e)
-            ))?;
+            .map_err(|e| AppError::KubernetesError(format!("Failed to check namespace: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             if stderr.contains("not found") {
-                return Err(AppError::KubernetesError(
-                    format!("Namespace '{}' does not exist", namespace)
-                ));
+                return Err(AppError::KubernetesError(format!(
+                    "Namespace '{}' does not exist",
+                    namespace
+                )));
             } else {
-                return Err(AppError::KubernetesError(
-                    format!("Cannot access namespace '{}': {}", namespace, stderr)
-                ));
+                return Err(AppError::KubernetesError(format!(
+                    "Cannot access namespace '{}': {}",
+                    namespace, stderr
+                )));
             }
         }
 
@@ -95,16 +96,19 @@ impl KubernetesValidator {
         resource_requests: &Option<HashMap<String, String>>,
         resource_limits: &Option<HashMap<String, String>>,
     ) -> Result<()> {
-        debug!("🔍 Validating resource availability in namespace: {}", namespace);
+        debug!(
+            "🔍 Validating resource availability in namespace: {}",
+            namespace
+        );
 
         // Check resource quotas if they exist
         let output = Command::new("kubectl")
             .args(["get", "resourcequota", "-n", namespace, "-o", "json"])
             .output()
             .await
-            .map_err(|e| AppError::KubernetesError(
-                format!("Failed to check resource quotas: {}", e)
-            ))?;
+            .map_err(|e| {
+                AppError::KubernetesError(format!("Failed to check resource quotas: {}", e))
+            })?;
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -130,21 +134,26 @@ impl KubernetesValidator {
     }
 
     /// Validate resource format (CPU, memory, etc.)
-    fn validate_resource_format(resources: &HashMap<String, String>, resource_type: &str) -> Result<()> {
+    fn validate_resource_format(
+        resources: &HashMap<String, String>,
+        resource_type: &str,
+    ) -> Result<()> {
         for (key, value) in resources {
             match key.as_str() {
                 "cpu" => {
                     if !Self::is_valid_cpu_format(value) {
-                        return Err(AppError::ValidationError(
-                            format!("Invalid CPU {} format: {}", resource_type, value)
-                        ));
+                        return Err(AppError::ValidationError(format!(
+                            "Invalid CPU {} format: {}",
+                            resource_type, value
+                        )));
                     }
                 }
                 "memory" => {
                     if !Self::is_valid_memory_format(value) {
-                        return Err(AppError::ValidationError(
-                            format!("Invalid memory {} format: {}", resource_type, value)
-                        ));
+                        return Err(AppError::ValidationError(format!(
+                            "Invalid memory {} format: {}",
+                            resource_type, value
+                        )));
                     }
                 }
                 _ => {
@@ -157,8 +166,8 @@ impl KubernetesValidator {
 
     /// Validate CPU format (e.g., "100m", "0.1", "1")
     fn is_valid_cpu_format(cpu: &str) -> bool {
-        if cpu.ends_with('m') {
-            cpu[..cpu.len()-1].parse::<u32>().is_ok()
+        if let Some(cpu_value) = cpu.strip_suffix('m') {
+            cpu_value.parse::<u32>().is_ok()
         } else {
             cpu.parse::<f64>().is_ok()
         }
@@ -166,14 +175,16 @@ impl KubernetesValidator {
 
     /// Validate memory format (e.g., "128Mi", "1Gi", "512M")
     fn is_valid_memory_format(memory: &str) -> bool {
-        let suffixes = ["Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "K", "M", "G", "T", "P", "E"];
-        
+        let suffixes = [
+            "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "K", "M", "G", "T", "P", "E",
+        ];
+
         for suffix in &suffixes {
-            if memory.ends_with(suffix) {
-                return memory[..memory.len()-suffix.len()].parse::<u64>().is_ok();
+            if let Some(memory_value) = memory.strip_suffix(suffix) {
+                return memory_value.parse::<u64>().is_ok();
             }
         }
-        
+
         // Check if it's just a number (bytes)
         memory.parse::<u64>().is_ok()
     }
@@ -185,21 +196,21 @@ impl KubernetesValidator {
         // Basic step validation
         if step.name.is_empty() {
             return Err(AppError::ValidationError(
-                "Step name cannot be empty".to_string()
+                "Step name cannot be empty".to_string(),
             ));
         }
 
         // Validate required fields for Kubernetes execution
         if step.config.command.is_none() && step.config.script.is_none() {
             return Err(AppError::ValidationError(
-                "Kubernetes step requires either 'command' or 'script'".to_string()
+                "Kubernetes step requires either 'command' or 'script'".to_string(),
             ));
         }
 
         // Validate image is specified (required for Kubernetes jobs)
         if step.config.image.is_none() {
             return Err(AppError::ValidationError(
-                "Kubernetes step requires 'image' to be specified".to_string()
+                "Kubernetes step requires 'image' to be specified".to_string(),
             ));
         }
 
@@ -207,20 +218,23 @@ impl KubernetesValidator {
         if let Some(namespace) = &step.config.namespace {
             if namespace.is_empty() {
                 return Err(AppError::ValidationError(
-                    "Kubernetes namespace cannot be empty".to_string()
+                    "Kubernetes namespace cannot be empty".to_string(),
                 ));
             }
-            
+
             // Basic namespace name validation (RFC 1123)
-            if !namespace.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+            if !namespace
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            {
                 return Err(AppError::ValidationError(
                     "Kubernetes namespace must contain only lowercase letters, numbers, and hyphens".to_string()
                 ));
             }
-            
+
             if namespace.starts_with('-') || namespace.ends_with('-') {
                 return Err(AppError::ValidationError(
-                    "Kubernetes namespace cannot start or end with a hyphen".to_string()
+                    "Kubernetes namespace cannot start or end with a hyphen".to_string(),
                 ));
             }
         }
@@ -248,7 +262,8 @@ impl KubernetesValidator {
             &config.namespace,
             &config.resource_requests,
             &config.resource_limits,
-        ).await?;
+        )
+        .await?;
 
         info!("✅ Kubernetes configuration validation completed");
         Ok(())

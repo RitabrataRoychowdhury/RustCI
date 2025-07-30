@@ -1,4 +1,5 @@
 use crate::error::{AppError, Result};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::{debug, error, info};
@@ -12,6 +13,18 @@ pub struct Workspace {
     pub path: PathBuf,
     #[allow(dead_code)] // Will be used for tracking which execution owns this workspace
     pub execution_id: Uuid,
+}
+
+/// Enhanced workspace context that provides path injection and environment setup
+#[derive(Debug, Clone)]
+pub struct WorkspaceContext {
+    pub workspace_path: PathBuf,
+    pub execution_id: Uuid,
+    pub environment_variables: HashMap<String, String>,
+    pub working_directory: PathBuf,
+    pub source_directory: PathBuf,
+    pub build_directory: PathBuf,
+    pub artifacts_directory: PathBuf,
 }
 
 impl Workspace {
@@ -90,8 +103,53 @@ impl Workspace {
 }
 
 #[allow(dead_code)] // Will be used for workspace management
+#[derive(Debug)]
 pub struct WorkspaceManager {
     base_path: PathBuf,
+}
+
+impl WorkspaceContext {
+    /// Inject workspace paths into command strings
+    pub fn inject_into_command(&self, command: &str) -> String {
+        command
+            .replace("${WORKSPACE}", &self.workspace_path.to_string_lossy())
+            .replace("${WORKING_DIR}", &self.working_directory.to_string_lossy())
+            .replace("${SOURCE_DIR}", &self.source_directory.to_string_lossy())
+            .replace("${BUILD_DIR}", &self.build_directory.to_string_lossy())
+            .replace(
+                "${ARTIFACTS_DIR}",
+                &self.artifacts_directory.to_string_lossy(),
+            )
+            // Fix hardcoded paths from pipeline.yaml
+            .replace("/tmp/rustci", &self.source_directory.to_string_lossy())
+    }
+
+    /// Get environment variables with workspace paths
+    pub fn get_environment_variables(&self) -> HashMap<String, String> {
+        let mut env = self.environment_variables.clone();
+        env.insert(
+            "WORKSPACE_PATH".to_string(),
+            self.workspace_path.to_string_lossy().to_string(),
+        );
+        env.insert(
+            "WORKING_DIR".to_string(),
+            self.working_directory.to_string_lossy().to_string(),
+        );
+        env.insert(
+            "SOURCE_DIR".to_string(),
+            self.source_directory.to_string_lossy().to_string(),
+        );
+        env.insert(
+            "BUILD_DIR".to_string(),
+            self.build_directory.to_string_lossy().to_string(),
+        );
+        env.insert(
+            "ARTIFACTS_DIR".to_string(),
+            self.artifacts_directory.to_string_lossy().to_string(),
+        );
+        env.insert("EXECUTION_ID".to_string(), self.execution_id.to_string());
+        env
+    }
 }
 
 impl WorkspaceManager {
@@ -117,10 +175,97 @@ impl WorkspaceManager {
         Ok(workspace)
     }
 
+    /// Create workspace with enhanced context for path injection
+    pub async fn create_workspace_with_context(
+        &self,
+        execution_id: Uuid,
+    ) -> Result<WorkspaceContext> {
+        // Ensure base directory exists with proper permissions
+        self.ensure_base_directory().await?;
+
+        let workspace = Workspace::new(execution_id, &self.base_path);
+        workspace.create().await?;
+
+        // Create subdirectories for different purposes
+        let source_dir = workspace.path.join("source");
+        let build_dir = workspace.path.join("build");
+        let artifacts_dir = workspace.path.join("artifacts");
+
+        fs::create_dir_all(&source_dir).await.map_err(|e| {
+            AppError::InternalServerError(format!("Failed to create source directory: {}", e))
+        })?;
+        fs::create_dir_all(&build_dir).await.map_err(|e| {
+            AppError::InternalServerError(format!("Failed to create build directory: {}", e))
+        })?;
+        fs::create_dir_all(&artifacts_dir).await.map_err(|e| {
+            AppError::InternalServerError(format!("Failed to create artifacts directory: {}", e))
+        })?;
+
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            "SOURCE_DIR".to_string(),
+            source_dir.to_string_lossy().to_string(),
+        );
+        env_vars.insert(
+            "BUILD_DIR".to_string(),
+            build_dir.to_string_lossy().to_string(),
+        );
+        env_vars.insert(
+            "ARTIFACTS_DIR".to_string(),
+            artifacts_dir.to_string_lossy().to_string(),
+        );
+
+        info!(
+            "✅ Enhanced workspace created with context: {:?}",
+            workspace.path
+        );
+        debug!("📁 Source directory: {:?}", source_dir);
+        debug!("📁 Build directory: {:?}", build_dir);
+        debug!("📁 Artifacts directory: {:?}", artifacts_dir);
+
+        Ok(WorkspaceContext {
+            workspace_path: workspace.path,
+            execution_id,
+            environment_variables: env_vars,
+            working_directory: source_dir.clone(), // Default working directory
+            source_directory: source_dir,
+            build_directory: build_dir,
+            artifacts_directory: artifacts_dir,
+        })
+    }
+
+    async fn ensure_base_directory(&self) -> Result<()> {
+        if !self.base_path.exists() {
+            fs::create_dir_all(&self.base_path).await.map_err(|e| {
+                AppError::InternalServerError(format!(
+                    "Failed to create base workspace directory {}: {}",
+                    self.base_path.display(),
+                    e
+                ))
+            })?;
+        }
+
+        // Verify permissions
+        let metadata = fs::metadata(&self.base_path).await.map_err(|e| {
+            AppError::InternalServerError(format!(
+                "Failed to read workspace directory metadata: {}",
+                e
+            ))
+        })?;
+
+        if metadata.permissions().readonly() {
+            return Err(AppError::InternalServerError(
+                "Workspace directory is read-only".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     pub async fn cleanup_workspace(&self, execution_id: Uuid) -> Result<()> {
         let _ = execution_id;
         // Find workspace by execution_id and clean it up
-        let _workspace_pattern = format!("workspace-*");
+        let _workspace_pattern = "workspace-*".to_string();
         let mut entries = fs::read_dir(&self.base_path).await.map_err(|e| {
             AppError::InternalServerError(format!("Failed to read workspace directory: {}", e))
         })?;

@@ -1,12 +1,12 @@
-use crate::ci::{config::Step, workspace::Workspace};
 use crate::ci::connectors::traits::{Connector, ConnectorType, ExecutionResult};
+use crate::ci::{config::Step, workspace::Workspace};
 use crate::error::{AppError, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use tracing::{debug, warn};
 
 /// GitHub connector for GitHub-based CI/CD operations
-/// 
+///
 /// This connector provides integration with GitHub services including:
 /// - GitHub Actions workflow dispatch
 /// - GitHub API operations
@@ -41,9 +41,12 @@ impl Connector for GitHubConnector {
         _workspace: &Workspace,
         _env: &HashMap<String, String>,
     ) -> Result<ExecutionResult> {
-        debug!("🔧 GitHub connector execution requested for step: {}", step.name);
+        debug!(
+            "🔧 GitHub connector execution requested for step: {}",
+            step.name
+        );
         warn!("⚠️ GitHub connector is not yet implemented");
-        
+
         Err(AppError::Unimplemented(
             "GitHub connector functionality is not yet implemented. This will include support for GitHub Actions, API operations, and repository management.".to_string()
         ))
@@ -58,7 +61,10 @@ impl Connector for GitHubConnector {
     }
 
     fn validate_config(&self, step: &Step) -> Result<()> {
-        debug!("🔍 Validating GitHub connector config for step: {}", step.name);
+        debug!(
+            "🔍 Validating GitHub connector config for step: {}",
+            step.name
+        );
 
         // Basic validation
         if step.name.is_empty() {
@@ -121,14 +127,16 @@ impl Connector for GitHubConnector {
             if let Some(operation) = params.get("github_operation") {
                 if let Some(op_str) = operation.as_str() {
                     match op_str {
-                        "workflow_dispatch" | "create_release" | "upload_asset" | "create_pr" | "clone" | "push" => {
+                        "workflow_dispatch" | "create_release" | "upload_asset" | "create_pr"
+                        | "clone" | "push" => {
                             debug!("✅ Valid GitHub operation specified: {}", op_str);
                         }
                         _ => {
                             warn!("⚠️ Unknown GitHub operation specified: {}", op_str);
-                            return Err(AppError::ConnectorConfigError(
-                                format!("Unsupported GitHub operation: {}", op_str),
-                            ));
+                            return Err(AppError::ConnectorConfigError(format!(
+                                "Unsupported GitHub operation: {}",
+                                op_str
+                            )));
                         }
                     }
                 } else {
@@ -181,8 +189,11 @@ impl Connector for GitHubConnector {
     }
 
     async fn pre_execute(&self, step: &Step) -> Result<()> {
-        debug!("🚀 GitHub connector pre-execution hook for step: {}", step.name);
-        
+        debug!(
+            "🚀 GitHub connector pre-execution hook for step: {}",
+            step.name
+        );
+
         // Placeholder for GitHub-specific pre-execution tasks:
         // - Validate GitHub token and permissions
         // - Check repository access and existence
@@ -190,7 +201,7 @@ impl Connector for GitHubConnector {
         // - Initialize GitHub API client
         // - Validate branch existence
         // - Check rate limits
-        
+
         Ok(())
     }
 
@@ -199,7 +210,7 @@ impl Connector for GitHubConnector {
             "🏁 GitHub connector post-execution hook for step: {} (exit_code: {})",
             step.name, result.exit_code
         );
-        
+
         // Placeholder for GitHub-specific post-execution tasks:
         // - Update GitHub commit status
         // - Create GitHub deployment status
@@ -207,7 +218,7 @@ impl Connector for GitHubConnector {
         // - Update GitHub releases
         // - Clean up temporary tokens or files
         // - Log GitHub API usage metrics
-        
+
         Ok(())
     }
 }

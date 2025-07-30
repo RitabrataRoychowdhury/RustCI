@@ -1,19 +1,19 @@
 use crate::ci::{
     config::{CIPipeline, TriggerType},
+    engine::CIEngineOrchestrator,
     pipeline::TriggerInfo,
-    engine::CIEngine,
 };
 use crate::error::{AppError, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
-use tracing::{info, debug, error, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 #[allow(dead_code)] // Will be used when CI engine is fully implemented
 pub struct CIScheduler {
-    engine: Arc<CIEngine>,
+    engine: Arc<CIEngineOrchestrator>,
     scheduled_pipelines: Arc<RwLock<HashMap<Uuid, ScheduledPipeline>>>,
 }
 
@@ -27,7 +27,7 @@ struct ScheduledPipeline {
 
 impl CIScheduler {
     #[allow(dead_code)] // Will be used when CI engine is initialized
-    pub fn new(engine: Arc<CIEngine>) -> Self {
+    pub fn new(engine: Arc<CIEngineOrchestrator>) -> Self {
         Self {
             engine,
             scheduled_pipelines: Arc::new(RwLock::new(HashMap::new())),
@@ -46,7 +46,7 @@ impl CIScheduler {
 
             loop {
                 ticker.tick().await;
-                
+
                 let now = chrono::Utc::now();
                 let mut pipelines_to_run = Vec::new();
 
@@ -62,7 +62,10 @@ impl CIScheduler {
 
                 // Execute scheduled pipelines
                 for (pipeline_id, scheduled) in pipelines_to_run {
-                    info!("⏰ Triggering scheduled pipeline: {}", scheduled.pipeline.name);
+                    info!(
+                        "⏰ Triggering scheduled pipeline: {}",
+                        scheduled.pipeline.name
+                    );
 
                     let trigger_info = TriggerInfo {
                         trigger_type: "schedule".to_string(),
@@ -73,12 +76,21 @@ impl CIScheduler {
                         webhook_payload: None,
                     };
 
-                    match engine.trigger_pipeline(pipeline_id, trigger_info, None).await {
+                    match engine
+                        .trigger_pipeline(pipeline_id, trigger_info, None)
+                        .await
+                    {
                         Ok(execution_id) => {
-                            info!("✅ Scheduled pipeline triggered: {} (Execution: {})", pipeline_id, execution_id);
+                            info!(
+                                "✅ Scheduled pipeline triggered: {} (Execution: {})",
+                                pipeline_id, execution_id
+                            );
                         }
                         Err(e) => {
-                            error!("❌ Failed to trigger scheduled pipeline {}: {}", pipeline_id, e);
+                            error!(
+                                "❌ Failed to trigger scheduled pipeline {}: {}",
+                                pipeline_id, e
+                            );
                         }
                     }
 
@@ -107,15 +119,21 @@ impl CIScheduler {
             if matches!(trigger.trigger_type, TriggerType::Schedule) {
                 if let Some(cron_expr) = &trigger.config.cron_expression {
                     let next_run = Self::calculate_next_run(cron_expr)?;
-                    
+
                     let scheduled = ScheduledPipeline {
                         pipeline: pipeline.clone(),
                         next_run,
                         cron_expression: cron_expr.clone(),
                     };
 
-                    self.scheduled_pipelines.write().await.insert(pipeline_id, scheduled);
-                    info!("📅 Pipeline scheduled: {} with cron: {}", pipeline.name, cron_expr);
+                    self.scheduled_pipelines
+                        .write()
+                        .await
+                        .insert(pipeline_id, scheduled);
+                    info!(
+                        "📅 Pipeline scheduled: {} with cron: {}",
+                        pipeline.name, cron_expr
+                    );
                 }
             }
         }
@@ -125,18 +143,29 @@ impl CIScheduler {
 
     #[allow(dead_code)] // Will be used for pipeline unscheduling
     pub async fn unschedule_pipeline(&self, pipeline_id: Uuid) -> Result<()> {
-        if self.scheduled_pipelines.write().await.remove(&pipeline_id).is_some() {
+        if self
+            .scheduled_pipelines
+            .write()
+            .await
+            .remove(&pipeline_id)
+            .is_some()
+        {
             info!("🗑️ Pipeline unscheduled: {}", pipeline_id);
             Ok(())
         } else {
-            Err(AppError::NotFound("Scheduled pipeline not found".to_string()))
+            Err(AppError::NotFound(
+                "Scheduled pipeline not found".to_string(),
+            ))
         }
     }
 
     #[allow(dead_code)] // Will be used for listing scheduled pipelines
-    pub async fn list_scheduled_pipelines(&self) -> Vec<(Uuid, String, chrono::DateTime<chrono::Utc>)> {
+    pub async fn list_scheduled_pipelines(
+        &self,
+    ) -> Vec<(Uuid, String, chrono::DateTime<chrono::Utc>)> {
         let pipelines = self.scheduled_pipelines.read().await;
-        pipelines.iter()
+        pipelines
+            .iter()
             .map(|(id, scheduled)| (*id, scheduled.pipeline.name.clone(), scheduled.next_run))
             .collect()
     }
@@ -145,7 +174,7 @@ impl CIScheduler {
     fn calculate_next_run(cron_expression: &str) -> Result<chrono::DateTime<chrono::Utc>> {
         // TODO: Implement proper cron parsing
         // For now, this is a simple implementation
-        
+
         match cron_expression {
             "0 * * * *" => {
                 // Every hour
@@ -174,7 +203,7 @@ impl CIScheduler {
     #[allow(dead_code)] // Will be used for webhook handling
     pub async fn handle_webhook(&self, _payload: serde_json::Value) -> Result<Vec<Uuid>> {
         debug!("🪝 Processing webhook payload");
-        
+
         // TODO: Implement webhook processing logic
         // This would:
         // 1. Parse the webhook payload

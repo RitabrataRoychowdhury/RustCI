@@ -1,13 +1,13 @@
 use crate::error::{AppError, Result};
+use futures::Future;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tokio::fs;
-use tokio::process::Command;
-use tracing::{info, error};
-use serde::{Deserialize, Serialize};
 use std::pin::Pin;
-use futures::Future;
+use tokio::fs;
 use tokio::io::AsyncWriteExt;
+use tokio::process::Command;
+use tracing::{error, info};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuildConfig {
@@ -63,6 +63,7 @@ pub enum ArtifactType {
     Configuration,
 }
 
+#[derive(Debug)]
 pub struct ProjectBuilder {
     cache_directory: PathBuf,
 }
@@ -101,21 +102,48 @@ impl ProjectBuilder {
 
         // Execute build based on project type
         match build_config.build_type {
-            BuildType::NodeJs => self.build_nodejs(workspace_path, &build_config, &mut result).await?,
-            BuildType::Python => self.build_python(workspace_path, &build_config, &mut result).await?,
-            BuildType::Rust => self.build_rust(workspace_path, &build_config, &mut result).await?,
-            BuildType::Java => self.build_java(workspace_path, &build_config, &mut result).await?,
-            BuildType::Go => self.build_go(workspace_path, &build_config, &mut result).await?,
-            BuildType::DotNet => self.build_dotnet(workspace_path, &build_config, &mut result).await?,
-            BuildType::Static => self.build_static(workspace_path, &build_config, &mut result).await?,
-            BuildType::Custom => self.build_custom(workspace_path, &build_config, &mut result).await?,
+            BuildType::NodeJs => {
+                self.build_nodejs(workspace_path, &build_config, &mut result)
+                    .await?
+            }
+            BuildType::Python => {
+                self.build_python(workspace_path, &build_config, &mut result)
+                    .await?
+            }
+            BuildType::Rust => {
+                self.build_rust(workspace_path, &build_config, &mut result)
+                    .await?
+            }
+            BuildType::Java => {
+                self.build_java(workspace_path, &build_config, &mut result)
+                    .await?
+            }
+            BuildType::Go => {
+                self.build_go(workspace_path, &build_config, &mut result)
+                    .await?
+            }
+            BuildType::DotNet => {
+                self.build_dotnet(workspace_path, &build_config, &mut result)
+                    .await?
+            }
+            BuildType::Static => {
+                self.build_static(workspace_path, &build_config, &mut result)
+                    .await?
+            }
+            BuildType::Custom => {
+                self.build_custom(workspace_path, &build_config, &mut result)
+                    .await?
+            }
         }
 
         let end_time = chrono::Utc::now();
         result.duration_seconds = (end_time - start_time).num_seconds() as u64;
 
         if result.success {
-            info!("✅ Build completed successfully in {} seconds", result.duration_seconds);
+            info!(
+                "✅ Build completed successfully in {} seconds",
+                result.duration_seconds
+            );
         } else {
             error!("❌ Build failed after {} seconds", result.duration_seconds);
         }
@@ -126,20 +154,27 @@ impl ProjectBuilder {
     async fn auto_detect_build_config(&self, workspace_path: &Path) -> Result<BuildConfig> {
         let build_type = if workspace_path.join("package.json").exists() {
             BuildType::NodeJs
-        } else if workspace_path.join("requirements.txt").exists() || workspace_path.join("pyproject.toml").exists() {
+        } else if workspace_path.join("requirements.txt").exists()
+            || workspace_path.join("pyproject.toml").exists()
+        {
             BuildType::Python
         } else if workspace_path.join("Cargo.toml").exists() {
             BuildType::Rust
-        } else if workspace_path.join("pom.xml").exists() || workspace_path.join("build.gradle").exists() {
+        } else if workspace_path.join("pom.xml").exists()
+            || workspace_path.join("build.gradle").exists()
+        {
             BuildType::Java
         } else if workspace_path.join("go.mod").exists() {
             BuildType::Go
-        } else if workspace_path.join("*.csproj").exists() || workspace_path.join("*.sln").exists() {
+        } else if workspace_path.join("*.csproj").exists() || workspace_path.join("*.sln").exists()
+        {
             BuildType::DotNet
         } else if workspace_path.join("index.html").exists() {
             BuildType::Static
         } else {
-            return Err(AppError::ValidationError("Unable to detect project type".to_string()));
+            return Err(AppError::ValidationError(
+                "Unable to detect project type".to_string(),
+            ));
         };
 
         let build_commands = self.get_default_build_commands(&build_type);
@@ -157,31 +192,19 @@ impl ProjectBuilder {
 
     fn get_default_build_commands(&self, build_type: &BuildType) -> Vec<String> {
         match build_type {
-            BuildType::NodeJs => vec![
-                "npm ci".to_string(),
-                "npm run build".to_string(),
-            ],
+            BuildType::NodeJs => vec!["npm ci".to_string(), "npm run build".to_string()],
             BuildType::Python => vec![
                 "pip install -r requirements.txt".to_string(),
                 "python setup.py build".to_string(),
             ],
-            BuildType::Rust => vec![
-                "cargo build --release".to_string(),
-            ],
-            BuildType::Java => vec![
-                "mvn clean package -DskipTests".to_string(),
-            ],
-            BuildType::Go => vec![
-                "go mod download".to_string(),
-                "go build -o app".to_string(),
-            ],
+            BuildType::Rust => vec!["cargo build --release".to_string()],
+            BuildType::Java => vec!["mvn clean package -DskipTests".to_string()],
+            BuildType::Go => vec!["go mod download".to_string(), "go build -o app".to_string()],
             BuildType::DotNet => vec![
                 "dotnet restore".to_string(),
                 "dotnet build --configuration Release".to_string(),
             ],
-            BuildType::Static => vec![
-                "echo 'No build required for static files'".to_string(),
-            ],
+            BuildType::Static => vec!["echo 'No build required for static files'".to_string()],
             BuildType::Custom => vec![],
         }
     }
@@ -197,7 +220,9 @@ impl ProjectBuilder {
         // Check if package.json exists
         let package_json_path = workspace_path.join("package.json");
         if !package_json_path.exists() {
-            return Err(AppError::ValidationError("package.json not found".to_string()));
+            return Err(AppError::ValidationError(
+                "package.json not found".to_string(),
+            ));
         }
 
         // Read package.json to understand the project
@@ -214,13 +239,25 @@ impl ProjectBuilder {
             "npm install"
         };
 
-        self.execute_command(install_command, workspace_path, &config.environment_variables, result).await?;
+        self.execute_command(
+            install_command,
+            workspace_path,
+            &config.environment_variables,
+            result,
+        )
+        .await?;
 
         // Run build command if available
         if let Some(scripts) = package_json.get("scripts").and_then(|s| s.as_object()) {
             if scripts.contains_key("build") {
-                self.execute_command("npm run build", workspace_path, &config.environment_variables, result).await?;
-                
+                self.execute_command(
+                    "npm run build",
+                    workspace_path,
+                    &config.environment_variables,
+                    result,
+                )
+                .await?;
+
                 // Look for common output directories
                 let output_dirs = ["dist", "build", "out", "public"];
                 for dir in &output_dirs {
@@ -247,7 +284,13 @@ impl ProjectBuilder {
         info!("🐍 Building Python project");
 
         // Create virtual environment
-        self.execute_command("python -m venv venv", workspace_path, &config.environment_variables, result).await?;
+        self.execute_command(
+            "python -m venv venv",
+            workspace_path,
+            &config.environment_variables,
+            result,
+        )
+        .await?;
 
         // Activate virtual environment and install dependencies
         let pip_command = if workspace_path.join("requirements.txt").exists() {
@@ -255,14 +298,28 @@ impl ProjectBuilder {
         } else if workspace_path.join("pyproject.toml").exists() {
             "venv/bin/pip install ."
         } else {
-            return Err(AppError::ValidationError("No requirements.txt or pyproject.toml found".to_string()));
+            return Err(AppError::ValidationError(
+                "No requirements.txt or pyproject.toml found".to_string(),
+            ));
         };
 
-        self.execute_command(pip_command, workspace_path, &config.environment_variables, result).await?;
+        self.execute_command(
+            pip_command,
+            workspace_path,
+            &config.environment_variables,
+            result,
+        )
+        .await?;
 
         // Run setup.py build if available
         if workspace_path.join("setup.py").exists() {
-            self.execute_command("venv/bin/python setup.py build", workspace_path, &config.environment_variables, result).await?;
+            self.execute_command(
+                "venv/bin/python setup.py build",
+                workspace_path,
+                &config.environment_variables,
+                result,
+            )
+            .await?;
         }
 
         result.success = true;
@@ -279,7 +336,9 @@ impl ProjectBuilder {
 
         // Check if Cargo.toml exists
         if !workspace_path.join("Cargo.toml").exists() {
-            return Err(AppError::ValidationError("Cargo.toml not found".to_string()));
+            return Err(AppError::ValidationError(
+                "Cargo.toml not found".to_string(),
+            ));
         }
 
         // Build the project
@@ -289,7 +348,13 @@ impl ProjectBuilder {
             &config.build_commands[0]
         };
 
-        self.execute_command(build_command, workspace_path, &config.environment_variables, result).await?;
+        self.execute_command(
+            build_command,
+            workspace_path,
+            &config.environment_variables,
+            result,
+        )
+        .await?;
 
         // Collect artifacts from target directory
         let target_dir = workspace_path.join("target/release");
@@ -312,8 +377,14 @@ impl ProjectBuilder {
 
         if workspace_path.join("pom.xml").exists() {
             // Maven project
-            self.execute_command("mvn clean package -DskipTests", workspace_path, &config.environment_variables, result).await?;
-            
+            self.execute_command(
+                "mvn clean package -DskipTests",
+                workspace_path,
+                &config.environment_variables,
+                result,
+            )
+            .await?;
+
             let target_dir = workspace_path.join("target");
             if target_dir.exists() {
                 result.output_directory = Some(target_dir.clone());
@@ -321,15 +392,23 @@ impl ProjectBuilder {
             }
         } else if workspace_path.join("build.gradle").exists() {
             // Gradle project
-            self.execute_command("./gradlew build", workspace_path, &config.environment_variables, result).await?;
-            
+            self.execute_command(
+                "./gradlew build",
+                workspace_path,
+                &config.environment_variables,
+                result,
+            )
+            .await?;
+
             let build_dir = workspace_path.join("build");
             if build_dir.exists() {
                 result.output_directory = Some(build_dir.clone());
                 self.collect_artifacts(&build_dir, result).await?;
             }
         } else {
-            return Err(AppError::ValidationError("No pom.xml or build.gradle found".to_string()));
+            return Err(AppError::ValidationError(
+                "No pom.xml or build.gradle found".to_string(),
+            ));
         }
 
         result.success = true;
@@ -349,10 +428,22 @@ impl ProjectBuilder {
         }
 
         // Download dependencies
-        self.execute_command("go mod download", workspace_path, &config.environment_variables, result).await?;
+        self.execute_command(
+            "go mod download",
+            workspace_path,
+            &config.environment_variables,
+            result,
+        )
+        .await?;
 
         // Build the project
-        self.execute_command("go build -o app", workspace_path, &config.environment_variables, result).await?;
+        self.execute_command(
+            "go build -o app",
+            workspace_path,
+            &config.environment_variables,
+            result,
+        )
+        .await?;
 
         // Collect the built binary
         let app_path = workspace_path.join("app");
@@ -379,13 +470,31 @@ impl ProjectBuilder {
         info!("🔷 Building .NET project");
 
         // Restore dependencies
-        self.execute_command("dotnet restore", workspace_path, &config.environment_variables, result).await?;
+        self.execute_command(
+            "dotnet restore",
+            workspace_path,
+            &config.environment_variables,
+            result,
+        )
+        .await?;
 
         // Build the project
-        self.execute_command("dotnet build --configuration Release", workspace_path, &config.environment_variables, result).await?;
+        self.execute_command(
+            "dotnet build --configuration Release",
+            workspace_path,
+            &config.environment_variables,
+            result,
+        )
+        .await?;
 
         // Publish the project
-        self.execute_command("dotnet publish --configuration Release --output ./publish", workspace_path, &config.environment_variables, result).await?;
+        self.execute_command(
+            "dotnet publish --configuration Release --output ./publish",
+            workspace_path,
+            &config.environment_variables,
+            result,
+        )
+        .await?;
 
         let publish_dir = workspace_path.join("publish");
         if publish_dir.exists() {
@@ -421,7 +530,13 @@ impl ProjectBuilder {
         info!("🔧 Running custom build commands");
 
         for command in &config.build_commands {
-            self.execute_command(command, workspace_path, &config.environment_variables, result).await?;
+            self.execute_command(
+                command,
+                workspace_path,
+                &config.environment_variables,
+                result,
+            )
+            .await?;
         }
 
         result.success = true;
@@ -454,8 +569,9 @@ impl ProjectBuilder {
             cmd.env(key, value);
         }
 
-        let output = cmd.output().await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to execute command: {}", e)))?;
+        let output = cmd.output().await.map_err(|e| {
+            AppError::InternalServerError(format!("Failed to execute command: {}", e))
+        })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -470,31 +586,33 @@ impl ProjectBuilder {
 
         if !output.status.success() {
             result.success = false;
-            return Err(AppError::InternalServerError(format!("Command failed: {}", command)));
+            return Err(AppError::InternalServerError(format!(
+                "Command failed: {}",
+                command
+            )));
         }
 
         Ok(())
     }
 
+    fn write_cache_file<'a>(
+        &'a self,
+        result: &'a BuildResult,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let cache_file_path = self.cache_directory.join("build-cache.json");
 
-fn write_cache_file<'a>(
-    &'a self,
-    result: &'a BuildResult,
-) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
-    Box::pin(async move {
-        let cache_file_path = self.cache_directory.join("build-cache.json");
+            if let Some(parent) = cache_file_path.parent() {
+                fs::create_dir_all(parent).await?;
+            }
 
-        if let Some(parent) = cache_file_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
+            let json = serde_json::to_string_pretty(result)?;
+            let mut file = fs::File::create(&cache_file_path).await?;
+            file.write_all(json.as_bytes()).await?;
 
-        let json = serde_json::to_string_pretty(result)?;
-        let mut file = fs::File::create(&cache_file_path).await?;
-        file.write_all(json.as_bytes()).await?;
-
-        Ok(())
-    })
-}
+            Ok(())
+        })
+    }
 
     fn collect_artifacts_inner<'a>(
         &'a self,
@@ -511,7 +629,8 @@ fn write_cache_file<'a>(
                 if metadata.is_file() {
                     let artifact_type = self.determine_artifact_type(&path);
                     result.artifacts.push(BuildArtifact {
-                        name: path.file_name()
+                        name: path
+                            .file_name()
                             .map(|f| f.to_string_lossy().to_string())
                             .unwrap_or_else(|| "unknown".to_string()),
                         path: path.clone(),
@@ -551,7 +670,11 @@ fn write_cache_file<'a>(
             }
         } else {
             // Check if file is executable
-            if path.file_name().and_then(|name| name.to_str()).map_or(false, |name| !name.contains('.')) {
+            if path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| !name.contains('.'))
+            {
                 ArtifactType::Executable
             } else {
                 ArtifactType::StaticFiles

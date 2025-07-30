@@ -1,21 +1,21 @@
 //! Kubernetes job lifecycle management
-//! 
+//!
 //! This module handles the complete lifecycle of Kubernetes jobs including:
 //! - Job creation and submission
 //! - Status monitoring and waiting
 //! - Log collection and streaming
 //! - Resource cleanup and error handling
 
-use crate::error::{AppError, Result};
-use crate::database::DatabaseManager;
 use super::super::traits::{ExecutionResult, KubernetesConfig};
 use super::{lifecycle_hooks::LifecycleHookManager, yaml_generator::KubernetesYamlGenerator};
+use crate::error::{AppError, Result};
+use crate::infrastructure::database::DatabaseManager;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
-use serde_json::Value;
 use uuid::Uuid;
 
 /// Kubernetes job manager for handling job lifecycle
@@ -80,15 +80,18 @@ impl KubernetesJobManager {
         let pvc_name = "workspace-pvc";
         let check_output = Command::new("kubectl")
             .args([
-                "get", "pvc", pvc_name,
-                "-n", &self.config.namespace,
-                "--ignore-not-found=true"
+                "get",
+                "pvc",
+                pvc_name,
+                "-n",
+                &self.config.namespace,
+                "--ignore-not-found=true",
             ])
             .output()
             .await
-            .map_err(|e| AppError::KubernetesError(
-                format!("Failed to check PVC existence: {}", e)
-            ))?;
+            .map_err(|e| {
+                AppError::KubernetesError(format!("Failed to check PVC existence: {}", e))
+            })?;
 
         let stdout = String::from_utf8_lossy(&check_output.stdout);
         if !stdout.trim().is_empty() {
@@ -98,10 +101,8 @@ impl KubernetesJobManager {
 
         // Create PVC
         info!("🔄 Creating PVC: {}", pvc_name);
-        let pvc_yaml = KubernetesYamlGenerator::generate_pvc_yaml(
-            &workspace_id.to_string(),
-            &self.config,
-        )?;
+        let pvc_yaml =
+            KubernetesYamlGenerator::generate_pvc_yaml(&workspace_id.to_string(), &self.config)?;
 
         self.apply_yaml(&pvc_yaml).await?;
         info!("✅ PVC created successfully: {}", pvc_name);
@@ -115,34 +116,39 @@ impl KubernetesJobManager {
     /// Wait for PVC to be bound
     async fn wait_for_pvc_bound(&self, pvc_name: &str) -> Result<()> {
         info!("⏳ Waiting for PVC to be bound: {}", pvc_name);
-        
+
         let timeout = Duration::from_secs(60); // 1 minute timeout for PVC binding
         let start_time = Instant::now();
         let poll_interval = Duration::from_secs(2);
 
         loop {
             if start_time.elapsed() > timeout {
-                return Err(AppError::KubernetesError(
-                    format!("PVC binding timeout: {}", pvc_name)
-                ));
+                return Err(AppError::KubernetesError(format!(
+                    "PVC binding timeout: {}",
+                    pvc_name
+                )));
             }
 
             let output = Command::new("kubectl")
                 .args([
-                    "get", "pvc", pvc_name,
-                    "-n", &self.config.namespace,
-                    "-o", "jsonpath={.status.phase}"
+                    "get",
+                    "pvc",
+                    pvc_name,
+                    "-n",
+                    &self.config.namespace,
+                    "-o",
+                    "jsonpath={.status.phase}",
                 ])
                 .output()
                 .await
-                .map_err(|e| AppError::KubernetesError(
-                    format!("Failed to check PVC status: {}", e)
-                ))?;
+                .map_err(|e| {
+                    AppError::KubernetesError(format!("Failed to check PVC status: {}", e))
+                })?;
 
             if output.status.success() {
                 let phase = String::from_utf8_lossy(&output.stdout);
                 debug!("📊 PVC phase: {}", phase);
-                
+
                 if phase.trim() == "Bound" {
                     info!("✅ PVC is bound: {}", pvc_name);
                     return Ok(());
@@ -183,9 +189,10 @@ impl KubernetesJobManager {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppError::KubernetesError(
-                format!("Failed to apply YAML: {}", stderr)
-            ));
+            return Err(AppError::KubernetesError(format!(
+                "Failed to apply YAML: {}",
+                stderr
+            )));
         }
 
         debug!("✅ YAML applied successfully");
@@ -203,12 +210,14 @@ impl KubernetesJobManager {
     ) -> Result<ExecutionResult> {
         // Execute pre-hooks if hook manager is available
         if let Some(manager) = hook_manager {
-            manager.execute_pre_hooks(
-                &self.config.pre_hooks,
-                step_name,
-                execution_id,
-                workspace_id,
-            ).await?;
+            manager
+                .execute_pre_hooks(
+                    &self.config.pre_hooks,
+                    step_name,
+                    execution_id,
+                    workspace_id,
+                )
+                .await?;
         }
 
         // Submit and wait for job completion
@@ -217,13 +226,15 @@ impl KubernetesJobManager {
 
         // Execute post-hooks if hook manager is available
         if let Some(manager) = hook_manager {
-            manager.execute_post_hooks(
-                &self.config.post_hooks,
-                step_name,
-                execution_id,
-                workspace_id,
-                &result,
-            ).await?;
+            manager
+                .execute_post_hooks(
+                    &self.config.post_hooks,
+                    step_name,
+                    execution_id,
+                    workspace_id,
+                    &result,
+                )
+                .await?;
         }
 
         Ok(result)
@@ -236,40 +247,56 @@ impl KubernetesJobManager {
         // Check if we can create jobs in the namespace
         let auth_output = Command::new("kubectl")
             .args([
-                "auth", "can-i", "create", "jobs",
-                "-n", &self.config.namespace
+                "auth",
+                "can-i",
+                "create",
+                "jobs",
+                "-n",
+                &self.config.namespace,
             ])
             .output()
             .await
-            .map_err(|e| AppError::KubernetesError(
-                format!("Failed to check job creation permissions: {}", e)
-            ))?;
+            .map_err(|e| {
+                AppError::KubernetesError(format!(
+                    "Failed to check job creation permissions: {}",
+                    e
+                ))
+            })?;
 
         let stdout = String::from_utf8_lossy(&auth_output.stdout);
         if !auth_output.status.success() || stdout.trim() != "yes" {
-            return Err(AppError::PermissionDenied(
-                format!("Cannot create jobs in namespace '{}'", self.config.namespace)
-            ));
+            return Err(AppError::PermissionDenied(format!(
+                "Cannot create jobs in namespace '{}'",
+                self.config.namespace
+            )));
         }
 
         // Check PVC permissions if PVC is enabled
         if self.config.use_pvc {
             let pvc_auth_output = Command::new("kubectl")
                 .args([
-                    "auth", "can-i", "create", "persistentvolumeclaims",
-                    "-n", &self.config.namespace
+                    "auth",
+                    "can-i",
+                    "create",
+                    "persistentvolumeclaims",
+                    "-n",
+                    &self.config.namespace,
                 ])
                 .output()
                 .await
-                .map_err(|e| AppError::KubernetesError(
-                    format!("Failed to check PVC creation permissions: {}", e)
-                ))?;
+                .map_err(|e| {
+                    AppError::KubernetesError(format!(
+                        "Failed to check PVC creation permissions: {}",
+                        e
+                    ))
+                })?;
 
             let pvc_stdout = String::from_utf8_lossy(&pvc_auth_output.stdout);
             if !pvc_auth_output.status.success() || pvc_stdout.trim() != "yes" {
-                return Err(AppError::PermissionDenied(
-                    format!("Cannot create PVCs in namespace '{}'", self.config.namespace)
-                ));
+                return Err(AppError::PermissionDenied(format!(
+                    "Cannot create PVCs in namespace '{}'",
+                    self.config.namespace
+                )));
             }
         }
 
@@ -286,15 +313,18 @@ impl KubernetesJobManager {
 
         let output = Command::new("kubectl")
             .args([
-                "get", "resourcequota",
-                "-n", &self.config.namespace,
-                "-o", "json"
+                "get",
+                "resourcequota",
+                "-n",
+                &self.config.namespace,
+                "-o",
+                "json",
             ])
             .output()
             .await
-            .map_err(|e| AppError::KubernetesError(
-                format!("Failed to get resource quotas: {}", e)
-            ))?;
+            .map_err(|e| {
+                AppError::KubernetesError(format!("Failed to get resource quotas: {}", e))
+            })?;
 
         if !output.status.success() {
             debug!("⚠️ No resource quotas found or failed to retrieve them");
@@ -302,13 +332,13 @@ impl KubernetesJobManager {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let quota_data: Value = serde_json::from_str(&stdout)
-            .map_err(|e| AppError::KubernetesError(
-                format!("Failed to parse resource quota JSON: {}", e)
-            ))?;
+        let quota_data: Value = serde_json::from_str(&stdout).map_err(|e| {
+            AppError::KubernetesError(format!("Failed to parse resource quota JSON: {}", e))
+        })?;
 
         let empty_vec = vec![];
-        let quotas = quota_data.get("items")
+        let quotas = quota_data
+            .get("items")
             .and_then(|items| items.as_array())
             .unwrap_or(&empty_vec);
 
@@ -319,14 +349,20 @@ impl KubernetesJobManager {
 
         // For now, we'll just log that quotas exist
         // In a full implementation, we would parse the quotas and validate against requested resources
-        info!("📊 Found {} resource quotas - detailed validation not implemented yet", quotas.len());
+        info!(
+            "📊 Found {} resource quotas - detailed validation not implemented yet",
+            quotas.len()
+        );
 
         Ok(())
     }
 
     /// Submit a job to Kubernetes and return the job name
     pub async fn submit_job(&self, job_yaml: &str) -> Result<String> {
-        info!("🚀 Submitting Kubernetes job to namespace: {}", self.config.namespace);
+        info!(
+            "🚀 Submitting Kubernetes job to namespace: {}",
+            self.config.namespace
+        );
         debug!("📝 Job YAML:\n{}", job_yaml);
 
         // Apply the job YAML using kubectl
@@ -357,9 +393,10 @@ impl KubernetesJobManager {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             error!("❌ Failed to submit Kubernetes job: {}", stderr);
-            return Err(AppError::KubernetesError(
-                format!("Failed to submit job: {}", stderr)
-            ));
+            return Err(AppError::KubernetesError(format!(
+                "Failed to submit job: {}",
+                stderr
+            )));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -375,7 +412,7 @@ impl KubernetesJobManager {
     /// Wait for job completion with timeout and status monitoring
     pub async fn wait_for_completion(&self, job_name: &str) -> Result<ExecutionResult> {
         info!("⏳ Waiting for job completion: {}", job_name);
-        
+
         let start_time = Instant::now();
         let timeout_duration = Duration::from_secs(self.config.timeout_seconds);
         let poll_interval = Duration::from_secs(5);
@@ -385,9 +422,10 @@ impl KubernetesJobManager {
             if start_time.elapsed() > timeout_duration {
                 error!("⏰ Job timeout exceeded: {}", job_name);
                 self.cleanup_job(job_name).await?;
-                return Err(AppError::KubernetesError(
-                    format!("Job timed out after {} seconds", self.config.timeout_seconds)
-                ));
+                return Err(AppError::KubernetesError(format!(
+                    "Job timed out after {} seconds",
+                    self.config.timeout_seconds
+                )));
             }
 
             // Get job status
@@ -401,22 +439,33 @@ impl KubernetesJobManager {
                     let result = ExecutionResult::success(logs)
                         .with_metadata("job_name".to_string(), job_name.to_string())
                         .with_metadata("namespace".to_string(), self.config.namespace.clone())
-                        .with_metadata("duration_seconds".to_string(), start_time.elapsed().as_secs().to_string());
-                    
+                        .with_metadata(
+                            "duration_seconds".to_string(),
+                            start_time.elapsed().as_secs().to_string(),
+                        );
+
                     // Cleanup job
                     self.cleanup_job(job_name).await?;
                     return Ok(result);
                 }
                 JobPhase::Failed => {
                     error!("❌ Job failed: {}", job_name);
-                    let logs = self.collect_job_logs(job_name).await.unwrap_or_else(|_| "Failed to collect logs".to_string());
-                    let error_message = self.get_failure_reason(&status).unwrap_or_else(|| "Job failed without specific reason".to_string());
-                    
-                    let result = ExecutionResult::failure(1, format!("{}\n\nLogs:\n{}", error_message, logs))
-                        .with_metadata("job_name".to_string(), job_name.to_string())
-                        .with_metadata("namespace".to_string(), self.config.namespace.clone())
-                        .with_metadata("failure_reason".to_string(), error_message);
-                    
+                    let logs = self
+                        .collect_job_logs(job_name)
+                        .await
+                        .unwrap_or_else(|_| "Failed to collect logs".to_string());
+                    let error_message = self
+                        .get_failure_reason(&status)
+                        .unwrap_or_else(|| "Job failed without specific reason".to_string());
+
+                    let result = ExecutionResult::failure(
+                        1,
+                        format!("{}\n\nLogs:\n{}", error_message, logs),
+                    )
+                    .with_metadata("job_name".to_string(), job_name.to_string())
+                    .with_metadata("namespace".to_string(), self.config.namespace.clone())
+                    .with_metadata("failure_reason".to_string(), error_message);
+
                     // Cleanup job
                     self.cleanup_job(job_name).await?;
                     return Ok(result);
@@ -443,21 +492,24 @@ impl KubernetesJobManager {
 
         let output = Command::new("kubectl")
             .args([
-                "get", "job", job_name,
-                "-n", &self.config.namespace,
-                "-o", "json"
+                "get",
+                "job",
+                job_name,
+                "-n",
+                &self.config.namespace,
+                "-o",
+                "json",
             ])
             .output()
             .await
-            .map_err(|e| AppError::KubernetesError(
-                format!("Failed to get job status: {}", e)
-            ))?;
+            .map_err(|e| AppError::KubernetesError(format!("Failed to get job status: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppError::KubernetesError(
-                format!("Failed to get job status: {}", stderr)
-            ));
+            return Err(AppError::KubernetesError(format!(
+                "Failed to get job status: {}",
+                stderr
+            )));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -466,15 +518,17 @@ impl KubernetesJobManager {
 
     /// Parse job status from kubectl JSON output
     fn parse_job_status(&self, json_output: &str) -> Result<JobStatus> {
-        let job_data: Value = serde_json::from_str(json_output)
-            .map_err(|e| AppError::KubernetesError(
-                format!("Failed to parse job status JSON: {}", e)
-            ))?;
+        let job_data: Value = serde_json::from_str(json_output).map_err(|e| {
+            AppError::KubernetesError(format!("Failed to parse job status JSON: {}", e))
+        })?;
 
         let status = job_data.get("status").unwrap_or(&Value::Null);
-        
+
         let active = status.get("active").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let succeeded = status.get("succeeded").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let succeeded = status
+            .get("succeeded")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
         let failed = status.get("failed").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
         let phase = if succeeded > 0 {
@@ -487,20 +541,36 @@ impl KubernetesJobManager {
             JobPhase::Pending
         };
 
-        let start_time = status.get("startTime").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let completion_time = status.get("completionTime").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let start_time = status
+            .get("startTime")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let completion_time = status
+            .get("completionTime")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
-        let conditions = status.get("conditions")
+        let conditions = status
+            .get("conditions")
             .and_then(|v| v.as_array())
             .map(|conditions| {
-                conditions.iter().filter_map(|condition| {
-                    Some(JobCondition {
-                        condition_type: condition.get("type")?.as_str()?.to_string(),
-                        status: condition.get("status")?.as_str()?.to_string(),
-                        reason: condition.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        message: condition.get("message").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                conditions
+                    .iter()
+                    .filter_map(|condition| {
+                        Some(JobCondition {
+                            condition_type: condition.get("type")?.as_str()?.to_string(),
+                            status: condition.get("status")?.as_str()?.to_string(),
+                            reason: condition
+                                .get("reason")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            message: condition
+                                .get("message")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                        })
                     })
-                }).collect()
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -521,28 +591,33 @@ impl KubernetesJobManager {
 
         // First, get the pod name(s) for this job
         let pod_names = self.get_job_pod_names(job_name).await?;
-        
+
         if pod_names.is_empty() {
             warn!("⚠️ No pods found for job: {}", job_name);
             return Ok("No pods found for job".to_string());
         }
 
         let mut all_logs = String::new();
-        
+
         for pod_name in pod_names {
             debug!("📋 Collecting logs from pod: {}", pod_name);
-            
+
             let output = Command::new("kubectl")
                 .args([
-                    "logs", &pod_name,
-                    "-n", &self.config.namespace,
-                    "--tail=1000" // Limit log size
+                    "logs",
+                    &pod_name,
+                    "-n",
+                    &self.config.namespace,
+                    "--tail=1000", // Limit log size
                 ])
                 .output()
                 .await
-                .map_err(|e| AppError::KubernetesError(
-                    format!("Failed to collect logs from pod {}: {}", pod_name, e)
-                ))?;
+                .map_err(|e| {
+                    AppError::KubernetesError(format!(
+                        "Failed to collect logs from pod {}: {}",
+                        pod_name, e
+                    ))
+                })?;
 
             if output.status.success() {
                 let logs = String::from_utf8_lossy(&output.stdout);
@@ -554,8 +629,14 @@ impl KubernetesJobManager {
                 all_logs.push_str(&logs);
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                warn!("⚠️ Failed to collect logs from pod {}: {}", pod_name, stderr);
-                all_logs.push_str(&format!("\n--- Failed to collect logs from pod {} ---\n", pod_name));
+                warn!(
+                    "⚠️ Failed to collect logs from pod {}: {}",
+                    pod_name, stderr
+                );
+                all_logs.push_str(&format!(
+                    "\n--- Failed to collect logs from pod {} ---\n",
+                    pod_name
+                ));
             }
         }
 
@@ -569,22 +650,25 @@ impl KubernetesJobManager {
 
         let output = Command::new("kubectl")
             .args([
-                "get", "pods",
-                "-n", &self.config.namespace,
-                "-l", &format!("job-name={}", job_name),
-                "-o", "jsonpath={.items[*].metadata.name}"
+                "get",
+                "pods",
+                "-n",
+                &self.config.namespace,
+                "-l",
+                &format!("job-name={}", job_name),
+                "-o",
+                "jsonpath={.items[*].metadata.name}",
             ])
             .output()
             .await
-            .map_err(|e| AppError::KubernetesError(
-                format!("Failed to get job pods: {}", e)
-            ))?;
+            .map_err(|e| AppError::KubernetesError(format!("Failed to get job pods: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppError::KubernetesError(
-                format!("Failed to get job pods: {}", stderr)
-            ));
+            return Err(AppError::KubernetesError(format!(
+                "Failed to get job pods: {}",
+                stderr
+            )));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -602,7 +686,9 @@ impl KubernetesJobManager {
     fn extract_job_name_from_output(&self, output: &str) -> Result<String> {
         // Expected format: "job.batch/job-name created" or "job.batch/job-name configured"
         for line in output.lines() {
-            if line.contains("job.batch/") && (line.contains("created") || line.contains("configured")) {
+            if line.contains("job.batch/")
+                && (line.contains("created") || line.contains("configured"))
+            {
                 if let Some(start) = line.find("job.batch/") {
                     let start = start + "job.batch/".len();
                     if let Some(end) = line[start..].find(' ') {
@@ -613,7 +699,7 @@ impl KubernetesJobManager {
         }
 
         Err(AppError::KubernetesError(
-            "Could not extract job name from kubectl output".to_string()
+            "Could not extract job name from kubectl output".to_string(),
         ))
     }
 
@@ -639,15 +725,16 @@ impl KubernetesJobManager {
         // Delete the job (this will also delete associated pods)
         let output = Command::new("kubectl")
             .args([
-                "delete", "job", job_name,
-                "-n", &self.config.namespace,
-                "--ignore-not-found=true"
+                "delete",
+                "job",
+                job_name,
+                "-n",
+                &self.config.namespace,
+                "--ignore-not-found=true",
             ])
             .output()
             .await
-            .map_err(|e| AppError::KubernetesError(
-                format!("Failed to cleanup job: {}", e)
-            ))?;
+            .map_err(|e| AppError::KubernetesError(format!("Failed to cleanup job: {}", e)))?;
 
         if output.status.success() {
             debug!("✅ Job cleanup completed: {}", job_name);
@@ -666,17 +753,20 @@ impl KubernetesJobManager {
         // Force delete with cascade
         let output = Command::new("kubectl")
             .args([
-                "delete", "job", job_name,
-                "-n", &self.config.namespace,
+                "delete",
+                "job",
+                job_name,
+                "-n",
+                &self.config.namespace,
                 "--force",
                 "--grace-period=0",
-                "--ignore-not-found=true"
+                "--ignore-not-found=true",
             ])
             .output()
             .await
-            .map_err(|e| AppError::KubernetesError(
-                format!("Failed to force cleanup job: {}", e)
-            ))?;
+            .map_err(|e| {
+                AppError::KubernetesError(format!("Failed to force cleanup job: {}", e))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -689,16 +779,16 @@ impl KubernetesJobManager {
     /// Get job execution metrics
     pub async fn get_job_metrics(&self, job_name: &str) -> Result<HashMap<String, String>> {
         let mut metrics = HashMap::new();
-        
+
         if let Ok(status) = self.get_job_status(job_name).await {
             metrics.insert("active_pods".to_string(), status.active.to_string());
             metrics.insert("succeeded_pods".to_string(), status.succeeded.to_string());
             metrics.insert("failed_pods".to_string(), status.failed.to_string());
-            
+
             if let Some(start_time) = status.start_time {
                 metrics.insert("start_time".to_string(), start_time);
             }
-            
+
             if let Some(completion_time) = status.completion_time {
                 metrics.insert("completion_time".to_string(), completion_time);
             }
@@ -715,13 +805,19 @@ mod tests {
     #[test]
     fn test_extract_job_name_from_output() {
         let manager = KubernetesJobManager::new(KubernetesConfig::default());
-        
+
         let output1 = "job.batch/ci-test-step-abc123 created";
-        assert_eq!(manager.extract_job_name_from_output(output1).unwrap(), "ci-test-step-abc123");
-        
+        assert_eq!(
+            manager.extract_job_name_from_output(output1).unwrap(),
+            "ci-test-step-abc123"
+        );
+
         let output2 = "job.batch/my-job-456 configured";
-        assert_eq!(manager.extract_job_name_from_output(output2).unwrap(), "my-job-456");
-        
+        assert_eq!(
+            manager.extract_job_name_from_output(output2).unwrap(),
+            "my-job-456"
+        );
+
         let output3 = "invalid output";
         assert!(manager.extract_job_name_from_output(output3).is_err());
     }

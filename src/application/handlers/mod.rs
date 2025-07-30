@@ -1,0 +1,16 @@
+// This file declares handler modules and re-exports their contents
+// This allows other parts of the code to use `use crate::handlers::function_name`
+// instead of `use crate::handlers::auth::function_name`
+
+pub mod auth;
+pub mod ci;
+pub mod cluster;
+pub mod dockerfile;
+pub mod oauth;
+pub mod pr;
+pub mod repository;
+pub mod runner;
+pub mod workspace;
+
+// Re-export all public items from the modules
+// Individual imports are preferred over wildcard imports for better clarity

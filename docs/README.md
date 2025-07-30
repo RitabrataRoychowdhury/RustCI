@@ -20,7 +20,8 @@ Welcome to RustCI - a high-performance CI/CD platform built in Rust that serves 
 - [Connector System Guide](./architecture/connectors.md)
 
 ### Examples & Integration
-- [Pipeline Examples](./examples/README.md)
+- [Pipeline Examples](./pipeline-examples/README.md)
+- [Rust Code Examples](../rust-examples/README.md)
 - [Integration Validation](./integration/validation.md)
 
 ## What is RustCI?
@@ -73,7 +74,8 @@ RustCI follows a modular, connector-based architecture using Strategy, Factory, 
 ## Support
 
 - **Documentation**: This comprehensive guide
-- **Examples**: Working examples in the `examples/` directory
+- **Pipeline Examples**: YAML configuration examples in the `pipeline-examples/` directory
+- **Rust Code Examples**: Rust code examples in the `../rust-examples/` directory
 - **API Reference**: Complete API documentation with cURL examples
 
 ## License

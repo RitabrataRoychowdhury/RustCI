@@ -1,0 +1,408 @@
+name: "RustCI Connector Integration Test Suite"
+description: "Complete integration test suite for Docker and Kubernetes connectors"
+
+variables:
+  TEST_SUITE_ID: "rustci-integration-${TIMESTAMP}"
+  DOCKER_TEST_IMAGE: "rustci-docker-test"
+  K8S_TEST_IMAGE: "rustci-k8s-test"
+  K8S_NAMESPACE: "rustci-integration-test"
+
+stages:
+  - name: "pre-test-setup"
+    description: "Setup test environment"
+    steps:
+      - name: "generate-timestamp"
+        type: "shell"
+        command: |
+          echo "TIMESTAMP=$(date +%Y%m%d-%H%M%S)" >> $GITHUB_ENV || echo "TIMESTAMP=$(date +%Y%m%d-%H%M%S)"
+
+      - name: "check-prerequisites"
+        type: "shell"
+        command: |
+          echo "Checking prerequisites..."
+          
+          # Check Docker
+          if ! docker --version; then
+            echo "Docker is not available"
+            exit 1
+          fi
+          
+          # Check kubectl
+          if ! kubectl version --client; then
+            echo "kubectl is not available"
+            exit 1
+          fi
+          
+          # Check k3d or k3s
+          if command -v k3d >/dev/null 2>&1; then
+            echo "k3d is available"
+            K8S_RUNTIME="k3d"
+          elif command -v k3s >/dev/null 2>&1; then
+            echo "k3s is available"
+            K8S_RUNTIME="k3s"
+          else
+            echo "Neither k3d nor k3s is available"
+            exit 1
+          fi
+
+  - name: "docker-connector-tests"
+    description: "Run Docker connector tests"
+    steps:
+      - name: "create-docker-test-app"
+        type: "shell"
+        command: |
+          mkdir -p test-artifacts/docker
+          
+          cat > test-artifacts/docker/Dockerfile << 'EOF'
+          FROM alpine:latest
+          RUN apk add --no-cache curl jq
+          COPY app.sh /app.sh
+          RUN chmod +x /app.sh
+          EXPOSE 3000
+          CMD ["/app.sh"]
+          EOF
+          
+          cat > test-artifacts/docker/app.sh << 'EOF'
+          #!/bin/sh
+          echo "Starting RustCI Docker Test App..."
+          
+          # Simple HTTP server simulation
+          while true; do
+            echo "$(date): Docker connector test app is running"
+            echo "Memory usage: $(free -m | awk 'NR==2{printf "%.2f%%", $3*100/$2 }')"
+            sleep 10
+          done
+          EOF
+
+      - name: "test-docker-build"
+        type: "docker"
+        action: "build"
+        dockerfile: "test-artifacts/docker/Dockerfile"
+        image: "${DOCKER_TEST_IMAGE}:latest"
+        context: "test-artifacts/docker"
+        build_args:
+          - "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+      - name: "test-docker-run"
+        type: "docker"
+        action: "run"
+        image: "${DOCKER_TEST_IMAGE}:latest"
+        container_name: "rustci-docker-test-container"
+        detach: true
+        environment:
+          - "TEST_ENV=integration"
+          - "TEST_ID=${TEST_SUITE_ID}"
+
+      - name: "test-docker-exec"
+        type: "docker"
+        action: "exec"
+        container: "rustci-docker-test-container"
+        command: "echo 'Docker exec test successful' && ps aux"
+
+      - name: "test-docker-logs"
+        type: "shell"
+        command: |
+          sleep 5
+          docker logs rustci-docker-test-container
+
+      - name: "test-docker-inspect"
+        type: "shell"
+        command: |
+          docker inspect rustci-docker-test-container | jq '.[0].State'
+
+      - name: "cleanup-docker-test"
+        type: "docker"
+        action: "stop"
+        container: "rustci-docker-test-container"
+
+      - name: "remove-docker-container"
+        type: "docker"
+        action: "remove"
+        container: "rustci-docker-test-container"
+
+  - name: "kubernetes-connector-tests"
+    description: "Run Kubernetes connector tests"
+    steps:
+      - name: "create-k8s-test-app"
+        type: "shell"
+        command: |
+          mkdir -p test-artifacts/k8s
+          
+          cat > test-artifacts/k8s/Dockerfile << 'EOF'
+          FROM nginx:alpine
+          COPY nginx.conf /etc/nginx/nginx.conf
+          COPY index.html /usr/share/nginx/html/
+          EXPOSE 80
+          EOF
+          
+          cat > test-artifacts/k8s/nginx.conf << 'EOF'
+          events {
+              worker_connections 1024;
+          }
+          http {
+              server {
+                  listen 80;
+                  location / {
+                      root /usr/share/nginx/html;
+                      index index.html;
+                  }
+                  location /health {
+                      access_log off;
+                      return 200 "healthy\n";
+                      add_header Content-Type text/plain;
+                  }
+              }
+          }
+          EOF
+          
+          cat > test-artifacts/k8s/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>RustCI K8s Integration Test</title>
+              <style>
+                  body { font-family: Arial, sans-serif; margin: 40px; }
+                  .status { color: green; font-weight: bold; }
+              </style>
+          </head>
+          <body>
+              <h1>RustCI Kubernetes Connector Integration Test</h1>
+              <p class="status">Status: Running Successfully</p>
+              <p>Test Suite ID: TEST_SUITE_ID_PLACEHOLDER</p>
+              <p>Timestamp: TIMESTAMP_PLACEHOLDER</p>
+          </body>
+          </html>
+          EOF
+          
+          # Replace placeholders
+          sed -i "s/TEST_SUITE_ID_PLACEHOLDER/${TEST_SUITE_ID}/g" test-artifacts/k8s/index.html
+          sed -i "s/TIMESTAMP_PLACEHOLDER/$(date)/g" test-artifacts/k8s/index.html
+
+      - name: "build-k8s-test-image"
+        type: "docker"
+        action: "build"
+        dockerfile: "test-artifacts/k8s/Dockerfile"
+        image: "${K8S_TEST_IMAGE}:latest"
+        context: "test-artifacts/k8s"
+
+      - name: "load-image-to-k8s"
+        type: "shell"
+        command: |
+          if command -v k3d >/dev/null 2>&1; then
+            k3d image import ${K8S_TEST_IMAGE}:latest
+          fi
+
+      - name: "create-k8s-namespace"
+        type: "kubernetes"
+        action: "apply"
+        manifest: |
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ${K8S_NAMESPACE}
+            labels:
+              test-suite: "${TEST_SUITE_ID}"
+
+      - name: "deploy-k8s-configmap"
+        type: "kubernetes"
+        action: "apply"
+        manifest: |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: rustci-test-config
+            namespace: ${K8S_NAMESPACE}
+          data:
+            config.yaml: |
+              app:
+                name: rustci-k8s-test
+                version: 1.0.0
+                environment: integration-test
+              test:
+                suite_id: ${TEST_SUITE_ID}
+
+      - name: "deploy-k8s-secret"
+        type: "kubernetes"
+        action: "apply"
+        manifest: |
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: rustci-test-secret
+            namespace: ${K8S_NAMESPACE}
+          type: Opaque
+          data:
+            api-key: cnVzdGNpLXRlc3Qta2V5 # base64 encoded "rustci-test-key"
+
+      - name: "deploy-k8s-deployment"
+        type: "kubernetes"
+        action: "apply"
+        manifest: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: rustci-k8s-test
+            namespace: ${K8S_NAMESPACE}
+            labels:
+              app: rustci-k8s-test
+          spec:
+            replicas: 3
+            selector:
+              matchLabels:
+                app: rustci-k8s-test
+            template:
+              metadata:
+                labels:
+                  app: rustci-k8s-test
+              spec:
+                containers:
+                - name: web
+                  image: ${K8S_TEST_IMAGE}:latest
+                  imagePullPolicy: Never
+                  ports:
+                  - containerPort: 80
+                  env:
+                  - name: TEST_SUITE_ID
+                    value: "${TEST_SUITE_ID}"
+                  - name: API_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        name: rustci-test-secret
+                        key: api-key
+                  volumeMounts:
+                  - name: config
+                    mountPath: /etc/config
+                  livenessProbe:
+                    httpGet:
+                      path: /health
+                      port: 80
+                    initialDelaySeconds: 10
+                    periodSeconds: 10
+                  readinessProbe:
+                    httpGet:
+                      path: /health
+                      port: 80
+                    initialDelaySeconds: 5
+                    periodSeconds: 5
+                volumes:
+                - name: config
+                  configMap:
+                    name: rustci-test-config
+
+      - name: "deploy-k8s-service"
+        type: "kubernetes"
+        action: "apply"
+        manifest: |
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: rustci-k8s-test-service
+            namespace: ${K8S_NAMESPACE}
+          spec:
+            selector:
+              app: rustci-k8s-test
+            ports:
+            - port: 80
+              targetPort: 80
+              protocol: TCP
+            type: ClusterIP
+
+      - name: "wait-for-k8s-deployment"
+        type: "kubernetes"
+        action: "wait"
+        resource: "deployment/rustci-k8s-test"
+        namespace: "${K8S_NAMESPACE}"
+        condition: "condition=Available"
+        timeout: "300s"
+
+      - name: "test-k8s-scaling"
+        type: "kubernetes"
+        action: "scale"
+        resource: "deployment/rustci-k8s-test"
+        namespace: "${K8S_NAMESPACE}"
+        replicas: 5
+
+      - name: "verify-k8s-scale"
+        type: "shell"
+        command: |
+          sleep 15
+          kubectl wait --for=condition=Available deployment/rustci-k8s-test -n ${K8S_NAMESPACE} --timeout=120s
+          REPLICAS=$(kubectl get deployment rustci-k8s-test -n ${K8S_NAMESPACE} -o jsonpath='{.status.readyReplicas}')
+          echo "Ready replicas: $REPLICAS"
+          if [ "$REPLICAS" = "5" ]; then
+            echo "Scaling test passed"
+          else
+            echo "Scaling test failed"
+            exit 1
+          fi
+
+      - name: "test-k8s-service-connectivity"
+        type: "shell"
+        command: |
+          kubectl port-forward -n ${K8S_NAMESPACE} service/rustci-k8s-test-service 8082:80 &
+          PF_PID=$!
+          sleep 5
+          
+          if curl -f http://localhost:8082/health; then
+            echo "Service health check passed"
+          else
+            echo "Service health check failed"
+            kill $PF_PID 2>/dev/null || true
+            exit 1
+          fi
+          
+          if curl -f http://localhost:8082/; then
+            echo "Service connectivity test passed"
+          else
+            echo "Service connectivity test failed"
+            kill $PF_PID 2>/dev/null || true
+            exit 1
+          fi
+          
+          kill $PF_PID 2>/dev/null || true
+
+  - name: "cleanup"
+    description: "Clean up all test resources"
+    steps:
+      - name: "cleanup-kubernetes-resources"
+        type: "kubernetes"
+        action: "delete"
+        resource: "namespace/${K8S_NAMESPACE}"
+
+      - name: "cleanup-docker-images"
+        type: "shell"
+        command: |
+          docker rmi ${DOCKER_TEST_IMAGE}:latest 2>/dev/null || true
+          docker rmi ${K8S_TEST_IMAGE}:latest 2>/dev/null || true
+
+      - name: "cleanup-test-artifacts"
+        type: "shell"
+        command: |
+          rm -rf test-artifacts/
+
+      - name: "final-cleanup-check"
+        type: "shell"
+        command: |
+          echo "Integration test cleanup completed"
+          echo "Test Suite ID: ${TEST_SUITE_ID}"
+          echo "Timestamp: $(date)"
+
+on_failure:
+  - name: "emergency-cleanup"
+    type: "shell"
+    command: |
+      echo "Emergency cleanup for test suite: ${TEST_SUITE_ID}"
+      
+      # Cleanup Kubernetes resources
+      kubectl delete namespace ${K8S_NAMESPACE} --ignore-not-found=true
+      
+      # Cleanup Docker containers and images
+      docker stop rustci-docker-test-container 2>/dev/null || true
+      docker rm rustci-docker-test-container 2>/dev/null || true
+      docker rmi ${DOCKER_TEST_IMAGE}:latest 2>/dev/null || true
+      docker rmi ${K8S_TEST_IMAGE}:latest 2>/dev/null || true
+      
+      # Cleanup test artifacts
+      rm -rf test-artifacts/
+      
+      echo "Emergency cleanup completed"

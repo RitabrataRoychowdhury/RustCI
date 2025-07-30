@@ -371,7 +371,7 @@ After successful installation:
 1. [Quick Start Guide](./quick-start.md) - Create your first pipeline
 2. [Configuration Guide](./configuration.md) - Advanced configuration options
 3. [API Documentation](../api/README.md) - Learn the API
-4. [Examples](../examples/pipelines.md) - See working examples
+4. [Pipeline Examples](../pipeline-examples/README.md) - See working pipeline examples
 
 ## Support
 

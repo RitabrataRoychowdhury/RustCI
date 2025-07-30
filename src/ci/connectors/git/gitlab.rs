@@ -1,12 +1,12 @@
-use crate::ci::{config::Step, workspace::Workspace};
 use crate::ci::connectors::traits::{Connector, ConnectorType, ExecutionResult};
+use crate::ci::{config::Step, workspace::Workspace};
 use crate::error::{AppError, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use tracing::{debug, warn};
 
 /// GitLab connector for GitLab-based CI/CD operations
-/// 
+///
 /// This connector provides integration with GitLab services including:
 /// - GitLab CI/CD pipeline triggers
 /// - GitLab API operations
@@ -41,9 +41,12 @@ impl Connector for GitLabConnector {
         _workspace: &Workspace,
         _env: &HashMap<String, String>,
     ) -> Result<ExecutionResult> {
-        debug!("🔧 GitLab connector execution requested for step: {}", step.name);
+        debug!(
+            "🔧 GitLab connector execution requested for step: {}",
+            step.name
+        );
         warn!("⚠️ GitLab connector is not yet implemented");
-        
+
         Err(AppError::Unimplemented(
             "GitLab connector functionality is not yet implemented. This will include support for GitLab CI/CD, API operations, and repository management.".to_string()
         ))
@@ -58,7 +61,10 @@ impl Connector for GitLabConnector {
     }
 
     fn validate_config(&self, step: &Step) -> Result<()> {
-        debug!("🔍 Validating GitLab connector config for step: {}", step.name);
+        debug!(
+            "🔍 Validating GitLab connector config for step: {}",
+            step.name
+        );
 
         // Basic validation
         if step.name.is_empty() {
@@ -90,7 +96,8 @@ impl Connector for GitLabConnector {
                         debug!("📦 GitLab project path specified: {}", project_str);
                     } else {
                         return Err(AppError::ConnectorConfigError(
-                            "GitLab project must be either a numeric ID or a path (group/project)".to_string(),
+                            "GitLab project must be either a numeric ID or a path (group/project)"
+                                .to_string(),
                         ));
                     }
                 } else {
@@ -146,14 +153,16 @@ impl Connector for GitLabConnector {
             if let Some(operation) = params.get("gitlab_operation") {
                 if let Some(op_str) = operation.as_str() {
                     match op_str {
-                        "trigger_pipeline" | "create_release" | "upload_package" | "create_mr" | "clone" | "push" => {
+                        "trigger_pipeline" | "create_release" | "upload_package" | "create_mr"
+                        | "clone" | "push" => {
                             debug!("✅ Valid GitLab operation specified: {}", op_str);
                         }
                         _ => {
                             warn!("⚠️ Unknown GitLab operation specified: {}", op_str);
-                            return Err(AppError::ConnectorConfigError(
-                                format!("Unsupported GitLab operation: {}", op_str),
-                            ));
+                            return Err(AppError::ConnectorConfigError(format!(
+                                "Unsupported GitLab operation: {}",
+                                op_str
+                            )));
                         }
                     }
                 } else {
@@ -189,12 +198,16 @@ impl Connector for GitLabConnector {
                             ));
                         }
                         if !value.is_string() {
-                            return Err(AppError::ConnectorConfigError(
-                                format!("GitLab variable '{}' must be a string", key),
-                            ));
+                            return Err(AppError::ConnectorConfigError(format!(
+                                "GitLab variable '{}' must be a string",
+                                key
+                            )));
                         }
                     }
-                    debug!("🔧 GitLab CI/CD variables specified: {} variables", vars_obj.len());
+                    debug!(
+                        "🔧 GitLab CI/CD variables specified: {} variables",
+                        vars_obj.len()
+                    );
                 } else {
                     return Err(AppError::ConnectorConfigError(
                         "GitLab variables must be an object".to_string(),
@@ -208,8 +221,11 @@ impl Connector for GitLabConnector {
     }
 
     async fn pre_execute(&self, step: &Step) -> Result<()> {
-        debug!("🚀 GitLab connector pre-execution hook for step: {}", step.name);
-        
+        debug!(
+            "🚀 GitLab connector pre-execution hook for step: {}",
+            step.name
+        );
+
         // Placeholder for GitLab-specific pre-execution tasks:
         // - Validate GitLab token and permissions
         // - Check project access and existence
@@ -218,7 +234,7 @@ impl Connector for GitLabConnector {
         // - Validate branch/ref existence
         // - Check GitLab API rate limits
         // - Validate GitLab runner availability
-        
+
         Ok(())
     }
 
@@ -227,7 +243,7 @@ impl Connector for GitLabConnector {
             "🏁 GitLab connector post-execution hook for step: {} (exit_code: {})",
             step.name, result.exit_code
         );
-        
+
         // Placeholder for GitLab-specific post-execution tasks:
         // - Update GitLab commit status
         // - Create GitLab deployment
@@ -236,7 +252,7 @@ impl Connector for GitLabConnector {
         // - Clean up temporary tokens or files
         // - Log GitLab API usage metrics
         // - Update GitLab CI/CD variables if needed
-        
+
         Ok(())
     }
 }

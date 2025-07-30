@@ -1,0 +1,297 @@
+version: '3.8'
+
+services:
+  # MongoDB database
+  mongodb:
+    image: mongo:7.0
+    container_name: rustci-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: rustci
+      MONGO_INITDB_ROOT_PASSWORD: rustci_password
+      MONGO_INITDB_DATABASE: rustci
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - rustci-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: rustci-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - rustci-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # RustCI Master Node 1
+  rustci-master-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rustci-master-1
+    restart: unless-stopped
+    environment:
+      - RUST_ENV=production
+      - NODE_ROLE=master
+      - NODE_ID=master-1
+      - CLUSTER_SIZE=3
+      - MONGODB_URI=mongodb://rustci:rustci_password@mongodb:27017/rustci?authSource=admin
+      - MONGODB_DATABASE=rustci
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - GITHUB_OAUTH_CLIENT_ID=${GITHUB_OAUTH_CLIENT_ID}
+      - GITHUB_OAUTH_CLIENT_SECRET=${GITHUB_OAUTH_CLIENT_SECRET}
+      - GITHUB_OAUTH_REDIRECT_URL=http://localhost:8080/api/sessions/oauth/github/callback
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - CLUSTER_NODES=rustci-master-1:8080,rustci-master-2:8080,rustci-master-3:8080
+      - PROMETHEUS_ENDPOINT=http://prometheus:9090
+      - ENABLE_METRICS=true
+      - ENABLE_TRACING=true
+      - LOG_LEVEL=info
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - rustci_data_1:/app/data
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    networks:
+      - rustci-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # RustCI Master Node 2
+  rustci-master-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rustci-master-2
+    restart: unless-stopped
+    environment:
+      - RUST_ENV=production
+      - NODE_ROLE=master
+      - NODE_ID=master-2
+      - CLUSTER_SIZE=3
+      - MONGODB_URI=mongodb://rustci:rustci_password@mongodb:27017/rustci?authSource=admin
+      - MONGODB_DATABASE=rustci
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - GITHUB_OAUTH_CLIENT_ID=${GITHUB_OAUTH_CLIENT_ID}
+      - GITHUB_OAUTH_CLIENT_SECRET=${GITHUB_OAUTH_CLIENT_SECRET}
+      - GITHUB_OAUTH_REDIRECT_URL=http://localhost:8081/api/sessions/oauth/github/callback
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - CLUSTER_NODES=rustci-master-1:8080,rustci-master-2:8080,rustci-master-3:8080
+      - PROMETHEUS_ENDPOINT=http://prometheus:9090
+      - ENABLE_METRICS=true
+      - ENABLE_TRACING=true
+      - LOG_LEVEL=info
+    ports:
+      - "8081:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - rustci_data_2:/app/data
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    networks:
+      - rustci-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # RustCI Master Node 3
+  rustci-master-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rustci-master-3
+    restart: unless-stopped
+    environment:
+      - RUST_ENV=production
+      - NODE_ROLE=master
+      - NODE_ID=master-3
+      - CLUSTER_SIZE=3
+      - MONGODB_URI=mongodb://rustci:rustci_password@mongodb:27017/rustci?authSource=admin
+      - MONGODB_DATABASE=rustci
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - GITHUB_OAUTH_CLIENT_ID=${GITHUB_OAUTH_CLIENT_ID}
+      - GITHUB_OAUTH_CLIENT_SECRET=${GITHUB_OAUTH_CLIENT_SECRET}
+      - GITHUB_OAUTH_REDIRECT_URL=http://localhost:8082/api/sessions/oauth/github/callback
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - CLUSTER_NODES=rustci-master-1:8080,rustci-master-2:8080,rustci-master-3:8080
+      - PROMETHEUS_ENDPOINT=http://prometheus:9090
+      - ENABLE_METRICS=true
+      - ENABLE_TRACING=true
+      - LOG_LEVEL=info
+    ports:
+      - "8082:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - rustci_data_3:/app/data
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    networks:
+      - rustci-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # RustCI Worker Node 1
+  rustci-worker-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rustci-worker-1
+    restart: unless-stopped
+    environment:
+      - RUST_ENV=production
+      - NODE_ROLE=worker
+      - NODE_ID=worker-1
+      - MASTER_NODES=rustci-master-1:8080,rustci-master-2:8080,rustci-master-3:8080
+      - MONGODB_URI=mongodb://rustci:rustci_password@mongodb:27017/rustci?authSource=admin
+      - MONGODB_DATABASE=rustci
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - PROMETHEUS_ENDPOINT=http://prometheus:9090
+      - ENABLE_METRICS=true
+      - ENABLE_TRACING=true
+      - LOG_LEVEL=info
+      - MAX_CONCURRENT_JOBS=4
+      - RUNNER_TYPES=local,docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - rustci_worker_1:/app/data
+    depends_on:
+      - rustci-master-1
+      - rustci-master-2
+      - rustci-master-3
+    networks:
+      - rustci-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # RustCI Worker Node 2
+  rustci-worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rustci-worker-2
+    restart: unless-stopped
+    environment:
+      - RUST_ENV=production
+      - NODE_ROLE=worker
+      - NODE_ID=worker-2
+      - MASTER_NODES=rustci-master-1:8080,rustci-master-2:8080,rustci-master-3:8080
+      - MONGODB_URI=mongodb://rustci:rustci_password@mongodb:27017/rustci?authSource=admin
+      - MONGODB_DATABASE=rustci
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - PROMETHEUS_ENDPOINT=http://prometheus:9090
+      - ENABLE_METRICS=true
+      - ENABLE_TRACING=true
+      - LOG_LEVEL=info
+      - MAX_CONCURRENT_JOBS=4
+      - RUNNER_TYPES=local,docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - rustci_worker_2:/app/data
+    depends_on:
+      - rustci-master-1
+      - rustci-master-2
+      - rustci-master-3
+    networks:
+      - rustci-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Load Balancer (HAProxy)
+  load-balancer:
+    image: haproxy:2.8
+    container_name: rustci-load-balancer
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "8404:8404"  # HAProxy stats
+    volumes:
+      - ./config/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - rustci-master-1
+      - rustci-master-2
+      - rustci-master-3
+    networks:
+      - rustci-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8404/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mongodb_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  rustci_data_1:
+    driver: local
+  rustci_data_2:
+    driver: local
+  rustci_data_3:
+    driver: local
+  rustci_worker_1:
+    driver: local
+  rustci_worker_2:
+    driver: local
+
+networks:
+  rustci-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

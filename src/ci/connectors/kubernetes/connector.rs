@@ -1,5 +1,5 @@
 //! Kubernetes connector implementation
-//! 
+//!
 //! This connector handles Kubernetes-based step execution including:
 //! - Job creation and lifecycle management
 //! - YAML generation and validation
@@ -11,10 +11,8 @@ use crate::error::{AppError, Result};
 
 use super::super::traits::{Connector, ConnectorType, ExecutionResult, KubernetesConfig};
 use super::{
-    job_manager::KubernetesJobManager, 
-    yaml_generator::KubernetesYamlGenerator, 
-    validation::KubernetesValidator,
-    lifecycle_hooks::LifecycleHookManager
+    job_manager::KubernetesJobManager, lifecycle_hooks::LifecycleHookManager,
+    validation::KubernetesValidator, yaml_generator::KubernetesYamlGenerator,
 };
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -49,24 +47,34 @@ impl KubernetesConnector {
         max_retries: u32,
     ) -> Result<ExecutionResult> {
         let mut last_error = None;
-        
+
         for attempt in 1..=max_retries {
-            info!("🔄 Kubernetes execution attempt {} of {}", attempt, max_retries);
-            
+            info!(
+                "🔄 Kubernetes execution attempt {} of {}",
+                attempt, max_retries
+            );
+
             match self.execute_single_attempt(step, workspace, env).await {
                 Ok(result) => {
                     if result.is_success() {
                         info!("✅ Kubernetes execution succeeded on attempt {}", attempt);
                         return Ok(result);
                     } else {
-                        warn!("⚠️ Kubernetes execution failed on attempt {} (exit_code: {})", attempt, result.exit_code);
-                        last_error = Some(AppError::KubernetesError(
-                            format!("Job failed with exit code {}: {}", result.exit_code, result.stderr)
-                        ));
+                        warn!(
+                            "⚠️ Kubernetes execution failed on attempt {} (exit_code: {})",
+                            attempt, result.exit_code
+                        );
+                        last_error = Some(AppError::KubernetesError(format!(
+                            "Job failed with exit code {}: {}",
+                            result.exit_code, result.stderr
+                        )));
                     }
                 }
                 Err(e) => {
-                    error!("❌ Kubernetes execution error on attempt {}: {}", attempt, e);
+                    error!(
+                        "❌ Kubernetes execution error on attempt {}: {}",
+                        attempt, e
+                    );
                     last_error = Some(e);
                 }
             }
@@ -78,9 +86,8 @@ impl KubernetesConnector {
             }
         }
 
-        Err(last_error.unwrap_or_else(|| AppError::KubernetesError(
-            "All retry attempts failed".to_string()
-        )))
+        Err(last_error
+            .unwrap_or_else(|| AppError::KubernetesError("All retry attempts failed".to_string())))
     }
 
     /// Execute a single attempt with enhanced lifecycle hooks and PVC support
@@ -94,29 +101,41 @@ impl KubernetesConnector {
 
         // Create Kubernetes configuration with enhanced features
         let mut k8s_config = self.create_kubernetes_config(step);
-        
+
         // Add default lifecycle hooks if none are configured
         if k8s_config.pre_hooks.is_empty() && k8s_config.post_hooks.is_empty() {
-            k8s_config.pre_hooks.push(LifecycleHookManager::create_execution_tracking_hook(
-                crate::ci::connectors::traits::LifecycleHookType::PreExecution
-            ));
-            k8s_config.post_hooks.push(LifecycleHookManager::create_execution_tracking_hook(
-                crate::ci::connectors::traits::LifecycleHookType::PostExecution
-            ));
-            k8s_config.post_hooks.push(LifecycleHookManager::create_metrics_hook());
-            k8s_config.post_hooks.push(LifecycleHookManager::create_failure_tracking_hook());
+            k8s_config
+                .pre_hooks
+                .push(LifecycleHookManager::create_execution_tracking_hook(
+                    crate::ci::connectors::traits::LifecycleHookType::PreExecution,
+                ));
+            k8s_config
+                .post_hooks
+                .push(LifecycleHookManager::create_execution_tracking_hook(
+                    crate::ci::connectors::traits::LifecycleHookType::PostExecution,
+                ));
+            k8s_config
+                .post_hooks
+                .push(LifecycleHookManager::create_metrics_hook());
+            k8s_config
+                .post_hooks
+                .push(LifecycleHookManager::create_failure_tracking_hook());
         }
 
-        debug!("🔧 Kubernetes config: namespace={}, timeout={}s, use_pvc={}, hooks={}", 
-               k8s_config.namespace, k8s_config.timeout_seconds, k8s_config.use_pvc,
-               k8s_config.pre_hooks.len() + k8s_config.post_hooks.len());
+        debug!(
+            "🔧 Kubernetes config: namespace={}, timeout={}s, use_pvc={}, hooks={}",
+            k8s_config.namespace,
+            k8s_config.timeout_seconds,
+            k8s_config.use_pvc,
+            k8s_config.pre_hooks.len() + k8s_config.post_hooks.len()
+        );
 
         // Validate configuration and cluster connectivity
         KubernetesValidator::validate_kubernetes_config(&k8s_config).await?;
 
         // Create job manager with enhanced features
         let job_manager = KubernetesJobManager::new(k8s_config.clone());
-        
+
         // Validate resource permissions and quotas
         job_manager.validate_resource_permissions().await?;
 
@@ -124,8 +143,9 @@ impl KubernetesConnector {
         job_manager.ensure_pvc(&workspace.id).await?;
 
         // Generate Job YAML with enhanced features
-        let job_yaml = KubernetesYamlGenerator::generate_job_yaml(step, workspace, env, &k8s_config)?;
-        
+        let job_yaml =
+            KubernetesYamlGenerator::generate_job_yaml(step, workspace, env, &k8s_config)?;
+
         // Validate generated YAML
         KubernetesYamlGenerator::validate_yaml_syntax(&job_yaml)?;
 
@@ -139,11 +159,17 @@ impl KubernetesConnector {
         let result = job_manager.wait_for_completion(&job_name).await?;
 
         // Collect additional metrics including PVC and resource usage
-        let mut metrics = job_manager.get_job_metrics(&job_name).await.unwrap_or_default();
-        
+        let mut metrics = job_manager
+            .get_job_metrics(&job_name)
+            .await
+            .unwrap_or_default();
+
         // Add configuration metadata
         metrics.insert("use_pvc".to_string(), k8s_config.use_pvc.to_string());
-        metrics.insert("storage_size".to_string(), k8s_config.storage_size.unwrap_or_else(|| "N/A".to_string()));
+        metrics.insert(
+            "storage_size".to_string(),
+            k8s_config.storage_size.unwrap_or_else(|| "N/A".to_string()),
+        );
         if let Some(storage_class) = &k8s_config.storage_class {
             metrics.insert("storage_class".to_string(), storage_class.clone());
         }
@@ -168,18 +194,18 @@ impl KubernetesConnector {
     /// Handle emergency cleanup for stuck jobs
     async fn emergency_cleanup(&self, step: &Step) -> Result<()> {
         warn!("🚨 Performing emergency cleanup for step: {}", step.name);
-        
+
         let k8s_config = self.create_kubernetes_config(step);
         let _job_manager = KubernetesJobManager::new(k8s_config);
-        
+
         // Try to find and cleanup any jobs that might be stuck
         // This is a best-effort cleanup
         let job_pattern = format!("ci-{}", step.name.to_lowercase().replace(' ', "-"));
-        
+
         // Note: In a real implementation, you might want to list jobs and filter by labels
         // For now, we'll just log the cleanup attempt
         warn!("🧹 Emergency cleanup pattern: {}", job_pattern);
-        
+
         Ok(())
     }
 }
@@ -204,7 +230,9 @@ impl Connector for KubernetesConnector {
         let max_retries = 1; // Could be configurable in the future
 
         // Execute with retry logic
-        let result = self.execute_with_retry(step, workspace, env, max_retries).await;
+        let result = self
+            .execute_with_retry(step, workspace, env, max_retries)
+            .await;
 
         // Handle cleanup on failure
         if let Err(ref e) = result {
@@ -237,31 +265,33 @@ impl Connector for KubernetesConnector {
 
     async fn pre_execute(&self, step: &Step) -> Result<()> {
         debug!("🚀 Kubernetes pre-execution hook for step: {}", step.name);
-        
+
         // Validate kubectl availability
         KubernetesValidator::validate_kubectl_available().await?;
-        
+
         // Validate cluster connectivity
         KubernetesValidator::validate_cluster_connectivity().await?;
-        
+
         // Create and validate Kubernetes configuration
         let k8s_config = self.create_kubernetes_config(step);
-        
+
         // Validate namespace
         KubernetesValidator::validate_namespace(&k8s_config.namespace).await?;
-        
+
         info!("☸️ Kubernetes connector ready for step: {}", step.name);
         Ok(())
     }
 
     async fn post_execute(&self, step: &Step, result: &ExecutionResult) -> Result<()> {
-        debug!("🏁 Kubernetes post-execution hook for step: {} (exit_code: {})", 
-               step.name, result.exit_code);
-        
+        debug!(
+            "🏁 Kubernetes post-execution hook for step: {} (exit_code: {})",
+            step.name, result.exit_code
+        );
+
         // Log execution summary with metrics
         if result.is_success() {
             info!("✅ Kubernetes step '{}' completed successfully", step.name);
-            
+
             // Log useful metrics if available
             if let Some(duration) = result.metadata.get("duration_seconds") {
                 info!("⏱️ Execution duration: {}s", duration);
@@ -270,8 +300,11 @@ impl Connector for KubernetesConnector {
                 debug!("📋 Job name: {}", job_name);
             }
         } else {
-            warn!("⚠️ Kubernetes step '{}' failed with exit code: {}", step.name, result.exit_code);
-            
+            warn!(
+                "⚠️ Kubernetes step '{}' failed with exit code: {}",
+                step.name, result.exit_code
+            );
+
             // Log failure details
             if let Some(failure_reason) = result.metadata.get("failure_reason") {
                 error!("💥 Failure reason: {}", failure_reason);
@@ -280,7 +313,10 @@ impl Connector for KubernetesConnector {
 
         // Additional cleanup if needed
         if let Some(job_name) = result.metadata.get("job_name") {
-            debug!("🧹 Job {} should have been cleaned up automatically", job_name);
+            debug!(
+                "🧹 Job {} should have been cleaned up automatically",
+                job_name
+            );
         }
 
         Ok(())
@@ -329,7 +365,7 @@ mod tests {
     fn test_config_validation() {
         let connector = KubernetesConnector::new();
         let step = create_test_step();
-        
+
         // This should pass basic validation
         let result = connector.validate_config(&step);
         assert!(result.is_ok());
@@ -340,7 +376,7 @@ mod tests {
         let connector = KubernetesConnector::new();
         let mut step = create_test_step();
         step.config.image = None;
-        
+
         // This should fail validation
         let result = connector.validate_config(&step);
         assert!(result.is_err());
@@ -350,7 +386,7 @@ mod tests {
     fn test_kubernetes_config_creation() {
         let connector = KubernetesConnector::new();
         let step = create_test_step();
-        
+
         let config = connector.create_kubernetes_config(&step);
         assert_eq!(config.namespace, "default");
         assert_eq!(config.timeout_seconds, 60);

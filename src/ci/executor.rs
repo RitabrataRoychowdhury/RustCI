@@ -15,7 +15,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 #[allow(dead_code)] // Will be used when CI engine is fully implemented
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PipelineExecutor {
     pub connector_manager: Arc<tokio::sync::Mutex<ConnectorManager>>,
     pub repository_manager: Arc<RepositoryManager>,
@@ -138,7 +138,7 @@ impl PipelineExecutor {
         }
     }
 
-    async fn execute_step(
+    pub async fn execute_step(
         &self,
         execution: Arc<RwLock<PipelineExecution>>,
         stage_name: &str,
@@ -179,7 +179,8 @@ impl PipelineExecutor {
                     // For shell steps, check if they need special handling based on name
                     match step.name.as_str() {
                         name if name.starts_with("clone") || name.starts_with("checkout") => {
-                            self.execute_repository_step(step, workspace, &step_env).await
+                            self.execute_repository_step(step, workspace, &step_env)
+                                .await
                         }
                         name if name.starts_with("build") || name.starts_with("compile") => {
                             self.execute_build_step(step, workspace, &step_env).await
@@ -195,16 +196,16 @@ impl PipelineExecutor {
                 // Only trigger deployment for custom steps that explicitly request it
                 match step.name.as_str() {
                     name if name.starts_with("deploy") || name.starts_with("release") => {
-                        self.execute_deployment_step(execution.clone(), step, workspace, &step_env).await
+                        self.execute_deployment_step(execution.clone(), step, workspace, &step_env)
+                            .await
                     }
-                    _ => {
-                        self.execute_custom_step(step, workspace, &step_env).await
-                    }
+                    _ => self.execute_custom_step(step, workspace, &step_env).await,
                 }
             }
             StepType::Docker => self.execute_docker_step(step, workspace, &step_env).await,
             StepType::Kubernetes => {
-                self.execute_kubernetes_step(step, workspace, &step_env).await
+                self.execute_kubernetes_step(step, workspace, &step_env)
+                    .await
             }
             StepType::AWS => self.execute_aws_step(step, workspace, &step_env).await,
             StepType::Azure => self.execute_azure_step(step, workspace, &step_env).await,
@@ -260,10 +261,7 @@ impl PipelineExecutor {
     fn get_step_command(&self, step: &Step) -> Option<String> {
         match &step.config.command {
             Some(cmd) => Some(cmd.clone()),
-            None => match &step.config.script {
-                Some(script) => Some(script.clone()),
-                None => None,
-            },
+            None => step.config.script.clone(),
         }
     }
 
@@ -273,7 +271,7 @@ impl PipelineExecutor {
         workspace: &Workspace,
         env: &HashMap<String, String>,
     ) -> Result<(i32, String, String)> {
-        let command = step
+        let raw_command = step
             .config
             .command
             .as_ref()
@@ -282,25 +280,55 @@ impl PipelineExecutor {
                 AppError::ValidationError("Shell step requires command or script".to_string())
             })?;
 
-        let working_dir = step
-            .config
-            .working_directory
-            .as_ref()
-            .map(|d| workspace.path.join(d))
-            .unwrap_or_else(|| workspace.path.clone());
+        // Apply environment variable substitution to the command
+        let mut command = raw_command.clone();
+        debug!("🔧 Raw command: {}", raw_command);
+        debug!("🔧 Available environment variables: {:?}", env);
+        
+        for (key, value) in env {
+            let placeholder = format!("${{{}}}", key);
+            command = command.replace(&placeholder, value);
+        }
+
+        debug!("🔧 Executing: {}", command);
+
+        // For Git clone operations, use workspace root; for other operations, use SOURCE_DIR if available
+        let working_dir = if command.contains("git clone") {
+            // Git clone should run from workspace root, not from the target directory
+            workspace.path.clone()
+        } else if let Some(source_dir) = env.get("SOURCE_DIR") {
+            std::path::PathBuf::from(source_dir)
+        } else {
+            step.config
+                .working_directory
+                .as_ref()
+                .map(|d| workspace.path.join(d))
+                .unwrap_or_else(|| workspace.path.clone())
+        };
 
         debug!(
-            "🐚 Executing shell command: {} in directory: {:?}",
+            "🐚 Executing enhanced shell command: {} in directory: {:?}",
             command, working_dir
         );
 
+        // Ensure working directory exists before executing command
+        if !working_dir.exists() {
+            tokio::fs::create_dir_all(&working_dir).await.map_err(|e| {
+                AppError::InternalServerError(format!(
+                    "Failed to create working directory {}: {}", 
+                    working_dir.display(), e
+                ))
+            })?;
+            info!("📁 Created working directory: {:?}", working_dir);
+        }
+
         let mut cmd = if cfg!(target_os = "windows") {
             let mut c = Command::new("cmd");
-            c.args(["/C", command]);
+            c.args(["/C", &command]);
             c
         } else {
             let mut c = Command::new("sh");
-            c.args(["-c", command]);
+            c.args(["-c", &command]);
             c
         };
 
@@ -378,7 +406,7 @@ impl PipelineExecutor {
         info!("🔨 Executing build step: {}", step.name);
 
         // Create build config from step configuration
-        let build_config = if !step.config.command.is_none() || !step.config.script.is_none() {
+        let build_config = if step.config.command.is_some() || step.config.script.is_some() {
             // Custom build commands
             let commands = if let Some(cmd) = &step.config.command {
                 vec![cmd.clone()]

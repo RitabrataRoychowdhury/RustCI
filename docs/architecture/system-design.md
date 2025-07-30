@@ -145,6 +145,7 @@ flowchart TB
 ### API Gateway Layer
 
 #### Axum Web Server
+
 - **Purpose**: HTTP server handling all incoming requests
 - **Technology**: Axum framework with Tokio async runtime
 - **Responsibilities**:
@@ -154,6 +155,7 @@ flowchart TB
   - Static file serving
 
 #### Authentication Middleware
+
 - **Purpose**: JWT-based authentication and authorization
 - **Features**:
   - Token validation
@@ -162,6 +164,7 @@ flowchart TB
   - Role-based access control
 
 #### CORS Middleware
+
 - **Purpose**: Cross-origin resource sharing configuration
 - **Configuration**:
   - Allowed origins
@@ -171,12 +174,14 @@ flowchart TB
 ### Application Layer
 
 #### Route Handlers
+
 - **Pipeline Routes**: `/api/ci/pipelines/*`
 - **Execution Routes**: `/api/ci/executions/*`
 - **Authentication Routes**: `/api/sessions/*`
 - **Health Check**: `/api/healthchecker`
 
 #### File Upload Handler
+
 - **Purpose**: Handle multipart file uploads for YAML configurations
 - **Features**:
   - File size validation (10MB limit)
@@ -187,6 +192,7 @@ flowchart TB
 ### Business Logic Layer
 
 #### CI Engine
+
 - **Purpose**: Core orchestration engine for CI/CD operations
 - **Responsibilities**:
   - Pipeline lifecycle management
@@ -204,6 +210,7 @@ pub struct CIEngine {
 ```
 
 #### Pipeline Manager
+
 - **Purpose**: Manage pipeline definitions and configurations
 - **Operations**:
   - CRUD operations for pipelines
@@ -212,6 +219,7 @@ pub struct CIEngine {
   - Trigger management
 
 #### Execution Engine
+
 - **Purpose**: Execute pipeline stages and steps
 - **Features**:
   - Parallel stage execution
@@ -221,6 +229,7 @@ pub struct CIEngine {
   - Timeout handling
 
 #### Connector Manager
+
 - **Purpose**: Unified facade for managing all connector operations
 - **Responsibilities**:
   - Factory registration and management
@@ -239,6 +248,7 @@ The connector system is the core execution engine that provides pluggable, exten
 ### Design Patterns
 
 #### Strategy Pattern
+
 Each connector implements the `Connector` trait, allowing different execution strategies:
 
 ```rust
@@ -254,6 +264,7 @@ pub trait Connector: Send + Sync {
 ```
 
 #### Factory Pattern
+
 The `ConnectorFactory` creates connector instances dynamically:
 
 ```rust
@@ -266,6 +277,7 @@ pub trait ConnectorFactory: Send + Sync {
 ```
 
 #### Facade Pattern
+
 The `ConnectorManager` provides a unified interface for all connector operations:
 
 ```rust
@@ -287,7 +299,7 @@ sequenceDiagram
     participant Engine
     participant Manager
     participant DB
-    
+
     Client->>API: POST /ci/pipelines
     API->>Handler: Route to create_pipeline
     Handler->>Handler: Validate YAML
@@ -313,12 +325,12 @@ sequenceDiagram
     participant ConnectorMgr as Connector Manager
     participant Connector
     participant External as External Service
-    
+
     Client->>API: POST /ci/pipelines/{id}/trigger
     API->>Handler: Route to trigger_pipeline
     Handler->>Engine: Trigger execution
     Engine->>Executor: Start execution
-    
+
     loop For each stage
         loop For each step in stage
             Executor->>ConnectorMgr: execute_step(step, workspace, env)
@@ -334,7 +346,7 @@ sequenceDiagram
             ConnectorMgr-->>Executor: ExecutionResult
         end
     end
-    
+
     Executor-->>Engine: Execution complete
     Engine-->>Handler: Return execution ID
     Handler-->>API: JSON response
@@ -346,6 +358,7 @@ sequenceDiagram
 ### Core Entities
 
 #### Pipeline
+
 ```rust
 pub struct CIPipeline {
     pub id: Option<Uuid>,
@@ -362,6 +375,7 @@ pub struct CIPipeline {
 ```
 
 #### Execution
+
 ```rust
 pub struct PipelineExecution {
     pub id: Uuid,
@@ -379,6 +393,7 @@ pub struct PipelineExecution {
 ## Security Architecture
 
 ### Authentication Flow
+
 1. Client requests OAuth authorization
 2. GitHub OAuth callback provides authorization code
 3. Server exchanges code for access token
@@ -386,6 +401,7 @@ pub struct PipelineExecution {
 5. Client uses JWT for subsequent requests
 
 ### Security Measures
+
 - JWT token expiration and refresh
 - Input validation and sanitization
 - File upload size and type restrictions
@@ -396,18 +412,21 @@ pub struct PipelineExecution {
 ## Performance Considerations
 
 ### Async Architecture
+
 - Tokio async runtime for non-blocking I/O
 - Connection pooling for database operations
 - Concurrent pipeline execution
 - Streaming responses for large data
 
 ### Caching Strategy
+
 - Pipeline configuration caching
 - Execution status caching
 - Docker image layer caching
 - Git repository caching
 
 ### Resource Management
+
 - Workspace cleanup after execution
 - Container lifecycle management
 - Port allocation and deallocation
@@ -416,12 +435,14 @@ pub struct PipelineExecution {
 ## Scalability Design
 
 ### Horizontal Scaling
+
 - Stateless application design
 - Database connection pooling
 - Load balancer compatibility
 - Session storage externalization
 
 ### Vertical Scaling
+
 - Efficient memory usage
 - CPU-intensive task optimization
 - I/O operation optimization
@@ -430,6 +451,7 @@ pub struct PipelineExecution {
 ## Error Handling Strategy
 
 ### Error Categories
+
 1. **Validation Errors**: Invalid input data
 2. **Authentication Errors**: Authorization failures
 3. **External Service Errors**: GitHub, Docker, SSH failures
@@ -437,6 +459,7 @@ pub struct PipelineExecution {
 5. **Timeout Errors**: Long-running operation failures
 
 ### Error Response Format
+
 ```json
 {
   "error": "ErrorType",
@@ -450,18 +473,21 @@ pub struct PipelineExecution {
 ## Monitoring and Observability
 
 ### Logging
+
 - Structured logging with tracing crate
 - Log levels: ERROR, WARN, INFO, DEBUG, TRACE
 - Request/response logging
 - Performance metrics logging
 
 ### Metrics
+
 - Request latency and throughput
 - Pipeline execution times
 - Resource utilization
 - Error rates and types
 
 ### Health Checks
+
 - Application health endpoint
 - Database connectivity check
 - External service availability

@@ -1,12 +1,12 @@
-use crate::ci::{config::Step, workspace::Workspace};
 use crate::ci::connectors::traits::{Connector, ConnectorType, ExecutionResult};
+use crate::ci::{config::Step, workspace::Workspace};
 use crate::error::{AppError, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use tracing::{debug, warn};
 
 /// Azure connector for Microsoft Azure cloud services
-/// 
+///
 /// This connector provides integration with Azure services including:
 /// - Azure Container Instances (ACI)
 /// - Azure Kubernetes Service (AKS)
@@ -41,9 +41,12 @@ impl Connector for AzureConnector {
         _workspace: &Workspace,
         _env: &HashMap<String, String>,
     ) -> Result<ExecutionResult> {
-        debug!("🔧 Azure connector execution requested for step: {}", step.name);
+        debug!(
+            "🔧 Azure connector execution requested for step: {}",
+            step.name
+        );
         warn!("⚠️ Azure connector is not yet implemented");
-        
+
         Err(AppError::Unimplemented(
             "Azure connector functionality is not yet implemented. This will include support for ACI, AKS, Azure Functions, and Azure DevOps.".to_string()
         ))
@@ -58,7 +61,10 @@ impl Connector for AzureConnector {
     }
 
     fn validate_config(&self, step: &Step) -> Result<()> {
-        debug!("🔍 Validating Azure connector config for step: {}", step.name);
+        debug!(
+            "🔍 Validating Azure connector config for step: {}",
+            step.name
+        );
 
         // Basic validation
         if step.name.is_empty() {
@@ -78,7 +84,9 @@ impl Connector for AzureConnector {
                         ));
                     }
                     // Basic UUID format validation
-                    if sub_id_str.len() != 36 || sub_id_str.chars().filter(|&c| c == '-').count() != 4 {
+                    if sub_id_str.len() != 36
+                        || sub_id_str.chars().filter(|&c| c == '-').count() != 4
+                    {
                         return Err(AppError::ConnectorConfigError(
                             "Azure subscription ID must be a valid UUID format".to_string(),
                         ));
@@ -116,9 +124,10 @@ impl Connector for AzureConnector {
                         }
                         _ => {
                             warn!("⚠️ Unknown Azure service specified: {}", service_str);
-                            return Err(AppError::ConnectorConfigError(
-                                format!("Unsupported Azure service: {}", service_str),
-                            ));
+                            return Err(AppError::ConnectorConfigError(format!(
+                                "Unsupported Azure service: {}",
+                                service_str
+                            )));
                         }
                     }
                 } else {
@@ -145,7 +154,9 @@ impl Connector for AzureConnector {
             }
 
             // Validate Azure credentials configuration
-            if params.get("azure_client_id").is_some() || params.get("azure_client_secret").is_some() {
+            if params.get("azure_client_id").is_some()
+                || params.get("azure_client_secret").is_some()
+            {
                 debug!("🔐 Azure service principal credentials configuration detected");
                 // In a real implementation, we would validate credential format
             }
@@ -156,15 +167,18 @@ impl Connector for AzureConnector {
     }
 
     async fn pre_execute(&self, step: &Step) -> Result<()> {
-        debug!("🚀 Azure connector pre-execution hook for step: {}", step.name);
-        
+        debug!(
+            "🚀 Azure connector pre-execution hook for step: {}",
+            step.name
+        );
+
         // Placeholder for Azure-specific pre-execution tasks:
         // - Validate Azure credentials and service principal
         // - Check Azure subscription quotas
         // - Verify Azure RBAC permissions
         // - Initialize Azure SDK clients
         // - Validate resource group existence
-        
+
         Ok(())
     }
 
@@ -173,14 +187,14 @@ impl Connector for AzureConnector {
             "🏁 Azure connector post-execution hook for step: {} (exit_code: {})",
             step.name, result.exit_code
         );
-        
+
         // Placeholder for Azure-specific post-execution tasks:
         // - Clean up temporary Azure resources
         // - Log Azure service usage metrics
         // - Update Azure Monitor logs
         // - Handle Azure service-specific cleanup
         // - Update Azure DevOps work items if applicable
-        
+
         Ok(())
     }
 }

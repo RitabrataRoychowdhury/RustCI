@@ -1,0 +1,35 @@
+name: "K3D Cluster Teardown"
+description: "Clean up k3d cluster after testing"
+
+variables:
+  CLUSTER_NAME: "rustci-test"
+
+stages:
+  - name: "teardown"
+    description: "Remove k3d cluster and cleanup"
+    steps:
+      - name: "list-clusters"
+        type: "shell"
+        command: |
+          echo "Current k3d clusters:"
+          k3d cluster list
+
+      - name: "delete-cluster"
+        type: "shell"
+        command: |
+          k3d cluster delete ${CLUSTER_NAME}
+
+      - name: "verify-cleanup"
+        type: "shell"
+        command: |
+          echo "Remaining k3d clusters:"
+          k3d cluster list
+
+      - name: "cleanup-docker-resources"
+        type: "shell"
+        command: |
+          # Clean up any remaining k3d-related containers
+          docker ps -a --filter "label=app=k3d" --filter "label=k3d.cluster=${CLUSTER_NAME}" -q | xargs -r docker rm -f
+          
+          # Clean up k3d networks
+          docker network ls --filter "label=app=k3d" --filter "label=k3d.cluster=${CLUSTER_NAME}" -q | xargs -r docker network rm

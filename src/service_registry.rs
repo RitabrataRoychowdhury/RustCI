@@ -1,401 +1,617 @@
-use crate::error::{AppError, Result};
-use chrono::{DateTime, Utc};
-use mongodb::{bson::doc, Collection, Database};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-/// Registered service in the service registry
+use crate::core::{
+    BulkheadConfig, BulkheadManager, CircuitBreakerConfig, RetryConfig, Service, ServiceContainer,
+    ServiceDecorator, ServiceFactory, ServiceLifetime, ServiceScope,
+};
+use crate::error::{AppError, Result};
+
+/// Enhanced service information stored in the registry
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RegisteredService {
+pub struct ServiceInfo {
     pub id: Uuid,
     pub name: String,
-    pub service_type: ServiceType,
-    pub endpoint: String,
-    pub deployment_id: Uuid,
-    pub agent_capable: bool,
-    pub last_heartbeat: Option<DateTime<Utc>>,
-    pub metadata: HashMap<String, String>,
+    pub version: String,
     pub status: ServiceStatus,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub endpoint: String,
+    pub health_check_url: Option<String>,
+    pub metadata: HashMap<String, String>,
+    pub registered_at: chrono::DateTime<chrono::Utc>,
+    pub last_heartbeat: Option<chrono::DateTime<chrono::Utc>>,
+    pub service_type: String,
+    pub lifetime: ServiceLifetime,
+    pub dependencies: Vec<String>,
 }
 
-/// Type of service
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ServiceType {
-    WebServer,
-    ApiServer,
-    Database,
-    Cache,
-    MessageQueue,
-    Frontend,
-    Backend,
-    Custom,
-}
-
-/// Status of a registered service
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub enum ServiceStatus {
     Starting,
     Running,
     Stopping,
     Stopped,
     Failed,
+    #[default]
     Unknown,
 }
 
-/// Service registry for tracking deployed services
-#[allow(dead_code)]
+/// Enhanced service registry with dependency injection integration
 pub struct ServiceRegistry {
-    services: Arc<RwLock<HashMap<Uuid, RegisteredService>>>,
-    database: Arc<Database>,
-    collection: Collection<RegisteredService>,
+    services: Arc<RwLock<HashMap<Uuid, ServiceInfo>>>,
+    name_index: Arc<RwLock<HashMap<String, Vec<Uuid>>>>,
+    container: Arc<ServiceContainer>,
+    bulkhead_manager: Arc<BulkheadManager>,
+    service_factories: Arc<RwLock<HashMap<String, Box<dyn ServiceFactory>>>>,
 }
 
-#[allow(dead_code)]
 impl ServiceRegistry {
-    /// Create a new service registry
-    pub fn new(database: Arc<Database>) -> Self {
-        let collection = database.collection::<RegisteredService>("services");
-        
+    pub fn new() -> Self {
+        let container = Arc::new(ServiceContainer::new());
+        let bulkhead_manager = Arc::new(BulkheadManager::new());
+
         Self {
             services: Arc::new(RwLock::new(HashMap::new())),
-            database,
-            collection,
+            name_index: Arc::new(RwLock::new(HashMap::new())),
+            container,
+            bulkhead_manager,
+            service_factories: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    /// Register a new service
-    pub async fn register_service(&self, mut service: RegisteredService) -> Result<()> {
-        info!("📝 Registering service: {} ({})", service.name, service.id);
+    /// Register a service factory with the DI container
+    pub async fn register_service_factory<T: 'static + Send + Sync + Default>(
+        &self,
+        name: String,
+        lifetime: ServiceLifetime,
+        factory: Box<dyn ServiceFactory>,
+        dependencies: Vec<String>,
+    ) -> Result<()> {
+        // Register with DI container
+        let type_dependencies: Vec<TypeId> = dependencies
+            .iter()
+            .map(|_| TypeId::of::<T>()) // Simplified - in real implementation, you'd map names to TypeIds
+            .collect();
 
-        // Set timestamps
-        let now = Utc::now();
-        service.created_at = now;
-        service.updated_at = now;
-        service.last_heartbeat = Some(now);
+        // Create a simple factory for DI container registration
+        let _factory_name = factory.service_name().to_string();
+        let simple_factory = Box::new(ExampleServiceFactory::<T>::new());
 
-        // Store in memory cache
+        self.container
+            .register::<T>(lifetime.clone(), simple_factory, type_dependencies)
+            .map_err(|e| AppError::DependencyNotFound {
+                service: format!("Failed to register service factory: {}", e),
+            })?;
+
+        // Store factory reference
         {
-            let mut services = self.services.write().await;
-            services.insert(service.id, service.clone());
+            let mut factories = self.service_factories.write().await;
+            factories.insert(name.clone(), factory);
         }
 
-        // Store in database
-        self.collection
-            .insert_one(&service, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to register service: {}", e)))?;
+        // Create bulkhead pool for the service
+        let bulkhead_config = BulkheadConfig::default();
+        self.bulkhead_manager
+            .create_pool(name.clone(), bulkhead_config)
+            .await?;
 
-        info!("✅ Service registered successfully: {}", service.name);
+        info!(
+            "Registered service factory: {} with lifetime: {:?}",
+            name, lifetime
+        );
         Ok(())
     }
 
-    /// Get a service by ID
-    pub async fn get_service(&self, service_id: Uuid) -> Result<Option<RegisteredService>> {
-        // Try memory cache first
-        {
-            let services = self.services.read().await;
-            if let Some(service) = services.get(&service_id) {
-                return Ok(Some(service.clone()));
-            }
-        }
+    /// Register a new service instance
+    pub async fn register_service(
+        &self,
+        name: String,
+        version: String,
+        endpoint: String,
+        health_check_url: Option<String>,
+        metadata: HashMap<String, String>,
+        service_type: String,
+        lifetime: ServiceLifetime,
+        dependencies: Vec<String>,
+    ) -> Result<Uuid> {
+        let service_id = Uuid::new_v4();
+        let service_info = ServiceInfo {
+            id: service_id,
+            name: name.clone(),
+            version,
+            status: ServiceStatus::Starting,
+            endpoint,
+            health_check_url,
+            metadata,
+            registered_at: chrono::Utc::now(),
+            last_heartbeat: None,
+            service_type,
+            lifetime,
+            dependencies,
+        };
 
-        // Fallback to database
-        let service = self.collection
-            .find_one(doc! {"id": service_id.to_string()}, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to get service: {}", e)))?;
-
-        // Update cache if found
-        if let Some(ref service) = service {
-            let mut services = self.services.write().await;
-            services.insert(service_id, service.clone());
-        }
-
-        Ok(service)
-    }
-
-    /// Get services by type
-    pub async fn get_services_by_type(&self, service_type: ServiceType) -> Result<Vec<RegisteredService>> {
-        let services = self.collection
-            .find(doc! {"service_type": serde_json::to_string(&service_type).unwrap()}, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to get services by type: {}", e)))?;
-
-        let mut result = Vec::new();
-        let mut cursor = services;
-        
-        while cursor.advance().await.map_err(|e| AppError::DatabaseError(e.to_string()))? {
-            let service = cursor.deserialize_current()
-                .map_err(|e| AppError::DatabaseError(format!("Failed to deserialize service: {}", e)))?;
-            result.push(service);
-        }
-
-        Ok(result)
-    }
-
-    /// Get all services
-    pub async fn get_all_services(&self) -> Result<Vec<RegisteredService>> {
-        let services = self.collection
-            .find(doc! {}, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to get all services: {}", e)))?;
-
-        let mut result = Vec::new();
-        let mut cursor = services;
-        
-        while cursor.advance().await.map_err(|e| AppError::DatabaseError(e.to_string()))? {
-            let service = cursor.deserialize_current()
-                .map_err(|e| AppError::DatabaseError(format!("Failed to deserialize service: {}", e)))?;
-            result.push(service);
-        }
-
-        Ok(result)
-    }
-
-    /// Update service heartbeat
-    pub async fn update_heartbeat(&self, service_id: Uuid) -> Result<()> {
-        let now = Utc::now();
-
-        // Update memory cache
+        // Add to services map
         {
             let mut services = self.services.write().await;
-            if let Some(service) = services.get_mut(&service_id) {
-                service.last_heartbeat = Some(now);
-                service.updated_at = now;
-                service.status = ServiceStatus::Running;
-            }
+            services.insert(service_id, service_info);
         }
 
-        // Update database
-        self.collection
-            .update_one(
-                doc! {"id": service_id.to_string()},
-                doc! {
-                    "$set": {
-                        "last_heartbeat": mongodb::bson::to_bson(&now).unwrap(),
-                        "updated_at": mongodb::bson::to_bson(&now).unwrap(),
-                        "status": "running"
-                    }
-                },
-                None,
-            )
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to update heartbeat: {}", e)))?;
+        // Update name index
+        {
+            let mut name_index = self.name_index.write().await;
+            name_index
+                .entry(name.clone())
+                .or_insert_with(Vec::new)
+                .push(service_id);
+        }
 
-        Ok(())
+        info!("Registered service: {} ({})", name, service_id);
+        Ok(service_id)
+    }
+
+    /// Resolve a service instance using dependency injection
+    pub async fn resolve_service<T: 'static + Send + Sync>(&self) -> Result<Arc<T>> {
+        self.container
+            .resolve::<T>()
+            .await
+            .map_err(|e| AppError::DependencyNotFound {
+                service: format!("Failed to resolve service: {}", e),
+            })
+    }
+
+    /// Resolve a service instance within a scope
+    pub async fn resolve_service_scoped<T: 'static + Send + Sync>(
+        &self,
+        scope: &ServiceScope,
+    ) -> Result<Arc<T>> {
+        scope
+            .resolve::<T>()
+            .await
+            .map_err(|e| AppError::DependencyNotFound {
+                service: format!("Failed to resolve scoped service: {}", e),
+            })
+    }
+
+    /// Create a decorated service with middleware
+    pub async fn create_decorated_service<T: Service + 'static>(
+        &self,
+        service: Arc<T>,
+        enable_logging: bool,
+        retry_config: Option<RetryConfig>,
+        circuit_breaker_config: Option<CircuitBreakerConfig>,
+        enable_metrics: bool,
+    ) -> ServiceDecorator<T> {
+        let service_name = T::service_name(&*service).to_string();
+        let mut decorator = ServiceDecorator::new(service);
+
+        if enable_logging {
+            decorator = decorator.with_logging();
+        }
+
+        if let Some(config) = retry_config {
+            decorator = decorator.with_retry(config);
+        }
+
+        if let Some(config) = circuit_breaker_config {
+            decorator = decorator.with_circuit_breaker(config);
+        }
+
+        if enable_metrics {
+            decorator = decorator.with_metrics(service_name);
+        }
+
+        decorator
+    }
+
+    /// Execute operation in bulkhead pool
+    pub async fn execute_in_bulkhead<F, T, Fut>(
+        &self,
+        service_name: &str,
+        context: &crate::core::ServiceContext,
+        operation: F,
+    ) -> Result<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        self.bulkhead_manager
+            .execute_in_pool(service_name, context, operation)
+            .await
     }
 
     /// Update service status
-    pub async fn update_service_status(&self, service_id: Uuid, status: ServiceStatus) -> Result<()> {
-        let now = Utc::now();
+    pub async fn update_service_status(
+        &self,
+        service_id: Uuid,
+        status: ServiceStatus,
+    ) -> Result<()> {
+        let mut services = self.services.write().await;
 
-        info!("🔄 Updating service status: {} -> {:?}", service_id, status);
-
-        // Update memory cache
-        {
-            let mut services = self.services.write().await;
-            if let Some(service) = services.get_mut(&service_id) {
-                service.status = status.clone();
-                service.updated_at = now;
-            }
+        if let Some(service) = services.get_mut(&service_id) {
+            service.status = status.clone();
+            service.last_heartbeat = Some(chrono::Utc::now());
+            info!("Updated service {} status to {:?}", service_id, status);
+            Ok(())
+        } else {
+            Err(AppError::NotFound(format!(
+                "Service not found: {}",
+                service_id
+            )))
         }
-
-        // Update database
-        self.collection
-            .update_one(
-                doc! {"id": service_id.to_string()},
-                doc! {
-                    "$set": {
-                        "status": serde_json::to_string(&status).unwrap(),
-                        "updated_at": mongodb::bson::to_bson(&now).unwrap()
-                    }
-                },
-                None,
-            )
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to update service status: {}", e)))?;
-
-        Ok(())
     }
 
-    /// Remove a service from the registry
-    pub async fn unregister_service(&self, service_id: Uuid) -> Result<()> {
-        info!("🗑️ Unregistering service: {}", service_id);
-
-        // Remove from memory cache
-        {
-            let mut services = self.services.write().await;
-            services.remove(&service_id);
-        }
-
-        // Remove from database
-        self.collection
-            .delete_one(doc! {"id": service_id.to_string()}, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to unregister service: {}", e)))?;
-
-        info!("✅ Service unregistered successfully: {}", service_id);
-        Ok(())
-    }
-
-    /// Get services that are agent-capable
-    pub async fn get_agent_capable_services(&self) -> Result<Vec<RegisteredService>> {
-        let services = self.collection
-            .find(doc! {"agent_capable": true}, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to get agent-capable services: {}", e)))?;
-
-        let mut result = Vec::new();
-        let mut cursor = services;
-        
-        while cursor.advance().await.map_err(|e| AppError::DatabaseError(e.to_string()))? {
-            let service = cursor.deserialize_current()
-                .map_err(|e| AppError::DatabaseError(format!("Failed to deserialize service: {}", e)))?;
-            result.push(service);
-        }
-
-        Ok(result)
-    }
-
-    /// Check for stale services (no heartbeat for a while)
-    pub async fn check_stale_services(&self, stale_threshold_minutes: i64) -> Result<Vec<RegisteredService>> {
-        let threshold = Utc::now() - chrono::Duration::minutes(stale_threshold_minutes);
-        let mut stale_services = Vec::new();
-
+    /// Get service by ID
+    pub async fn get_service(&self, service_id: Uuid) -> Result<ServiceInfo> {
         let services = self.services.read().await;
-        for service in services.values() {
-            if let Some(last_heartbeat) = service.last_heartbeat {
-                if last_heartbeat < threshold {
-                    warn!("⚠️ Stale service detected: {} (last heartbeat: {})", service.name, last_heartbeat);
-                    stale_services.push(service.clone());
+        services
+            .get(&service_id)
+            .cloned()
+            .ok_or_else(|| AppError::NotFound(format!("Service not found: {}", service_id)))
+    }
+
+    /// Get services by name
+    pub async fn get_services_by_name(&self, name: &str) -> Result<Vec<ServiceInfo>> {
+        let name_index = self.name_index.read().await;
+        let services = self.services.read().await;
+
+        if let Some(service_ids) = name_index.get(name) {
+            let mut result = Vec::new();
+            for &service_id in service_ids {
+                if let Some(service) = services.get(&service_id) {
+                    result.push(service.clone());
                 }
             }
+            Ok(result)
+        } else {
+            Ok(Vec::new())
         }
-
-        Ok(stale_services)
     }
 
-    /// Update service metadata
-    pub async fn update_service_metadata(&self, service_id: Uuid, metadata: HashMap<String, String>) -> Result<()> {
-        let now = Utc::now();
-
-        // Update memory cache
-        {
-            let mut services = self.services.write().await;
-            if let Some(service) = services.get_mut(&service_id) {
-                service.metadata = metadata.clone();
-                service.updated_at = now;
-            }
-        }
-
-        // Update database
-        self.collection
-            .update_one(
-                doc! {"id": service_id.to_string()},
-                doc! {
-                    "$set": {
-                        "metadata": mongodb::bson::to_bson(&metadata).unwrap(),
-                        "updated_at": mongodb::bson::to_bson(&now).unwrap()
-                    }
-                },
-                None,
-            )
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to update service metadata: {}", e)))?;
-
-        Ok(())
+    /// List all services
+    pub async fn list_services(&self) -> Result<Vec<ServiceInfo>> {
+        let services = self.services.read().await;
+        Ok(services.values().cloned().collect())
     }
 
-    /// Get service statistics
-    pub async fn get_service_stats(&self) -> Result<ServiceStats> {
-        let all_services = self.get_all_services().await?;
-        
-        let mut stats = ServiceStats {
-            total_services: all_services.len(),
-            running_services: 0,
-            failed_services: 0,
-            agent_capable_services: 0,
-            services_by_type: HashMap::new(),
+    /// Remove service from registry
+    pub async fn deregister_service(&self, service_id: Uuid) -> Result<()> {
+        let service_name = {
+            let services = self.services.read().await;
+            services.get(&service_id).map(|s| s.name.clone())
         };
 
-        for service in &all_services {
-            match service.status {
-                ServiceStatus::Running => stats.running_services += 1,
-                ServiceStatus::Failed => stats.failed_services += 1,
-                _ => {}
+        if let Some(name) = service_name {
+            // Remove from services map
+            {
+                let mut services = self.services.write().await;
+                services.remove(&service_id);
             }
 
-            if service.agent_capable {
-                stats.agent_capable_services += 1;
+            // Update name index
+            {
+                let mut name_index = self.name_index.write().await;
+                if let Some(service_ids) = name_index.get_mut(&name) {
+                    service_ids.retain(|&id| id != service_id);
+                    if service_ids.is_empty() {
+                        name_index.remove(&name);
+                    }
+                }
             }
 
-            let type_key = format!("{:?}", service.service_type);
-            *stats.services_by_type.entry(type_key).or_insert(0) += 1;
+            info!("Deregistered service: {} ({})", name, service_id);
+            Ok(())
+        } else {
+            Err(AppError::NotFound(format!(
+                "Service not found: {}",
+                service_id
+            )))
+        }
+    }
+
+    /// Get service statistics including DI container stats
+    pub async fn get_statistics(&self) -> ServiceRegistryStats {
+        let services = self.services.read().await;
+        let total_services = services.len();
+
+        let mut status_counts = HashMap::new();
+        let mut lifetime_counts = HashMap::new();
+
+        for service in services.values() {
+            *status_counts.entry(service.status.clone()).or_insert(0) += 1;
+            *lifetime_counts.entry(service.lifetime.clone()).or_insert(0) += 1;
         }
 
-        Ok(stats)
+        // Get DI container stats
+        let di_services = self.container.list_services().unwrap_or_default();
+        let total_di_services = di_services.len();
+
+        // Get bulkhead stats
+        let bulkhead_pools = self.bulkhead_manager.list_pools().await;
+        let mut bulkhead_stats = HashMap::new();
+
+        for pool_name in &bulkhead_pools {
+            if let Ok(stats) = self.bulkhead_manager.get_pool_stats(pool_name).await {
+                bulkhead_stats.insert(pool_name.clone(), stats);
+            }
+        }
+
+        ServiceRegistryStats {
+            total_services,
+            status_counts,
+            lifetime_counts,
+            total_di_services,
+            bulkhead_pools: bulkhead_pools.len(),
+            bulkhead_stats,
+        }
+    }
+
+    /// Perform health check on all services
+    pub async fn health_check_all(&self) -> Result<Vec<ServiceHealthResult>> {
+        let services = self.services.read().await;
+        let mut health_statuses = Vec::new();
+
+        for service in services.values() {
+            let health_status = if let Some(health_url) = &service.health_check_url {
+                match self.check_service_health(health_url).await {
+                    Ok(healthy) => {
+                        if healthy {
+                            ServiceHealthStatus::Healthy
+                        } else {
+                            ServiceHealthStatus::Unhealthy
+                        }
+                    }
+                    Err(_) => ServiceHealthStatus::Unreachable,
+                }
+            } else {
+                ServiceHealthStatus::Unknown
+            };
+
+            health_statuses.push(ServiceHealthResult {
+                service_id: service.id,
+                service_name: service.name.clone(),
+                status: health_status,
+                checked_at: chrono::Utc::now(),
+            });
+        }
+
+        Ok(health_statuses)
+    }
+
+    /// Create a new service scope
+    pub fn create_scope(&self) -> ServiceScope {
+        ServiceScope::new(self.container.clone())
+    }
+
+    /// Clean up expired scoped instances
+    pub async fn cleanup_scoped_instances(&self) -> Result<()> {
+        self.container.cleanup_scoped_instances()
+    }
+
+    /// Get dependency injection container
+    pub fn get_container(&self) -> Arc<ServiceContainer> {
+        self.container.clone()
+    }
+
+    /// Get bulkhead manager
+    pub fn get_bulkhead_manager(&self) -> Arc<BulkheadManager> {
+        self.bulkhead_manager.clone()
+    }
+
+    async fn check_service_health(&self, health_url: &str) -> Result<bool> {
+        // Simple HTTP health check
+        match reqwest::get(health_url).await {
+            Ok(response) => Ok(response.status().is_success()),
+            Err(e) => {
+                warn!("Health check failed for {}: {}", health_url, e);
+                Ok(false)
+            }
+        }
     }
 }
 
-/// Service registry statistics
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ServiceStats {
-    pub total_services: usize,
-    pub running_services: usize,
-    pub failed_services: usize,
-    pub agent_capable_services: usize,
-    pub services_by_type: HashMap<String, usize>,
+impl Default for ServiceRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
-/// Helper function to create a service registry instance
-#[allow(dead_code)]
-pub fn create_service_registry(database: Arc<Database>) -> ServiceRegistry {
-    ServiceRegistry::new(database)
+#[derive(Debug, Clone, Serialize)]
+pub struct ServiceRegistryStats {
+    pub total_services: usize,
+    pub status_counts: HashMap<ServiceStatus, usize>,
+    pub lifetime_counts: HashMap<ServiceLifetime, usize>,
+    pub total_di_services: usize,
+    pub bulkhead_pools: usize,
+    pub bulkhead_stats: HashMap<String, crate::core::BulkheadStats>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ServiceHealthResult {
+    pub service_id: Uuid,
+    pub service_name: String,
+    pub status: ServiceHealthStatus,
+    pub checked_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub enum ServiceHealthStatus {
+    Healthy,
+    Unhealthy,
+    Unreachable,
+    Unknown,
+}
+
+/// Example service factory implementation
+#[derive(Default)]
+pub struct ExampleServiceFactory<T> {
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T> ExampleServiceFactory<T> {
+    pub fn new() -> Self {
+        Self {
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+#[async_trait]
+impl<T: Send + Sync + Default + 'static> ServiceFactory for ExampleServiceFactory<T> {
+    async fn create(
+        &self,
+        _container: &ServiceContainer,
+    ) -> Result<Box<dyn std::any::Any + Send + Sync>> {
+        Ok(Box::new(T::default()))
+    }
+
+    fn service_name(&self) -> &'static str {
+        std::any::type_name::<T>()
+    }
+
+    fn clone_factory(&self) -> Box<dyn ServiceFactory> {
+        Box::new(ExampleServiceFactory::<T>::new())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::{Service, ServiceContext};
 
-    fn create_test_service() -> RegisteredService {
-        RegisteredService {
-            id: Uuid::new_v4(),
-            name: "test-service".to_string(),
-            service_type: ServiceType::WebServer,
-            endpoint: "http://localhost:3000".to_string(),
-            deployment_id: Uuid::new_v4(),
-            agent_capable: true,
-            last_heartbeat: Some(Utc::now()),
-            metadata: HashMap::new(),
-            status: ServiceStatus::Running,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+    struct TestService {
+        name: String,
+    }
+
+    impl TestService {
+        fn new(name: String) -> Self {
+            Self { name }
         }
     }
 
-    #[test]
-    fn test_service_creation() {
-        let service = create_test_service();
-        assert_eq!(service.name, "test-service");
-        assert!(matches!(service.service_type, ServiceType::WebServer));
-        assert!(service.agent_capable);
+    impl Default for TestService {
+        fn default() -> Self {
+            Self::new("test".to_string())
+        }
     }
 
-    #[test]
-    fn test_service_serialization() {
-        let service = create_test_service();
-        let json = serde_json::to_string(&service).unwrap();
-        let deserialized: RegisteredService = serde_json::from_str(&json).unwrap();
-        
-        assert_eq!(service.id, deserialized.id);
-        assert_eq!(service.name, deserialized.name);
+    #[async_trait]
+    impl Service for TestService {
+        fn service_name(&self) -> &'static str {
+            "TestService"
+        }
+    }
+
+    #[tokio::test]
+    async fn test_enhanced_service_registration() {
+        let registry = ServiceRegistry::new();
+
+        let service_id = registry
+            .register_service(
+                "test-service".to_string(),
+                "1.0.0".to_string(),
+                "http://localhost:8080".to_string(),
+                Some("http://localhost:8080/health".to_string()),
+                HashMap::new(),
+                "TestService".to_string(),
+                ServiceLifetime::Singleton,
+                vec![],
+            )
+            .await
+            .unwrap();
+
+        let service = registry.get_service(service_id).await.unwrap();
+        assert_eq!(service.name, "test-service");
+        assert_eq!(service.version, "1.0.0");
+        assert_eq!(service.status, ServiceStatus::Starting);
+        assert_eq!(service.lifetime, ServiceLifetime::Singleton);
+    }
+
+    #[tokio::test]
+    async fn test_service_factory_registration() {
+        let registry = ServiceRegistry::new();
+
+        let factory = Box::new(ExampleServiceFactory::<TestService>::new());
+
+        registry
+            .register_service_factory::<TestService>(
+                "test-service".to_string(),
+                ServiceLifetime::Singleton,
+                factory,
+                vec![],
+            )
+            .await
+            .unwrap();
+
+        // Test resolution
+        let service = registry.resolve_service::<TestService>().await.unwrap();
+        assert_eq!(service.service_name(), "TestService");
+    }
+
+    #[tokio::test]
+    async fn test_decorated_service_creation() {
+        let registry = ServiceRegistry::new();
+        let service = Arc::new(TestService::new("decorated".to_string()));
+
+        let decorated = registry
+            .create_decorated_service(
+                service,
+                true, // enable logging
+                Some(RetryConfig::default()),
+                Some(CircuitBreakerConfig::default()),
+                true, // enable metrics
+            )
+            .await;
+
+        assert_eq!(decorated.service_name(), "TestService");
+    }
+
+    #[tokio::test]
+    async fn test_bulkhead_execution() {
+        let registry = ServiceRegistry::new();
+
+        // Create bulkhead pool
+        registry
+            .bulkhead_manager
+            .create_pool("test-pool".to_string(), BulkheadConfig::default())
+            .await
+            .unwrap();
+
+        let context = ServiceContext::new("test_operation".to_string());
+        let result = registry
+            .execute_in_bulkhead("test-pool", &context, || async {
+                Ok("success".to_string())
+            })
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "success");
+    }
+
+    #[tokio::test]
+    async fn test_service_scope() {
+        let registry = ServiceRegistry::new();
+        let factory = Box::new(ExampleServiceFactory::<TestService>::new());
+
+        registry
+            .register_service_factory::<TestService>(
+                "scoped-service".to_string(),
+                ServiceLifetime::Scoped,
+                factory,
+                vec![],
+            )
+            .await
+            .unwrap();
+
+        let scope = registry.create_scope();
+        let service = registry
+            .resolve_service_scoped::<TestService>(&scope)
+            .await
+            .unwrap();
+        assert_eq!(service.service_name(), "TestService");
     }
 }

@@ -1,12 +1,12 @@
-use crate::ci::{config::Step, workspace::Workspace};
 use crate::ci::connectors::traits::{Connector, ConnectorType, ExecutionResult};
+use crate::ci::{config::Step, workspace::Workspace};
 use crate::error::{AppError, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use tracing::{debug, warn};
 
 /// AWS connector for cloud-based CI/CD operations
-/// 
+///
 /// This connector provides integration with AWS services including:
 /// - EC2 for compute instances
 /// - ECS for containerized workloads
@@ -40,9 +40,12 @@ impl Connector for AWSConnector {
         _workspace: &Workspace,
         _env: &HashMap<String, String>,
     ) -> Result<ExecutionResult> {
-        debug!("🔧 AWS connector execution requested for step: {}", step.name);
+        debug!(
+            "🔧 AWS connector execution requested for step: {}",
+            step.name
+        );
         warn!("⚠️ AWS connector is not yet implemented");
-        
+
         Err(AppError::Unimplemented(
             "AWS connector functionality is not yet implemented. This will include support for EC2, ECS, Lambda, and CodeBuild services.".to_string()
         ))
@@ -93,9 +96,10 @@ impl Connector for AWSConnector {
                         }
                         _ => {
                             warn!("⚠️ Unknown AWS service specified: {}", service_str);
-                            return Err(AppError::ConnectorConfigError(
-                                format!("Unsupported AWS service: {}", service_str),
-                            ));
+                            return Err(AppError::ConnectorConfigError(format!(
+                                "Unsupported AWS service: {}",
+                                service_str
+                            )));
                         }
                     }
                 } else {
@@ -106,7 +110,9 @@ impl Connector for AWSConnector {
             }
 
             // Validate AWS credentials configuration
-            if params.get("aws_access_key_id").is_some() || params.get("aws_secret_access_key").is_some() {
+            if params.get("aws_access_key_id").is_some()
+                || params.get("aws_secret_access_key").is_some()
+            {
                 debug!("🔐 AWS credentials configuration detected");
                 // In a real implementation, we would validate credential format
                 // For now, just log that credentials are configured
@@ -118,14 +124,17 @@ impl Connector for AWSConnector {
     }
 
     async fn pre_execute(&self, step: &Step) -> Result<()> {
-        debug!("🚀 AWS connector pre-execution hook for step: {}", step.name);
-        
+        debug!(
+            "🚀 AWS connector pre-execution hook for step: {}",
+            step.name
+        );
+
         // Placeholder for AWS-specific pre-execution tasks:
         // - Validate AWS credentials
         // - Check service quotas
         // - Verify IAM permissions
         // - Initialize AWS SDK clients
-        
+
         Ok(())
     }
 
@@ -134,13 +143,13 @@ impl Connector for AWSConnector {
             "🏁 AWS connector post-execution hook for step: {} (exit_code: {})",
             step.name, result.exit_code
         );
-        
+
         // Placeholder for AWS-specific post-execution tasks:
         // - Clean up temporary AWS resources
         // - Log AWS service usage metrics
         // - Update AWS CloudWatch logs
         // - Handle AWS service-specific cleanup
-        
+
         Ok(())
     }
 }

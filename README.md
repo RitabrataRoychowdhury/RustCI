@@ -1,338 +1,444 @@
-# RustCI
+# RustCI - High-Performance CI/CD Platform
 
-A high-performance CI/CD platform built in Rust that serves as a modern alternative to Jenkins.
+[![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com)
+
+RustCI is a high-performance, scalable CI/CD platform built in Rust that serves as a modern alternative to Jenkins. The platform focuses on speed, reliability, and ease of configuration with support for multi-node clusters and various deployment strategies.
 
 ## 🚀 Features
 
-- **Fast Pipeline Execution** - Built in Rust for maximum performance
-- **YAML Configuration** - Simple, readable pipeline definitions
-- **Multiple Deployment Types** - Local, Docker, and hybrid deployments
-- **GitHub Integration** - Seamless repository cloning and webhook support
-- **Real-time Monitoring** - Track pipeline executions in real-time
-- **RESTful API** - Complete API for integration and automation
-- **Multipart File Upload** - Upload YAML configurations as files
-- **Service Registry** - Track and manage deployed services
+- **High Performance**: Built in Rust for maximum performance and low resource usage
+- **Multi-Node Clustering**: Distributed execution across multiple nodes with automatic failover
+- **Multiple Runner Types**: Support for local, Docker, and Kubernetes runners
+- **Event-Driven Architecture**: Libuv-inspired event demultiplexing for high concurrency
+- **Real-time Monitoring**: Comprehensive metrics with Prometheus integration
+- **GitHub Integration**: Seamless OAuth authentication and webhook support
+- **API Documentation**: Interactive Swagger UI for easy API exploration
+- **Clean Architecture**: Well-organized codebase following clean architecture principles
 
-## 📋 Quick Start
+## 📋 Table of Contents
 
-### Prerequisites
-
-- Rust 1.70+ installed
-- Docker (for container deployments)
-- MongoDB (for data persistence)
-- Git (for repository operations)
-
-### Installation
-
-1. **Clone the repository**:
-```bash
-git clone https://github.com/RitabrataRoychowdhury/RustCI.git
-cd RustCI
-```
-
-2. **Set up environment variables**:
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
-
-3. **Build and run**:
-```bash
-cargo build --release
-cargo run
-```
-
-The server will start on `http://localhost:8000`
-
-### Docker Deployment
-
-```bash
-# Build the Docker image
-docker build -t rustci:latest .
-
-# Run with Docker Compose
-docker-compose up -d
-```
-
-## 🔧 Configuration
-
-### Environment Variables
-
-```bash
-# Server Configuration
-PORT=8000
-RUST_ENV=development
-RUST_LOG=info
-
-# Database
-MONGODB_URI=mongodb://localhost:27017
-MONGODB_DATABASE=rustci
-
-# Authentication
-JWT_SECRET=your-secret-key
-JWT_EXPIRED_IN=1d
-
-# GitHub OAuth (optional)
-GITHUB_OAUTH_CLIENT_ID=your-client-id
-GITHUB_OAUTH_CLIENT_SECRET=your-client-secret
-GITHUB_OAUTH_REDIRECT_URL=http://localhost:8000/api/sessions/oauth/github/callback
-
-# Client
-CLIENT_ORIGIN=http://localhost:3000
-```
-
-## 📖 API Documentation
-
-### Pipeline Management
-
-#### Create Pipeline (JSON)
-```bash
-curl -X POST http://localhost:8000/api/ci/pipelines \
-  -H "Content-Type: application/json" \
-  -d '{
-    "yaml_content": "name: \"My Pipeline\"\ndescription: \"Test pipeline\"\ntriggers:\n  - trigger_type: manual\n    config: {}\nstages:\n  - name: \"Build\"\n    steps:\n      - name: \"build-step\"\n        step_type: shell\n        config:\n          command: \"echo Building...\"\nenvironment: {}\ntimeout: 3600\nretry_count: 0"
-  }'
-```
-
-#### Create Pipeline (Multipart File Upload)
-```bash
-curl -X POST http://localhost:8000/api/ci/pipelines/upload \
-  -F "pipeline=@pipeline.yaml"
-```
-
-#### List Pipelines
-```bash
-curl -X GET http://localhost:8000/api/ci/pipelines
-```
-
-#### Trigger Pipeline
-```bash
-curl -X POST http://localhost:8000/api/ci/pipelines/{pipeline_id}/trigger \
-  -H "Content-Type: application/json" \
-  -d '{
-    "trigger_type": "manual",
-    "environment": {
-      "NODE_ENV": "production"
-    }
-  }'
-```
-
-### Execution Management
-
-#### Get Execution Status
-```bash
-curl -X GET http://localhost:8000/api/ci/executions/{execution_id}
-```
-
-#### List Executions
-```bash
-curl -X GET http://localhost:8000/api/ci/executions
-```
-
-#### Cancel Execution
-```bash
-curl -X DELETE http://localhost:8000/api/ci/executions/{execution_id}/cancel
-```
-
-### Webhook Support
-
-#### GitHub Webhook
-```bash
-curl -X POST http://localhost:8000/api/ci/pipelines/{pipeline_id}/webhook \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ref": "refs/heads/main",
-    "after": "commit-hash",
-    "repository": {
-      "full_name": "user/repo",
-      "clone_url": "https://github.com/user/repo.git"
-    }
-  }'
-```
-
-## 📝 Pipeline Configuration
-
-### Basic Pipeline Structure
-
-```yaml
-name: "My Application Pipeline"
-description: "Build and deploy my application"
-
-triggers:
-  - trigger_type: manual
-    config: {}
-  - trigger_type: webhook
-    config:
-      webhook_url: "/webhook/my-app"
-
-stages:
-  - name: "Source"
-    steps:
-      - name: "clone-repository"
-        step_type: github
-        config:
-          repository_url: "https://github.com/user/repo.git"
-          branch: "main"
-
-  - name: "Build"
-    steps:
-      - name: "build-application"
-        step_type: shell
-        config:
-          command: "npm install && npm run build"
-
-  - name: "Deploy"
-    steps:
-      - name: "deploy-docker"
-        step_type: docker
-        config:
-          image: "my-app"
-          dockerfile: "Dockerfile"
-
-environment:
-  NODE_ENV: "production"
-  PORT: "3000"
-
-timeout: 3600
-retry_count: 1
-```
-
-### Deployment Types
-
-#### Local Directory Deployment
-```yaml
-- name: "deploy-local"
-  step_type: custom
-  config:
-    deployment_type: "local_directory"
-    target_directory: "/opt/myapp"
-```
-
-#### Docker Container Deployment
-```yaml
-- name: "deploy-docker"
-  step_type: docker
-  config:
-    image: "myapp:latest"
-    dockerfile: "Dockerfile"
-    ports:
-      - "8080:8080"
-    environment:
-      - "NODE_ENV=production"
-```
-
-#### Local Service Deployment
-```yaml
-- name: "deploy-service"
-  step_type: custom
-  config:
-    deployment_type: "local_service"
-    service_name: "myapp"
-    port: 8080
-```
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Deployment Options](#deployment-options)
+- [Configuration](#configuration)
+- [API Documentation](#api-documentation)
+- [Monitoring & Metrics](#monitoring--metrics)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
 
 ## 🏗️ Architecture
 
-### System Components
+RustCI follows a clean architecture pattern with clear separation of concerns:
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Web API       │    │   CI Engine     │    │   Deployment    │
-│   (Axum)        │───▶│   (Pipeline     │───▶│   Manager       │
-│                 │    │    Execution)   │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Database      │    │   File System   │    │   Docker        │
-│   (MongoDB)     │    │   (Workspace)   │    │   (Containers)  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    Presentation Layer                       │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │   REST API  │  │ Swagger UI  │  │    Middleware       │ │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                   Application Layer                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │  Handlers   │  │  Services   │  │    Use Cases        │ │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                     Domain Layer                            │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │  Entities   │  │ Repositories│  │   Domain Services   │ │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                 Infrastructure Layer                        │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │  Database   │  │   Runners   │  │    External APIs    │ │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Request Flow
+### Core Components
 
-1. **API Request** → Route Handler
-2. **Authentication** → Middleware Validation
-3. **Pipeline Creation** → CI Engine
-4. **Execution** → Pipeline Manager
-5. **Deployment** → Deployment Manager
-6. **Monitoring** → Real-time Status Updates
+- **Event Loop**: Libuv-inspired event demultiplexing for high-performance async operations
+- **Runner Pool**: Manages multiple runner types (Local, Docker, Kubernetes)
+- **Cluster Coordinator**: Handles multi-node coordination and job distribution
+- **Job Queue**: Efficient job scheduling with priority and retry support
+- **Observability**: Comprehensive monitoring, metrics, and health checks
 
-## 🧪 Testing
+## 🚀 Quick Start
 
-### Health Check
+### Prerequisites
+
+- Rust 1.70+ (Edition 2021)
+- Docker and Docker Compose
+- MongoDB (for persistence)
+- Git
+
+### Local Development
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/your-org/rustci.git
+   cd rustci
+   ```
+
+2. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your configuration
+   ```
+
+3. **Start dependencies**
+   ```bash
+   docker-compose up -d mongodb
+   ```
+
+4. **Run the application**
+   ```bash
+   cargo run
+   ```
+
+5. **Access the application**
+   - API: http://localhost:8080
+   - Health Check: http://localhost:8080/health
+   - Swagger UI: http://localhost:8080/swagger-ui
+   - GitHub OAuth: http://localhost:8080/api/sessions/oauth/github
+
+## 🚢 Deployment Options
+
+### Single Node Deployment
+
+For development and small-scale deployments:
+
 ```bash
-curl -X GET http://localhost:8000/api/healthchecker
+docker-compose up -d
 ```
 
-### Run Tests
+### Multi-Node Cluster Deployment
+
+For production environments with high availability:
+
 ```bash
+# Set up environment variables
+export GITHUB_OAUTH_CLIENT_ID=your_client_id
+export GITHUB_OAUTH_CLIENT_SECRET=your_client_secret
+
+# Deploy multi-node cluster
+docker-compose -f docker-compose.multi-node.yaml up -d
+```
+
+This deploys:
+- 3 Master nodes (High Availability)
+- 2 Worker nodes (Scalable execution)
+- MongoDB (Persistence)
+- Prometheus (Metrics)
+- HAProxy (Load Balancing)
+
+### Kubernetes Deployment
+
+For cloud-native deployments:
+
+```bash
+# Apply Kubernetes manifests
+kubectl apply -f deployment/kubernetes/
+
+# Or use Helm
+helm install rustci ./helm/rustci
+```
+
+### K3s on macOS
+
+For local Kubernetes testing:
+
+```bash
+# Install K3s
+curl -sfL https://get.k3s.io | sh -
+
+# Deploy RustCI
+kubectl apply -f deployment/k3s/
+```
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `RUST_ENV` | Environment (development/production) | `development` |
+| `SERVER_HOST` | Server bind address | `0.0.0.0` |
+| `SERVER_PORT` | Server port | `8080` |
+| `MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27017` |
+| `MONGODB_DATABASE` | Database name | `rustci` |
+| `JWT_SECRET` | JWT signing secret | Required |
+| `GITHUB_OAUTH_CLIENT_ID` | GitHub OAuth client ID | Required |
+| `GITHUB_OAUTH_CLIENT_SECRET` | GitHub OAuth client secret | Required |
+| `NODE_ROLE` | Node role (master/worker/hybrid) | `master` |
+| `CLUSTER_NODES` | Comma-separated cluster node addresses | - |
+| `MAX_CONCURRENT_JOBS` | Maximum concurrent jobs per node | `4` |
+| `ENABLE_METRICS` | Enable Prometheus metrics | `true` |
+| `LOG_LEVEL` | Logging level | `info` |
+
+### Configuration Files
+
+- `config.example.yaml` - Basic configuration template
+- `config.enhanced.example.yaml` - Advanced configuration with all options
+- `config/prometheus.yml` - Prometheus scraping configuration
+- `config/haproxy.cfg` - Load balancer configuration
+
+## 📚 API Documentation
+
+RustCI provides comprehensive API documentation through Swagger UI:
+
+- **Swagger UI**: http://localhost:8080/swagger-ui
+- **OpenAPI Spec**: http://localhost:8080/api-docs/openapi.json
+
+### Key API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/api/sessions/oauth/github` | GET | GitHub OAuth login |
+| `/api/ci/pipelines` | POST | Create pipeline |
+| `/api/cluster/status` | GET | Cluster status |
+| `/api/cluster/nodes` | GET | List cluster nodes |
+| `/metrics` | GET | Prometheus metrics |
+
+## 📊 Monitoring & Metrics
+
+### Prometheus Metrics
+
+RustCI exports comprehensive metrics for monitoring:
+
+- **Runner Metrics**: Active runners, job capacity, health status
+- **Job Metrics**: Queue length, execution times, success/failure rates
+- **Cluster Metrics**: Node health, load distribution, failover events
+- **System Metrics**: CPU, memory, disk usage
+- **HTTP Metrics**: Request rates, response times, error rates
+
+### Accessing Metrics
+
+- **Prometheus**: http://localhost:9090 (in multi-node setup)
+- **Metrics Endpoint**: http://localhost:8080/metrics
+- **HAProxy Stats**: http://localhost:8404/stats
+
+### Key Metrics
+
+```
+# Runner metrics
+rustci_runners_total
+rustci_runners_active
+rustci_runners_idle
+rustci_runners_failed
+
+# Job metrics
+rustci_jobs_total
+rustci_jobs_running
+rustci_jobs_queued
+rustci_jobs_completed
+rustci_jobs_failed
+
+# Cluster metrics
+rustci_cluster_nodes_total
+rustci_cluster_nodes_healthy
+rustci_cluster_nodes_unhealthy
+
+# HTTP metrics
+rustci_http_requests_total
+rustci_http_request_duration_seconds
+```
+
+## 🛠️ Development
+
+### Building from Source
+
+```bash
+# Debug build
+cargo build
+
+# Release build
+cargo build --release
+
+# Run tests
 cargo test
+
+# Run with hot reload
+cargo watch -x run
 ```
 
-### Integration Tests
+### Code Quality
+
 ```bash
-cargo test --test integration
+# Format code
+cargo fmt
+
+# Run lints
+cargo clippy -- -D warnings
+
+# Check without building
+cargo check
 ```
 
-## 🔒 Security
+### Testing
 
-- JWT-based authentication
-- Input validation and sanitization
-- File upload size limits
-- Docker container isolation
-- Environment variable protection
+```bash
+# Unit tests
+cargo test --lib
+
+# Integration tests
+cargo test --test integration
+
+# Load tests
+cargo test --test load
+
+# Chaos tests
+cargo test --test chaos
+```
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+#### 1. Connection Refused Errors
+
+**Problem**: Cannot connect to MongoDB or other services
+
+**Solution**:
+```bash
+# Check if MongoDB is running
+docker ps | grep mongo
+
+# Restart MongoDB
+docker-compose restart mongodb
+
+# Check logs
+docker-compose logs mongodb
+```
+
+#### 2. GitHub OAuth Not Working
+
+**Problem**: OAuth authentication fails
+
+**Solution**:
+1. Verify GitHub OAuth app configuration
+2. Check redirect URL matches exactly
+3. Ensure environment variables are set:
+   ```bash
+   echo $GITHUB_OAUTH_CLIENT_ID
+   echo $GITHUB_OAUTH_CLIENT_SECRET
+   ```
+
+#### 3. High Memory Usage
+
+**Problem**: Application consuming too much memory
+
+**Solution**:
+1. Check for memory leaks in logs
+2. Adjust job concurrency:
+   ```bash
+   export MAX_CONCURRENT_JOBS=2
+   ```
+3. Monitor metrics: http://localhost:8080/metrics
+
+#### 4. Cluster Nodes Not Joining
+
+**Problem**: Worker nodes cannot join cluster
+
+**Solution**:
+1. Check network connectivity between nodes
+2. Verify `CLUSTER_NODES` environment variable
+3. Check firewall settings
+4. Review cluster coordinator logs:
+   ```bash
+   docker logs rustci-master-1
+   ```
+
+#### 5. Jobs Stuck in Queue
+
+**Problem**: Jobs not being executed
+
+**Solution**:
+1. Check runner status: `GET /api/cluster/runners`
+2. Verify runner capacity
+3. Check job requirements vs available runners
+4. Review job queue metrics
+
+### Debug Mode
+
+Enable debug logging for troubleshooting:
+
+```bash
+export LOG_LEVEL=debug
+export RUST_LOG=rustci=debug
+```
+
+### Health Checks
+
+Monitor system health:
+
+```bash
+# Overall health
+curl http://localhost:8080/health
+
+# Cluster status
+curl http://localhost:8080/api/cluster/status
+
+# Individual node health
+curl http://localhost:8080/api/cluster/nodes/{node_id}/health
+```
+
+### Log Analysis
+
+Important log patterns to watch for:
+
+```bash
+# Connection issues
+grep -i "connection" logs/rustci.log
+
+# Authentication failures
+grep -i "auth" logs/rustci.log
+
+# Job execution errors
+grep -i "job.*error" logs/rustci.log
+
+# Cluster coordination issues
+grep -i "cluster.*failed" logs/rustci.log
+```
 
 ## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### Development Setup
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
 4. Add tests
-5. Submit a pull request
+5. Run the test suite
+6. Submit a pull request
+
+### Code Style
+
+- Follow Rust conventions
+- Use `cargo fmt` for formatting
+- Ensure `cargo clippy` passes
+- Add documentation for public APIs
+- Include tests for new features
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 📚 Documentation
+## 🙏 Acknowledgments
 
-Complete documentation is available in the [`docs/`](./docs/) directory:
-
-### Getting Started
-- **[Installation & Setup](./docs/getting-started/installation.md)** - Complete installation guide for all platforms
-- **[Quick Start Guide](./docs/getting-started/quick-start.md)** - Get up and running in minutes
-
-### API Reference
-- **[Complete API Documentation](./docs/api/README.md)** - Full API reference with cURL examples
-
-### Deployment Guides
-- **[Kubernetes Deployment](./docs/deployment/kubernetes.md)** - Deploy to Kubernetes clusters
-- **[General Deployment Guide](./docs/deployment/guide.md)** - All deployment options and configurations
-
-### Architecture & Development
-- **[System Architecture](./docs/architecture/system-design.md)** - Comprehensive system design documentation
-- **[Connector System](./docs/architecture/connectors.md)** - Extensible connector architecture guide
-
-### Examples & Integration
-- **[Pipeline Examples](./docs/examples/README.md)** - Working pipeline examples for different use cases
-- **[Integration Validation](./docs/integration/validation.md)** - Testing and validation procedures
-
-## 🆘 Support
-
-- **Documentation**: Complete guides in [`docs/`](./docs/)
-- **Examples**: Working examples in [`docs/examples/`](./docs/examples/)
-- **Issues**: Report bugs and request features via GitHub Issues
-
-## 🗺️ Roadmap
-
-- [ ] Web UI Dashboard
-- [ ] Agent-based Deployments
-- [ ] Kubernetes Integration
-- [ ] Multi-node Clustering
-- [ ] Advanced Monitoring
-- [ ] Plugin System
+- Inspired by Jenkins and modern CI/CD platforms
+- Built with the amazing Rust ecosystem
+- Event loop design inspired by libuv
+- Clean architecture principles from Uncle Bob
 
 ---
 
-**RustCI** - Built with ❤️ in Rust for speed, reliability, and developer happiness.
+For more information, visit our [documentation](docs/) or join our [community discussions](https://github.com/your-org/rustci/discussions).

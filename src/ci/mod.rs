@@ -1,18 +1,16 @@
-pub mod engine;
-pub mod pipeline;
-pub mod executor;
-pub mod connectors;
-pub mod config;
-pub mod schedulers;
-pub mod workspace;
-pub mod repository;
 pub mod builder;
+pub mod config;
+pub mod connectors;
 pub mod deployment;
+pub mod engine;
+pub mod executor;
+pub mod pipeline;
+pub mod repository;
+pub mod schedulers;
+pub mod template_engine;
+pub mod workspace;
+
+#[cfg(test)]
+pub mod workspace_integration_test;
 
 // Re-export main types that will be used by the application
-// pub use engine::CIEngine;
-// pub use pipeline::{PipelineExecution, TriggerInfo, ExecutionStatus, LogLevel};
-// pub use config::CIPipeline;
-// pub use connectors::{ConnectorManager, ConnectorType};
-// pub use schedulers::CIScheduler;
-// pub use workspace::{Workspace, WorkspaceManager};

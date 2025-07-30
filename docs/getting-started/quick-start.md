@@ -361,7 +361,7 @@ Now that you've created your first pipelines, explore more advanced features:
 1. **[Configuration Guide](./configuration.md)** - Advanced configuration options
 2. **[API Documentation](../api/README.md)** - Complete API reference
 3. **[Connector System](../architecture/connectors.md)** - Learn about different connectors
-4. **[Pipeline Examples](../examples/pipelines.md)** - More complex pipeline examples
+4. **[Pipeline Examples](../pipeline-examples/README.md)** - More complex pipeline examples
 5. **[Kubernetes Deployment](../deployment/kubernetes.md)** - Deploy to Kubernetes
 
 ## Troubleshooting

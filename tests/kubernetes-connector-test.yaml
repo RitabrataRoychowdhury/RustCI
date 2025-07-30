@@ -1,0 +1,247 @@
+name: "Kubernetes Connector Test Pipeline"
+description: "Test pipeline for validating Kubernetes connector with k3s/k3d"
+
+variables:
+  APP_NAME: "rustci-k8s-test"
+  NAMESPACE: "rustci-test"
+  IMAGE_NAME: "rustci-test-k8s"
+  IMAGE_TAG: "latest"
+
+stages:
+  - name: "setup"
+    description: "Setup Kubernetes test environment"
+    steps:
+      - name: "check-k8s-cluster"
+        type: "shell"
+        command: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: "create-namespace"
+        type: "kubernetes"
+        action: "apply"
+        manifest: |
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ${NAMESPACE}
+            labels:
+              test: "rustci-connector"
+
+  - name: "build-and-deploy"
+    description: "Build image and deploy to Kubernetes"
+    steps:
+      - name: "create-test-dockerfile"
+        type: "shell"
+        command: |
+          cat > Dockerfile.k8s << EOF
+          FROM nginx:alpine
+          COPY index.html /usr/share/nginx/html/
+          EXPOSE 80
+          EOF
+
+      - name: "create-test-content"
+        type: "shell"
+        command: |
+          cat > index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head><title>RustCI K8s Test</title></head>
+          <body>
+            <h1>RustCI Kubernetes Connector Test</h1>
+            <p>Timestamp: $(date)</p>
+            <p>Status: Running</p>
+          </body>
+          </html>
+          EOF
+
+      - name: "build-image"
+        type: "docker"
+        action: "build"
+        dockerfile: "Dockerfile.k8s"
+        image: "${IMAGE_NAME}:${IMAGE_TAG}"
+        context: "."
+
+      - name: "load-image-k3s"
+        type: "shell"
+        command: |
+          # For k3d clusters
+          if command -v k3d >/dev/null 2>&1; then
+            k3d image import ${IMAGE_NAME}:${IMAGE_TAG} || true
+          fi
+          # For k3s, image should be available locally
+
+      - name: "deploy-configmap"
+        type: "kubernetes"
+        action: "apply"
+        manifest: |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: ${APP_NAME}-config
+            namespace: ${NAMESPACE}
+          data:
+            app.properties: |
+              app.name=${APP_NAME}
+              app.version=1.0.0
+              environment=test
+
+      - name: "deploy-deployment"
+        type: "kubernetes"
+        action: "apply"
+        manifest: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ${APP_NAME}
+            namespace: ${NAMESPACE}
+            labels:
+              app: ${APP_NAME}
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: ${APP_NAME}
+            template:
+              metadata:
+                labels:
+                  app: ${APP_NAME}
+              spec:
+                containers:
+                - name: web
+                  image: ${IMAGE_NAME}:${IMAGE_TAG}
+                  imagePullPolicy: Never
+                  ports:
+                  - containerPort: 80
+                  env:
+                  - name: APP_NAME
+                    value: "${APP_NAME}"
+                  volumeMounts:
+                  - name: config
+                    mountPath: /etc/config
+                volumes:
+                - name: config
+                  configMap:
+                    name: ${APP_NAME}-config
+
+      - name: "deploy-service"
+        type: "kubernetes"
+        action: "apply"
+        manifest: |
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ${APP_NAME}-service
+            namespace: ${NAMESPACE}
+          spec:
+            selector:
+              app: ${APP_NAME}
+            ports:
+            - port: 80
+              targetPort: 80
+              protocol: TCP
+            type: ClusterIP
+
+  - name: "test"
+    description: "Test Kubernetes deployment"
+    steps:
+      - name: "wait-for-deployment"
+        type: "kubernetes"
+        action: "wait"
+        resource: "deployment/${APP_NAME}"
+        namespace: "${NAMESPACE}"
+        condition: "condition=Available"
+        timeout: "300s"
+
+      - name: "check-pods"
+        type: "shell"
+        command: |
+          kubectl get pods -n ${NAMESPACE} -l app=${APP_NAME}
+          kubectl describe pods -n ${NAMESPACE} -l app=${APP_NAME}
+
+      - name: "test-service-connectivity"
+        type: "shell"
+        command: |
+          # Port forward to test connectivity
+          kubectl port-forward -n ${NAMESPACE} service/${APP_NAME}-service 8080:80 &
+          PF_PID=$!
+          sleep 5
+          
+          # Test the service
+          if curl -f http://localhost:8080; then
+            echo "Service connectivity test passed"
+          else
+            echo "Service connectivity test failed"
+            kill $PF_PID 2>/dev/null || true
+            exit 1
+          fi
+          
+          kill $PF_PID 2>/dev/null || true
+
+      - name: "check-logs"
+        type: "shell"
+        command: |
+          kubectl logs -n ${NAMESPACE} -l app=${APP_NAME} --tail=50
+
+      - name: "scale-test"
+        type: "kubernetes"
+        action: "scale"
+        resource: "deployment/${APP_NAME}"
+        namespace: "${NAMESPACE}"
+        replicas: 3
+
+      - name: "verify-scale"
+        type: "shell"
+        command: |
+          sleep 10
+          REPLICAS=$(kubectl get deployment ${APP_NAME} -n ${NAMESPACE} -o jsonpath='{.status.readyReplicas}')
+          if [ "$REPLICAS" = "3" ]; then
+            echo "Scale test passed: $REPLICAS replicas ready"
+          else
+            echo "Scale test failed: Expected 3, got $REPLICAS"
+            exit 1
+          fi
+
+  - name: "cleanup"
+    description: "Clean up Kubernetes resources"
+    steps:
+      - name: "delete-deployment"
+        type: "kubernetes"
+        action: "delete"
+        resource: "deployment/${APP_NAME}"
+        namespace: "${NAMESPACE}"
+
+      - name: "delete-service"
+        type: "kubernetes"
+        action: "delete"
+        resource: "service/${APP_NAME}-service"
+        namespace: "${NAMESPACE}"
+
+      - name: "delete-configmap"
+        type: "kubernetes"
+        action: "delete"
+        resource: "configmap/${APP_NAME}-config"
+        namespace: "${NAMESPACE}"
+
+      - name: "delete-namespace"
+        type: "kubernetes"
+        action: "delete"
+        resource: "namespace/${NAMESPACE}"
+
+      - name: "cleanup-local-files"
+        type: "shell"
+        command: |
+          rm -f Dockerfile.k8s index.html
+
+      - name: "cleanup-docker-image"
+        type: "docker"
+        action: "rmi"
+        image: "${IMAGE_NAME}:${IMAGE_TAG}"
+
+on_failure:
+  - name: "emergency-cleanup"
+    type: "shell"
+    command: |
+      kubectl delete namespace ${NAMESPACE} --ignore-not-found=true
+      docker rmi ${IMAGE_NAME}:${IMAGE_TAG} 2>/dev/null || true
+      rm -f Dockerfile.k8s index.html

@@ -1,12 +1,12 @@
-use crate::ci::{config::Step, workspace::Workspace};
 use crate::ci::connectors::traits::{Connector, ConnectorType, ExecutionResult};
+use crate::ci::{config::Step, workspace::Workspace};
 use crate::error::{AppError, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use tracing::{debug, warn};
 
 /// GCP connector for Google Cloud Platform services
-/// 
+///
 /// This connector provides integration with GCP services including:
 /// - Google Kubernetes Engine (GKE)
 /// - Cloud Run
@@ -42,9 +42,12 @@ impl Connector for GCPConnector {
         _workspace: &Workspace,
         _env: &HashMap<String, String>,
     ) -> Result<ExecutionResult> {
-        debug!("🔧 GCP connector execution requested for step: {}", step.name);
+        debug!(
+            "🔧 GCP connector execution requested for step: {}",
+            step.name
+        );
         warn!("⚠️ GCP connector is not yet implemented");
-        
+
         Err(AppError::Unimplemented(
             "GCP connector functionality is not yet implemented. This will include support for GKE, Cloud Run, Cloud Functions, and Cloud Build.".to_string()
         ))
@@ -79,7 +82,10 @@ impl Connector for GCPConnector {
                         ));
                     }
                     // Basic project ID format validation (lowercase letters, numbers, hyphens)
-                    if !project_str.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+                    if !project_str
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+                    {
                         return Err(AppError::ConnectorConfigError(
                             "GCP project ID must contain only lowercase letters, numbers, and hyphens".to_string(),
                         ));
@@ -132,14 +138,16 @@ impl Connector for GCPConnector {
             if let Some(service) = params.get("gcp_service") {
                 if let Some(service_str) = service.as_str() {
                     match service_str {
-                        "gke" | "cloud-run" | "cloud-functions" | "cloud-build" | "compute-engine" | "gcr" | "artifact-registry" => {
+                        "gke" | "cloud-run" | "cloud-functions" | "cloud-build"
+                        | "compute-engine" | "gcr" | "artifact-registry" => {
                             debug!("✅ Valid GCP service specified: {}", service_str);
                         }
                         _ => {
                             warn!("⚠️ Unknown GCP service specified: {}", service_str);
-                            return Err(AppError::ConnectorConfigError(
-                                format!("Unsupported GCP service: {}", service_str),
-                            ));
+                            return Err(AppError::ConnectorConfigError(format!(
+                                "Unsupported GCP service: {}",
+                                service_str
+                            )));
                         }
                     }
                 } else {
@@ -188,8 +196,11 @@ impl Connector for GCPConnector {
     }
 
     async fn pre_execute(&self, step: &Step) -> Result<()> {
-        debug!("🚀 GCP connector pre-execution hook for step: {}", step.name);
-        
+        debug!(
+            "🚀 GCP connector pre-execution hook for step: {}",
+            step.name
+        );
+
         // Placeholder for GCP-specific pre-execution tasks:
         // - Validate GCP service account credentials
         // - Check GCP project quotas and billing
@@ -197,7 +208,7 @@ impl Connector for GCPConnector {
         // - Initialize GCP SDK clients
         // - Authenticate with GKE clusters if needed
         // - Validate Cloud Build triggers
-        
+
         Ok(())
     }
 
@@ -206,7 +217,7 @@ impl Connector for GCPConnector {
             "🏁 GCP connector post-execution hook for step: {} (exit_code: {})",
             step.name, result.exit_code
         );
-        
+
         // Placeholder for GCP-specific post-execution tasks:
         // - Clean up temporary GCP resources
         // - Log GCP service usage metrics
@@ -214,7 +225,7 @@ impl Connector for GCPConnector {
         // - Handle GCP service-specific cleanup
         // - Update Cloud Build status
         // - Clean up temporary service account keys
-        
+
         Ok(())
     }
 }

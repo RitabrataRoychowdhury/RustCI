@@ -1,10 +1,10 @@
 use crate::error::{AppError, Result};
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use tokio::fs;
 use tokio::process::Command;
-use tracing::{info, debug, error};
-use serde::{Deserialize, Serialize};
+use tracing::{debug, error, info};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepositoryConfig {
@@ -26,6 +26,7 @@ pub struct CloneResult {
     pub size_bytes: u64,
 }
 
+#[derive(Debug, Default)]
 pub struct RepositoryManager;
 
 impl RepositoryManager {
@@ -41,8 +42,9 @@ impl RepositoryManager {
         info!("📥 Cloning repository: {}", config.url);
 
         // Ensure target directory exists
-        fs::create_dir_all(target_directory).await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to create target directory: {}", e)))?;
+        fs::create_dir_all(target_directory).await.map_err(|e| {
+            AppError::InternalServerError(format!("Failed to create target directory: {}", e))
+        })?;
 
         // Prepare git clone command
         let mut git_args = vec!["clone".to_string()];
@@ -76,12 +78,17 @@ impl RepositoryManager {
             .args(&git_args)
             .output()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Failed to execute git clone: {}", e)))?;
+            .map_err(|e| {
+                AppError::ExternalServiceError(format!("Failed to execute git clone: {}", e))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             error!("❌ Git clone failed: {}", stderr);
-            return Err(AppError::ExternalServiceError(format!("Git clone failed: {}", stderr)));
+            return Err(AppError::ExternalServiceError(format!(
+                "Git clone failed: {}",
+                stderr
+            )));
         }
 
         // Get commit information
@@ -103,11 +110,7 @@ impl RepositoryManager {
         Ok(result)
     }
 
-    pub async fn checkout_commit(
-        &self,
-        repository_path: &Path,
-        commit_hash: &str,
-    ) -> Result<()> {
+    pub async fn checkout_commit(&self, repository_path: &Path, commit_hash: &str) -> Result<()> {
         info!("🔄 Checking out commit: {}", commit_hash);
 
         let output = Command::new("git")
@@ -115,11 +118,16 @@ impl RepositoryManager {
             .current_dir(repository_path)
             .output()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Failed to execute git checkout: {}", e)))?;
+            .map_err(|e| {
+                AppError::ExternalServiceError(format!("Failed to execute git checkout: {}", e))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppError::ExternalServiceError(format!("Git checkout failed: {}", stderr)));
+            return Err(AppError::ExternalServiceError(format!(
+                "Git checkout failed: {}",
+                stderr
+            )));
         }
 
         info!("✅ Successfully checked out commit: {}", commit_hash);
@@ -134,17 +142,25 @@ impl RepositoryManager {
             .current_dir(repository_path)
             .output()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Failed to execute git pull: {}", e)))?;
+            .map_err(|e| {
+                AppError::ExternalServiceError(format!("Failed to execute git pull: {}", e))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppError::ExternalServiceError(format!("Git pull failed: {}", stderr)));
+            return Err(AppError::ExternalServiceError(format!(
+                "Git pull failed: {}",
+                stderr
+            )));
         }
 
         // Get the new commit hash
         let commit_hash = self.get_current_commit(repository_path).await?;
-        info!("✅ Successfully pulled latest changes, new commit: {}", commit_hash);
-        
+        info!(
+            "✅ Successfully pulled latest changes, new commit: {}",
+            commit_hash
+        );
+
         Ok(commit_hash)
     }
 
@@ -166,15 +182,25 @@ impl RepositoryManager {
         })
     }
 
-    fn prepare_authenticated_url(&self, url: &str, access_token: &Option<String>) -> Result<String> {
+    fn prepare_authenticated_url(
+        &self,
+        url: &str,
+        access_token: &Option<String>,
+    ) -> Result<String> {
         if let Some(token) = access_token {
             if url.starts_with("https://github.com/") {
                 // For GitHub, use token authentication
-                let authenticated_url = url.replace("https://github.com/", &format!("https://{}@github.com/", token));
+                let authenticated_url = url.replace(
+                    "https://github.com/",
+                    &format!("https://{}@github.com/", token),
+                );
                 Ok(authenticated_url)
             } else if url.starts_with("https://gitlab.com/") {
                 // For GitLab, use token authentication
-                let authenticated_url = url.replace("https://gitlab.com/", &format!("https://oauth2:{}@gitlab.com/", token));
+                let authenticated_url = url.replace(
+                    "https://gitlab.com/",
+                    &format!("https://oauth2:{}@gitlab.com/", token),
+                );
                 Ok(authenticated_url)
             } else {
                 // For other Git providers, try generic token auth
@@ -192,10 +218,14 @@ impl RepositoryManager {
             .current_dir(repository_path)
             .output()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Failed to get commit hash: {}", e)))?;
+            .map_err(|e| {
+                AppError::ExternalServiceError(format!("Failed to get commit hash: {}", e))
+            })?;
 
         if !output.status.success() {
-            return Err(AppError::ExternalServiceError("Failed to get current commit".to_string()));
+            return Err(AppError::ExternalServiceError(
+                "Failed to get current commit".to_string(),
+            ));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -207,10 +237,14 @@ impl RepositoryManager {
             .current_dir(repository_path)
             .output()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Failed to get branch name: {}", e)))?;
+            .map_err(|e| {
+                AppError::ExternalServiceError(format!("Failed to get branch name: {}", e))
+            })?;
 
         if !output.status.success() {
-            return Err(AppError::ExternalServiceError("Failed to get current branch".to_string()));
+            return Err(AppError::ExternalServiceError(
+                "Failed to get current branch".to_string(),
+            ));
         }
 
         let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -227,10 +261,14 @@ impl RepositoryManager {
             .current_dir(repository_path)
             .output()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Failed to get remote URL: {}", e)))?;
+            .map_err(|e| {
+                AppError::ExternalServiceError(format!("Failed to get remote URL: {}", e))
+            })?;
 
         if !output.status.success() {
-            return Err(AppError::ExternalServiceError("Failed to get remote URL".to_string()));
+            return Err(AppError::ExternalServiceError(
+                "Failed to get remote URL".to_string(),
+            ));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -242,10 +280,14 @@ impl RepositoryManager {
             .current_dir(repository_path)
             .output()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Failed to get commit message: {}", e)))?;
+            .map_err(|e| {
+                AppError::ExternalServiceError(format!("Failed to get commit message: {}", e))
+            })?;
 
         if !output.status.success() {
-            return Err(AppError::ExternalServiceError("Failed to get commit message".to_string()));
+            return Err(AppError::ExternalServiceError(
+                "Failed to get commit message".to_string(),
+            ));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -257,32 +299,45 @@ impl RepositoryManager {
             .current_dir(repository_path)
             .output()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Failed to get commit author: {}", e)))?;
+            .map_err(|e| {
+                AppError::ExternalServiceError(format!("Failed to get commit author: {}", e))
+            })?;
 
         if !output.status.success() {
-            return Err(AppError::ExternalServiceError("Failed to get commit author".to_string()));
+            return Err(AppError::ExternalServiceError(
+                "Failed to get commit author".to_string(),
+            ));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
-    async fn get_last_commit_date(&self, repository_path: &Path) -> Result<chrono::DateTime<chrono::Utc>> {
+    async fn get_last_commit_date(
+        &self,
+        repository_path: &Path,
+    ) -> Result<chrono::DateTime<chrono::Utc>> {
         let output = Command::new("git")
             .args(["log", "-1", "--pretty=format:%cI"])
             .current_dir(repository_path)
             .output()
             .await
-            .map_err(|e| AppError::ExternalServiceError(format!("Failed to get commit date: {}", e)))?;
+            .map_err(|e| {
+                AppError::ExternalServiceError(format!("Failed to get commit date: {}", e))
+            })?;
 
         if !output.status.success() {
-            return Err(AppError::ExternalServiceError("Failed to get commit date".to_string()));
+            return Err(AppError::ExternalServiceError(
+                "Failed to get commit date".to_string(),
+            ));
         }
 
         let date_string = String::from_utf8_lossy(&output.stdout);
         let date_str = date_string.trim();
         chrono::DateTime::parse_from_rfc3339(date_str)
             .map(|dt| dt.with_timezone(&chrono::Utc))
-            .map_err(|e| AppError::InternalServerError(format!("Failed to parse commit date: {}", e)))
+            .map_err(|e| {
+                AppError::InternalServerError(format!("Failed to parse commit date: {}", e))
+            })
     }
 
     pub fn calculate_directory_size<'a>(
@@ -292,14 +347,16 @@ impl RepositoryManager {
         Box::pin(async move {
             let mut total_size = 0u64;
 
-            let mut entries = fs::read_dir(directory).await
-                .map_err(|e| AppError::InternalServerError(format!("Failed to read directory: {}", e)))?;
+            let mut entries = fs::read_dir(directory).await.map_err(|e| {
+                AppError::InternalServerError(format!("Failed to read directory: {}", e))
+            })?;
 
-            while let Some(entry) = entries.next_entry().await
-                .map_err(|e| AppError::InternalServerError(format!("Failed to read directory entry: {}", e)))? {
-                    
-                let metadata = entry.metadata().await
-                    .map_err(|e| AppError::InternalServerError(format!("Failed to get file metadata: {}", e)))?;
+            while let Some(entry) = entries.next_entry().await.map_err(|e| {
+                AppError::InternalServerError(format!("Failed to read directory entry: {}", e))
+            })? {
+                let metadata = entry.metadata().await.map_err(|e| {
+                    AppError::InternalServerError(format!("Failed to get file metadata: {}", e))
+                })?;
 
                 if metadata.is_file() {
                     total_size += metadata.len();

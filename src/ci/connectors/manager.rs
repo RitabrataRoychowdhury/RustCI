@@ -1,13 +1,16 @@
 //! Connector manager implementation
-//! 
+//!
 //! This module provides the facade pattern implementation for managing
 //! connectors. It handles factory registration, connector caching, and
 //! provides a unified interface for connector operations.
 
-use crate::error::{AppError, Result};
+use super::factory::{BuiltInConnectorFactory, ConnectorFactory};
 use super::traits::{Connector, ConnectorType, ExecutionResult};
-use super::factory::{ConnectorFactory, BuiltInConnectorFactory};
-use crate::ci::{config::{Step, StepType}, workspace::Workspace};
+use crate::ci::{
+    config::{Step, StepType},
+    workspace::Workspace,
+};
+use crate::error::{AppError, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -16,6 +19,15 @@ use tracing::{debug, error, info, warn};
 pub struct ConnectorManager {
     factories: HashMap<String, Arc<dyn ConnectorFactory>>,
     connector_cache: HashMap<ConnectorType, Arc<dyn Connector>>,
+}
+
+impl std::fmt::Debug for ConnectorManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConnectorManager")
+            .field("factories_count", &self.factories.len())
+            .field("cache_count", &self.connector_cache.len())
+            .finish()
+    }
 }
 
 impl ConnectorManager {
@@ -28,7 +40,7 @@ impl ConnectorManager {
 
         // Register the built-in factory
         manager.register_factory(Arc::new(BuiltInConnectorFactory::new()));
-        
+
         info!("🎯 ConnectorManager initialized with built-in factory");
         manager
     }
@@ -51,18 +63,26 @@ impl ConnectorManager {
         // Find a factory that supports this connector type
         for factory in self.factories.values() {
             if factory.supports_type(&connector_type) {
-                debug!("🔍 Found factory {} for connector type: {}", factory.name(), connector_type);
+                debug!(
+                    "🔍 Found factory {} for connector type: {}",
+                    factory.name(),
+                    connector_type
+                );
                 let connector = factory.create_connector(connector_type.clone())?;
-                
+
                 // Cache the connector for future use
-                self.connector_cache.insert(connector_type.clone(), Arc::clone(&connector));
-                
+                self.connector_cache
+                    .insert(connector_type.clone(), Arc::clone(&connector));
+
                 return Ok(connector);
             }
         }
 
         error!("❌ No factory found for connector type: {}", connector_type);
-        Err(AppError::NotFound(format!("No factory found for connector type: {}", connector_type)))
+        Err(AppError::NotFound(format!(
+            "No factory found for connector type: {}",
+            connector_type
+        )))
     }
 
     /// Execute a step using the appropriate connector
@@ -73,33 +93,46 @@ impl ConnectorManager {
         env: &HashMap<String, String>,
     ) -> Result<ExecutionResult> {
         let connector_type = self.determine_connector_type(step)?;
-        debug!("🎯 Determined connector type: {} for step: {}", connector_type, step.name);
+        debug!(
+            "🎯 Determined connector type: {} for step: {}",
+            connector_type, step.name
+        );
 
         let connector = self.get_connector(connector_type)?;
-        
+
         // Validate configuration
         connector.validate_config(step)?;
-        
+
         // Execute pre-hook
         connector.pre_execute(step).await?;
-        
+
         // Execute the step
-        info!("🚀 Executing step '{}' with connector '{}'", step.name, connector.name());
+        info!(
+            "🚀 Executing step '{}' with connector '{}'",
+            step.name,
+            connector.name()
+        );
         let result = connector.execute_step(step, workspace, env).await;
-        
+
         match &result {
             Ok(exec_result) => {
-                info!("✅ Step '{}' completed with exit code: {}", step.name, exec_result.exit_code);
+                info!(
+                    "✅ Step '{}' completed with exit code: {}",
+                    step.name, exec_result.exit_code
+                );
                 // Execute post-hook
                 if let Err(e) = connector.post_execute(step, exec_result).await {
-                    warn!("⚠️ Post-execution hook failed for step '{}': {}", step.name, e);
+                    warn!(
+                        "⚠️ Post-execution hook failed for step '{}': {}",
+                        step.name, e
+                    );
                 }
-            },
+            }
             Err(e) => {
                 error!("❌ Step '{}' failed: {}", step.name, e);
             }
         }
-        
+
         result
     }
 
@@ -117,13 +150,13 @@ impl ConnectorManager {
                 // For shell steps, we default to Docker for containerized execution
                 debug!("🐚 Shell step detected, defaulting to Docker connector");
                 ConnectorType::Docker
-            },
+            }
             StepType::Custom => {
                 if let Some(plugin_name) = &step.config.plugin_name {
                     ConnectorType::Custom(plugin_name.clone())
                 } else {
                     return Err(AppError::ValidationError(
-                        "Custom step type requires plugin_name in config".to_string()
+                        "Custom step type requires plugin_name in config".to_string(),
                     ));
                 }
             }

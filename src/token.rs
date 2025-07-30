@@ -17,34 +17,45 @@ pub fn generate_jwt_token(
     expires_in: String,
 ) -> Result<String, AppError> {
     if jwt_secret.is_empty() {
-        return Err(AppError::InternalServerError("JWT secret cannot be empty".to_string()));
+        return Err(AppError::InternalServerError(
+            "JWT secret cannot be empty".to_string(),
+        ));
     }
 
     let now = Utc::now();
-   let iat = now.timestamp().max(0) as usize; // ✅ Cleaner, warning-free
-
+    let iat = now.timestamp().max(0) as usize;
 
     let exp = match expires_in.chars().last() {
         Some('m') => {
             let minutes = expires_in[..expires_in.len() - 1]
                 .parse::<i64>()
-                .map_err(|_| AppError::InternalServerError("Invalid JWT expiration format".to_string()))?;
+                .map_err(|_| {
+                    AppError::InternalServerError("Invalid JWT expiration format".to_string())
+                })?;
             (now + Duration::minutes(minutes)).timestamp() as usize
         }
         Some('h') => {
             let hours = expires_in[..expires_in.len() - 1]
                 .parse::<i64>()
-                .map_err(|_| AppError::InternalServerError("Invalid JWT expiration format".to_string()))?;
+                .map_err(|_| {
+                    AppError::InternalServerError("Invalid JWT expiration format".to_string())
+                })?;
             (now + Duration::hours(hours)).timestamp() as usize
         }
         Some('d') => {
             let days = expires_in[..expires_in.len() - 1]
                 .parse::<i64>()
-                .map_err(|_| AppError::InternalServerError("Invalid JWT expiration format".to_string()))?;
+                .map_err(|_| {
+                    AppError::InternalServerError("Invalid JWT expiration format".to_string())
+                })?;
             (now + Duration::days(days)).timestamp() as usize
         }
         _ => {
-            return Err(AppError::InternalServerError("Invalid JWT expiration format".to_string()));
+            // If no suffix, treat as seconds (for backwards compatibility)
+            let seconds = expires_in.parse::<i64>().map_err(|_| {
+                AppError::InternalServerError("Invalid JWT expiration format".to_string())
+            })?;
+            (now + Duration::seconds(seconds)).timestamp() as usize
         }
     };
 
@@ -62,7 +73,10 @@ pub fn generate_jwt_token(
     .map_err(|e| AppError::InternalServerError(format!("Failed to generate JWT token: {}", e)))
 }
 
-pub fn verify_jwt_token(jwt_secret: String, token: &str) -> Result<TokenData<TokenClaims>, AppError> {
+pub fn verify_jwt_token(
+    jwt_secret: String,
+    token: &str,
+) -> Result<TokenData<TokenClaims>, AppError> {
     let validation = Validation::default();
 
     decode::<TokenClaims>(

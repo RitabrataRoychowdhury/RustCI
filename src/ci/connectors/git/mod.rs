@@ -1,5 +1,5 @@
 //! Git connector implementations
-//! 
+//!
 //! This module contains connector implementations for Git-based services:
 //! - GitHub (GitHub Actions, GitHub API)
 //! - GitLab (GitLab CI/CD, GitLab API)

@@ -361,8 +361,8 @@ impl KubernetesConfig {
     }
 
     fn is_valid_cpu_format(&self, cpu: &str) -> bool {
-        if cpu.ends_with('m') {
-            cpu[..cpu.len() - 1].parse::<u32>().is_ok()
+        if let Some(cpu_value) = cpu.strip_suffix('m') {
+            cpu_value.parse::<u32>().is_ok()
         } else {
             cpu.parse::<f64>().is_ok()
         }
@@ -374,8 +374,8 @@ impl KubernetesConfig {
         ];
 
         for suffix in &suffixes {
-            if memory.ends_with(suffix) {
-                return memory[..memory.len() - suffix.len()].parse::<u64>().is_ok();
+            if let Some(memory_value) = memory.strip_suffix(suffix) {
+                return memory_value.parse::<u64>().is_ok();
             }
         }
 

@@ -1,0 +1,48 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # RustCI Master Nodes
+  - job_name: "rustci-masters"
+    static_configs:
+      - targets:
+          - "rustci-master-1:9090"
+          - "rustci-master-2:9090"
+          - "rustci-master-3:9090"
+    metrics_path: "/metrics"
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # RustCI Worker Nodes
+  - job_name: "rustci-workers"
+    static_configs:
+      - targets:
+          - "rustci-worker-1:9090"
+          - "rustci-worker-2:9090"
+    metrics_path: "/metrics"
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # MongoDB Exporter (if needed)
+  - job_name: "mongodb"
+    static_configs:
+      - targets: ["mongodb:27017"]
+    metrics_path: "/metrics"
+    scrape_interval: 30s
+
+  # HAProxy Load Balancer
+  - job_name: "haproxy"
+    static_configs:
+      - targets: ["load-balancer:8404"]
+    metrics_path: "/stats/prometheus"
+    scrape_interval: 15s
