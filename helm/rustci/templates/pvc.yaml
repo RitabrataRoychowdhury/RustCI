@@ -1,0 +1,61 @@
+{{- if .Values.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "rustci.fullname" . }}-pvc
+  labels:
+    {{- include "rustci.labels" . | nindent 4 }}
+  {{- with .Values.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass }}
+  {{- end }}
+{{- end }}
+
+---
+{{- if .Values.cicd.workspace }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "rustci.fullname" . }}-workspace-pvc
+  labels:
+    {{- include "rustci.labels" . | nindent 4 }}
+    component: workspace
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.cicd.workspace.size }}
+  {{- if .Values.cicd.workspace.storageClass }}
+  storageClassName: {{ .Values.cicd.workspace.storageClass }}
+  {{- end }}
+{{- end }}
+
+---
+{{- if .Values.cicd.cache }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "rustci.fullname" . }}-cache-pvc
+  labels:
+    {{- include "rustci.labels" . | nindent 4 }}
+    component: cache
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.cicd.cache.size }}
+  {{- if .Values.cicd.cache.storageClass }}
+  storageClassName: {{ .Values.cicd.cache.storageClass }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,166 @@
+# Default values for rustci
+# This is a YAML-formatted file.
+
+replicaCount: 1
+
+image:
+  repository: rustci
+  pullPolicy: IfNotPresent
+  tag: "latest"
+  # For local development, use Never to avoid pulling from registry
+  # pullPolicy: Never
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: rustci.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: rustci-tls
+  #    hosts:
+  #      - rustci.local
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Persistence for CI/CD workspaces and cache
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  annotations: {}
+
+# Environment variables
+env:
+  # MongoDB Configuration
+  MONGODB_URI: "mongodb+srv://ritabrataroychowdhury2002:Physics676@cluster0.uyzku.mongodb.net/dqms?retryWrites=true&w=majority"
+  MONGODB_DATABASE: "dqms"
+  
+  # JWT Configuration
+  JWT_SECRET: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+  JWT_EXPIRED_IN: "1d"
+  JWT_SIGNUP_EXPIRED_IN: "1h"
+  JWT_REFRESH_EXPIRED_IN: "7d"
+  
+  # GitHub OAuth Configuration
+  GITHUB_OAUTH_CLIENT_ID: "Ov23li18bhj2ixmL6GlY"
+  GITHUB_OAUTH_CLIENT_SECRET: "329e1afc2c5009efca526b5e9ae8f3a52bc546bc"
+  GITHUB_OAUTH_REDIRECT_URL: "http://localhost:8000/api/sessions/oauth/github/callback"
+  
+  # Server Configuration
+  CLIENT_ORIGIN: "http://localhost:3000"
+  PORT: "8000"
+  
+  # Environment
+  RUST_ENV: "development"
+  RUST_LOG: "info"
+
+# Secret management (for sensitive data)
+secrets:
+  create: true
+  data:
+    mongodb_uri: ""  # Base64 encoded MongoDB URI
+    jwt_secret: ""   # Base64 encoded JWT secret
+    github_oauth_client_secret: ""  # Base64 encoded GitHub OAuth secret
+
+# Health checks
+healthCheck:
+  enabled: true
+  path: "/api/healthchecker"
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+
+# Monitoring
+monitoring:
+  enabled: false
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    path: /metrics
+
+# CI/CD specific configurations
+cicd:
+  # Workspace storage for CI/CD operations
+  workspace:
+    storageClass: ""
+    size: 20Gi
+  
+  # Cache storage for build artifacts
+  cache:
+    storageClass: ""
+    size: 10Gi
+  
+  # Docker-in-Docker support
+  docker:
+    enabled: true
+    privileged: false
+    
+  # Kubernetes connector configuration
+  kubernetes:
+    rbac:
+      create: true
+      clusterRole: false  # Set to true if cluster-wide access needed
+    serviceAccount:
+      create: true
+      name: "rustci-k8s-connector"

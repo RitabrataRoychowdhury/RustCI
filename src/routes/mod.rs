@@ -4,7 +4,10 @@
 
 pub mod auth;
 pub mod ci;
+pub mod pr;
+pub mod api;
 
-// Re-export all public items from the auth module
+// Re-export all public items from the modules
 pub use auth::*;
 pub use ci::*;
+pub use pr::*;

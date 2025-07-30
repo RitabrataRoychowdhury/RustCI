@@ -21,17 +21,21 @@ mod database;
 mod error;
 mod token;
 mod upload;
-mod docs;
 mod service_registry;
 mod models;
 mod middleware;
 mod handlers;
 mod routes;
+mod repositories;
+mod services;
 mod ci;
+
+#[cfg(test)]
+mod integration_tests;
 
 use config::Config;
 use database::DatabaseManager;
-use routes::{auth_router, ci_router};
+use routes::{auth_router, ci_router, pr_router};
 use ci::{
     engine::CIEngine, 
     executor::PipelineExecutor, 
@@ -71,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("✅ Database connection established");
 
     // Initialize CI engine components
-    let connector_manager = Arc::new(ConnectorManager::new());
+    let connector_manager = ConnectorManager::new();
     let workspace_manager = Arc::new(WorkspaceManager::new("/tmp/ci-workspaces".into()));
     let executor = Arc::new(PipelineExecutor::new(
         connector_manager,
@@ -115,6 +119,7 @@ async fn create_app(state: AppState) -> Result<Router, Box<dyn std::error::Error
         .route("/api/healthchecker", get(health_check_handler))
         .nest("/api/sessions", auth_router(state.clone()))
         .nest("/api/ci", ci_router())
+        .nest("/api/pr", pr_router())
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .layer(create_cors_layer(&state.env.client_origin))

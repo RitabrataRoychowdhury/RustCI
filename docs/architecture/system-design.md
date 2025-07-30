@@ -1,4 +1,4 @@
-# RustCI System Design Documentation
+# System Architecture
 
 This document provides a comprehensive overview of the RustCI system architecture, component interactions, and request flow patterns.
 
@@ -9,96 +9,135 @@ RustCI is a high-performance CI/CD platform built in Rust that provides pipeline
 ## Architecture Diagram
 
 ```mermaid
-graph TB
-    subgraph "Client Layer"
-        CLI[CLI Tools]
-        WEB[Web Interface]
-        API_CLIENT[API Clients]
-        WEBHOOK[Webhook Sources]
+%%{ init: { 'flowchart': { 'curve': 'cardinal' } } }%%
+flowchart TB
+    %% ===== Client Layer =====
+    subgraph CLIENT [Client Layer]
+        CLI@{ shape: stadium, label: "CLI Tools" }
+        WEB@{ shape: stadium, label: "Web Interface" }
+        API_CLIENT@{ shape: stadium, label: "API Clients" }
+        WEBHOOK@{ shape: stadium, label: "Webhook Sources" }
     end
-    
-    subgraph "API Gateway Layer"
-        AXUM[Axum Web Server]
-        AUTH[Authentication Middleware]
-        CORS[CORS Middleware]
-        RATE[Rate Limiting]
+
+    %% ===== API Gateway Layer =====
+    subgraph AGW [API Gateway Layer]
+        AXUM@{ shape: rect, label: "Axum Web Server" }
+        AUTH@{ shape: diamond, label: "Authentication\nMiddleware" }
+        CORS@{ shape: diamond, label: "CORS Middleware" }
+        RATE@{ shape: hex, label: "Rate Limiting" }
     end
-    
-    subgraph "Application Layer"
-        ROUTES[Route Handlers]
-        UPLOAD[File Upload Handler]
-        PIPELINE[Pipeline Handler]
-        EXEC[Execution Handler]
+
+    %% ===== Application Layer =====
+    subgraph APP [Application Layer]
+        ROUTES@{ shape: rounded, label: "Route Handlers" }
+        UPLOAD@{ shape: fr-rect, label: "File Upload Handler" }
+        PIPELINE@{ shape: fr-rect, label: "Pipeline Handler" }
+        EXEC@{ shape: fr-rect, label: "Execution Handler" }
     end
-    
-    subgraph "Business Logic Layer"
-        CI_ENGINE[CI Engine]
-        PIPELINE_MGR[Pipeline Manager]
-        EXEC_ENGINE[Execution Engine]
-        DEPLOY_MGR[Deployment Manager]
-        PROJECT_DETECT[Project Type Detector]
-        SERVICE_REG[Service Registry]
+
+    %% ===== Business Logic Layer =====
+    subgraph BIZ [Business Logic Layer]
+        CI_ENGINE@{ shape: rect, label: "CI Engine" }
+        PIPELINE_MGR@{ shape: rect, label: "Pipeline Manager" }
+        EXEC_ENGINE@{ shape: rect, label: "Execution Engine" }
+        CONNECTOR_MGR@{ shape: rect, label: "Connector Manager" }
+        PROJECT_DETECT@{ shape: lean-r, label: "Project Type Detector" }
+        SERVICE_REG@{ shape: fr-rect, label: "Service Registry" }
     end
-    
-    subgraph "Infrastructure Layer"
-        FILE_SYS[File System]
-        DOCKER[Docker Integration]
-        GIT[Git Operations]
-        PORT_MGR[Port Manager]
-        WORKSPACE[Workspace Manager]
+
+    %% ===== Connector System =====
+    subgraph CONN [Connector System]
+        CONN_FACTORY@{ shape: procs, label: "Connector Factory" }
+        DOCKER_CONN@{ shape: tag-rect, label: "Docker Connector" }
+        K8S_CONN@{ shape: tag-rect, label: "Kubernetes Connector" }
+        AWS_CONN@{ shape: tag-rect, label: "AWS Connector" }
+        AZURE_CONN@{ shape: tag-rect, label: "Azure Connector" }
+        GCP_CONN@{ shape: tag-rect, label: "GCP Connector" }
+        GITHUB_CONN@{ shape: tag-rect, label: "GitHub Connector" }
+        GITLAB_CONN@{ shape: tag-rect, label: "GitLab Connector" }
     end
-    
-    subgraph "Data Layer"
-        MONGODB[MongoDB Database]
-        CACHE[Redis Cache]
-        LOGS[Log Storage]
+
+    %% ===== Infrastructure Layer =====
+    subgraph INFRA [Infrastructure Layer]
+        FILE_SYS@{ shape: doc, label: "File System" }
+        WORKSPACE@{ shape: doc, label: "Workspace Manager" }
+        LIFECYCLE_HOOKS@{ shape: delay, label: "Lifecycle Hook\nManager" }
+        YAML_GEN@{ shape: lin-doc, label: "YAML Generator" }
+        VALIDATOR@{ shape: bow-rect, label: "Configuration Validator" }
     end
-    
-    subgraph "External Services"
-        GITHUB[GitHub API]
-        DOCKER_HUB[Docker Registry]
-        SSH_TARGETS[SSH Targets]
-        AGENTS[Frontend Agents]
+
+    %% ===== Data Layer =====
+    subgraph DATA [Data Layer]
+        MONGODB@{ shape: cyl, label: "MongoDB\nDatabase" }
+        CACHE@{ shape: cyl, label: "Redis Cache" }
+        LOGS@{ shape: lin-doc, label: "Log Storage" }
     end
-    
+
+    %% ===== External Services =====
+    subgraph EXT [External Services]
+        DOCKER_API@{ shape: bolt, label: "Docker API" }
+        K8S_API@{ shape: bolt, label: "Kubernetes API" }
+        AWS_API@{ shape: bolt, label: "AWS Services" }
+        AZURE_API@{ shape: bolt, label: "Azure Services" }
+        GCP_API@{ shape: bolt, label: "GCP Services" }
+        GITHUB_API@{ shape: bolt, label: "GitHub API" }
+        GITLAB_API@{ shape: bolt, label: "GitLab API" }
+    end
+
+    %% ==== Connections ===
     CLI --> AXUM
     WEB --> AXUM
     API_CLIENT --> AXUM
     WEBHOOK --> AXUM
-    
+
     AXUM --> AUTH
     AUTH --> CORS
     CORS --> RATE
     RATE --> ROUTES
-    
+
     ROUTES --> UPLOAD
     ROUTES --> PIPELINE
     ROUTES --> EXEC
-    
+
     UPLOAD --> CI_ENGINE
     PIPELINE --> CI_ENGINE
     EXEC --> CI_ENGINE
-    
+
     CI_ENGINE --> PIPELINE_MGR
     CI_ENGINE --> EXEC_ENGINE
-    EXEC_ENGINE --> DEPLOY_MGR
-    DEPLOY_MGR --> PROJECT_DETECT
-    DEPLOY_MGR --> SERVICE_REG
-    
+    EXEC_ENGINE --> CONNECTOR_MGR
+    CONNECTOR_MGR --> PROJECT_DETECT
+    CONNECTOR_MGR --> SERVICE_REG
+
     PIPELINE_MGR --> MONGODB
     EXEC_ENGINE --> MONGODB
     SERVICE_REG --> MONGODB
-    
-    DEPLOY_MGR --> FILE_SYS
-    DEPLOY_MGR --> DOCKER
-    DEPLOY_MGR --> GIT
-    DEPLOY_MGR --> PORT_MGR
-    DEPLOY_MGR --> WORKSPACE
-    
-    DOCKER --> DOCKER_HUB
-    GIT --> GITHUB
-    DEPLOY_MGR --> SSH_TARGETS
-    SERVICE_REG --> AGENTS
+
+    CONNECTOR_MGR --> CONN_FACTORY
+    CONN_FACTORY --> DOCKER_CONN
+    CONN_FACTORY --> K8S_CONN
+    CONN_FACTORY --> AWS_CONN
+    CONN_FACTORY --> AZURE_CONN
+    CONN_FACTORY --> GCP_CONN
+    CONN_FACTORY --> GITHUB_CONN
+    CONN_FACTORY --> GITLAB_CONN
+
+    DOCKER_CONN --> DOCKER_API
+    K8S_CONN --> K8S_API
+    AWS_CONN --> AWS_API
+    AZURE_CONN --> AZURE_API
+    GCP_CONN --> GCP_API
+    GITHUB_CONN --> GITHUB_API
+    GITLAB_CONN --> GITLAB_API
+
+    K8S_CONN --> LIFECYCLE_HOOKS
+    K8S_CONN --> YAML_GEN
+    K8S_CONN --> VALIDATOR
+    DOCKER_CONN --> VALIDATOR
+
+    LIFECYCLE_HOOKS --> MONGODB
+    CONNECTOR_MGR --> FILE_SYS
+    CONNECTOR_MGR --> WORKSPACE
 ```
 
 ## Component Descriptions
@@ -181,56 +220,60 @@ pub struct CIEngine {
   - Log aggregation
   - Timeout handling
 
-#### Deployment Manager
-- **Purpose**: Handle various deployment strategies
-- **Deployment Types**:
-  - Local directory deployment
-  - Docker container deployment
-  - Local service deployment
-  - Hybrid deployments
+#### Connector Manager
+- **Purpose**: Unified facade for managing all connector operations
+- **Responsibilities**:
+  - Factory registration and management
+  - Connector caching and lifecycle
+  - Step execution routing
+  - Configuration validation
+- **Design Patterns**:
+  - Facade Pattern: Single interface for all connectors
+  - Factory Pattern: Dynamic connector creation
+  - Strategy Pattern: Pluggable execution strategies
 
-#### Project Type Detector
-- **Purpose**: Automatically detect project types for deployment
-- **Detection Rules**:
-  - File pattern matching
-  - Directory structure analysis
-  - Content-based detection
-  - Confidence scoring
+## Connector System Architecture
 
-#### Service Registry
-- **Purpose**: Track and manage deployed services
-- **Features**:
-  - Service registration
-  - Health monitoring
-  - Agent communication preparation
-  - Service discovery
+The connector system is the core execution engine that provides pluggable, extensible pipeline step execution across different platforms and services.
 
-### Infrastructure Layer
+### Design Patterns
 
-#### File System Manager
-- **Purpose**: Manage workspace and artifact storage
-- **Operations**:
-  - Workspace creation and cleanup
-  - Artifact copying and archiving
-  - Temporary file management
-  - Permission handling
+#### Strategy Pattern
+Each connector implements the `Connector` trait, allowing different execution strategies:
 
-#### Docker Integration
-- **Purpose**: Docker container lifecycle management
-- **Features**:
-  - Image building
-  - Container execution
-  - Port mapping
-  - Volume management
-  - Registry operations
+```rust
+#[async_trait]
+pub trait Connector: Send + Sync {
+    async fn execute_step(&self, step: &Step, workspace: &Workspace, env: &HashMap<String, String>) -> Result<ExecutionResult>;
+    fn connector_type(&self) -> ConnectorType;
+    fn name(&self) -> &str;
+    fn validate_config(&self, step: &Step) -> Result<()>;
+    async fn pre_execute(&self, step: &Step) -> Result<()>;
+    async fn post_execute(&self, step: &Step, result: &ExecutionResult) -> Result<()>;
+}
+```
 
-#### Git Operations
-- **Purpose**: Source code management
-- **Features**:
-  - Repository cloning
-  - Branch switching
-  - Commit tracking
-  - Authentication handling
+#### Factory Pattern
+The `ConnectorFactory` creates connector instances dynamically:
+
+```rust
+#[async_trait]
+pub trait ConnectorFactory: Send + Sync {
+    fn create_connector(&self, connector_type: ConnectorType) -> Result<Arc<dyn Connector>>;
+    fn supports_type(&self, connector_type: &ConnectorType) -> bool;
+    fn name(&self) -> &str;
+}
+```
+
+#### Facade Pattern
+The `ConnectorManager` provides a unified interface for all connector operations:
+
+```rust
+pub struct ConnectorManager {
+    factories: HashMap<String, Arc<dyn ConnectorFactory>>,
+    connector_cache: HashMap<ConnectorType, Arc<dyn Connector>>,
+}
+```
 
 ## Request Flow Patterns
 
@@ -267,7 +310,9 @@ sequenceDiagram
     participant Handler
     participant Engine
     participant Executor
-    participant Deployer
+    participant ConnectorMgr as Connector Manager
+    participant Connector
+    participant External as External Service
     
     Client->>API: POST /ci/pipelines/{id}/trigger
     API->>Handler: Route to trigger_pipeline
@@ -275,36 +320,25 @@ sequenceDiagram
     Engine->>Executor: Start execution
     
     loop For each stage
-        Executor->>Executor: Execute stage steps
-        Executor->>Deployer: Deploy if needed
-        Deployer-->>Executor: Deployment result
+        loop For each step in stage
+            Executor->>ConnectorMgr: execute_step(step, workspace, env)
+            ConnectorMgr->>ConnectorMgr: determine_connector_type(step)
+            ConnectorMgr->>ConnectorMgr: get_connector(connector_type)
+            ConnectorMgr->>Connector: validate_config(step)
+            ConnectorMgr->>Connector: pre_execute(step)
+            ConnectorMgr->>Connector: execute_step(step, workspace, env)
+            Connector->>External: Execute operation
+            External-->>Connector: Operation result
+            Connector-->>ConnectorMgr: ExecutionResult
+            ConnectorMgr->>Connector: post_execute(step, result)
+            ConnectorMgr-->>Executor: ExecutionResult
+        end
     end
     
     Executor-->>Engine: Execution complete
     Engine-->>Handler: Return execution ID
     Handler-->>API: JSON response
     API-->>Client: Execution started response
-```
-
-### File Upload Flow
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant API
-    participant Upload
-    participant Validator
-    participant Engine
-    
-    Client->>API: POST /ci/pipelines/upload (multipart)
-    API->>Upload: Handle multipart data
-    Upload->>Upload: Extract file content
-    Upload->>Validator: Validate YAML
-    Validator-->>Upload: Validation result
-    Upload->>Engine: Create pipeline
-    Engine-->>Upload: Pipeline created
-    Upload-->>API: JSON response
-    API-->>Client: Pipeline created response
 ```
 
 ## Data Models
@@ -339,75 +373,6 @@ pub struct PipelineExecution {
     pub duration: Option<u64>,
     pub stages: Vec<StageExecution>,
     pub logs: Vec<String>,
-}
-```
-
-#### Deployment Result
-```rust
-pub struct DeploymentResult {
-    pub deployment_id: Uuid,
-    pub deployment_type: DeploymentType,
-    pub status: DeploymentStatus,
-    pub artifacts: Vec<DeploymentArtifact>,
-    pub services: Vec<DeployedService>,
-    pub logs: Vec<String>,
-}
-```
-
-## Database Schema
-
-### Collections
-
-#### pipelines
-```json
-{
-  "_id": "ObjectId",
-  "id": "UUID",
-  "name": "String",
-  "description": "String",
-  "yaml_content": "String",
-  "triggers": "Array",
-  "stages": "Array",
-  "environment": "Object",
-  "timeout": "Number",
-  "retry_count": "Number",
-  "created_at": "Date",
-  "updated_at": "Date"
-}
-```
-
-#### executions
-```json
-{
-  "_id": "ObjectId",
-  "id": "UUID",
-  "pipeline_id": "UUID",
-  "status": "String",
-  "trigger_info": "Object",
-  "started_at": "Date",
-  "finished_at": "Date",
-  "duration": "Number",
-  "stages": "Array",
-  "logs": "Array",
-  "environment": "Object"
-}
-```
-
-#### services
-```json
-{
-  "_id": "ObjectId",
-  "id": "UUID",
-  "name": "String",
-  "service_type": "String",
-  "endpoint": "String",
-  "deployment_id": "UUID",
-  "container_id": "String",
-  "process_id": "Number",
-  "status": "String",
-  "ports": "Array",
-  "last_heartbeat": "Date",
-  "metadata": "Object"
 }
 ```
 
@@ -501,51 +466,3 @@ pub struct DeploymentResult {
 - Database connectivity check
 - External service availability
 - Resource usage monitoring
-
-## Future Architecture Enhancements
-
-### Agent-Based Architecture
-```mermaid
-graph TB
-    subgraph "RustCI Core"
-        CORE[CI Engine]
-        REGISTRY[Service Registry]
-        COMM[Communication Hub]
-    end
-    
-    subgraph "Remote Agents"
-        AGENT1[Frontend Agent 1]
-        AGENT2[Frontend Agent 2]
-        AGENT3[Backend Agent 1]
-    end
-    
-    subgraph "Deployed Services"
-        SERVICE1[Frontend App 1]
-        SERVICE2[Frontend App 2]
-        SERVICE3[Backend API]
-    end
-    
-    CORE --> REGISTRY
-    REGISTRY --> COMM
-    COMM <--> AGENT1
-    COMM <--> AGENT2
-    COMM <--> AGENT3
-    
-    AGENT1 <--> SERVICE1
-    AGENT2 <--> SERVICE2
-    AGENT3 <--> SERVICE3
-```
-
-### Microservices Evolution
-- Pipeline Service
-- Execution Service
-- Deployment Service
-- Notification Service
-- Monitoring Service
-
-### Cloud-Native Features
-- Kubernetes integration
-- Container orchestration
-- Service mesh integration
-- Cloud storage backends
-- Multi-region deployment

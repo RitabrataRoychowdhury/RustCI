@@ -1,7 +1,7 @@
 use crate::error::{AppError, Result};
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use tracing::{info, debug, error};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 #[allow(dead_code)] // Will be used when CI engine executes pipelines
@@ -18,7 +18,7 @@ impl Workspace {
     pub fn new(execution_id: Uuid, base_path: &Path) -> Self {
         let workspace_id = Uuid::new_v4();
         let path = base_path.join(format!("workspace-{}", workspace_id));
-        
+
         Self {
             id: workspace_id,
             path,
@@ -28,11 +28,11 @@ impl Workspace {
 
     pub async fn create(&self) -> Result<()> {
         debug!("📁 Creating workspace: {:?}", self.path);
-        
-        fs::create_dir_all(&self.path)
-            .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to create workspace: {}", e)))?;
-        
+
+        fs::create_dir_all(&self.path).await.map_err(|e| {
+            AppError::InternalServerError(format!("Failed to create workspace: {}", e))
+        })?;
+
         info!("✅ Workspace created: {:?}", self.path);
         Ok(())
     }
@@ -40,13 +40,13 @@ impl Workspace {
     #[allow(dead_code)] // Will be used for workspace cleanup
     pub async fn cleanup(&self) -> Result<()> {
         debug!("🗑️ Cleaning up workspace: {:?}", self.path);
-        
+
         if self.path.exists() {
-            fs::remove_dir_all(&self.path)
-                .await
-                .map_err(|e| AppError::InternalServerError(format!("Failed to cleanup workspace: {}", e)))?;
+            fs::remove_dir_all(&self.path).await.map_err(|e| {
+                AppError::InternalServerError(format!("Failed to cleanup workspace: {}", e))
+            })?;
         }
-        
+
         info!("✅ Workspace cleaned up: {:?}", self.path);
         Ok(())
     }
@@ -59,17 +59,17 @@ impl Workspace {
     #[allow(dead_code)] // Will be used for writing files to workspace
     pub async fn write_file(&self, relative_path: &str, content: &str) -> Result<()> {
         let file_path = self.get_file_path(relative_path);
-        
+
         if let Some(parent) = file_path.parent() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|e| AppError::InternalServerError(format!("Failed to create directory: {}", e)))?;
+            fs::create_dir_all(parent).await.map_err(|e| {
+                AppError::InternalServerError(format!("Failed to create directory: {}", e))
+            })?;
         }
-        
+
         fs::write(&file_path, content)
             .await
             .map_err(|e| AppError::InternalServerError(format!("Failed to write file: {}", e)))?;
-        
+
         debug!("📝 File written: {:?}", file_path);
         Ok(())
     }
@@ -77,7 +77,7 @@ impl Workspace {
     #[allow(dead_code)] // Will be used for reading files from workspace
     pub async fn read_file(&self, relative_path: &str) -> Result<String> {
         let file_path = self.get_file_path(relative_path);
-        
+
         fs::read_to_string(&file_path)
             .await
             .map_err(|e| AppError::InternalServerError(format!("Failed to read file: {}", e)))
@@ -103,14 +103,17 @@ impl WorkspaceManager {
     pub async fn create_workspace(&self, execution_id: Uuid) -> Result<Workspace> {
         // Ensure base directory exists
         if !self.base_path.exists() {
-            fs::create_dir_all(&self.base_path)
-                .await
-                .map_err(|e| AppError::InternalServerError(format!("Failed to create base workspace directory: {}", e)))?;
+            fs::create_dir_all(&self.base_path).await.map_err(|e| {
+                AppError::InternalServerError(format!(
+                    "Failed to create base workspace directory: {}",
+                    e
+                ))
+            })?;
         }
 
         let workspace = Workspace::new(execution_id, &self.base_path);
         workspace.create().await?;
-        
+
         Ok(workspace)
     }
 
@@ -118,14 +121,13 @@ impl WorkspaceManager {
         let _ = execution_id;
         // Find workspace by execution_id and clean it up
         let _workspace_pattern = format!("workspace-*");
-        let mut entries = fs::read_dir(&self.base_path)
-            .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to read workspace directory: {}", e)))?;
+        let mut entries = fs::read_dir(&self.base_path).await.map_err(|e| {
+            AppError::InternalServerError(format!("Failed to read workspace directory: {}", e))
+        })?;
 
-        while let Some(entry) = entries.next_entry()
-            .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to read directory entry: {}", e)))?
-        {
+        while let Some(entry) = entries.next_entry().await.map_err(|e| {
+            AppError::InternalServerError(format!("Failed to read directory entry: {}", e))
+        })? {
             let path = entry.path();
             if path.is_dir() {
                 if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {

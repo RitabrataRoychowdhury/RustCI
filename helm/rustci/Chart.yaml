@@ -1,0 +1,17 @@
+apiVersion: v2
+name: rustci
+description: A Helm chart for RustCI - High-performance CI/CD platform built in Rust
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - ci-cd
+  - rust
+  - devops
+  - automation
+home: https://github.com/RitabrataRoychowdhury/RustCI
+sources:
+  - https://github.com/RitabrataRoychowdhury/RustCI
+maintainers:
+  - name: RitabrataRoychowdhury
+    email: ritabrataroychowdhury2002@gmail.com
