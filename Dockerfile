@@ -68,7 +68,6 @@ COPY --from=builder /app/target/release/RustAutoDevOps /app/rustapp
 
 # Copy configuration files if needed
 COPY --from=builder /app/docs ./docs
-COPY --from=builder /app/examples ./examples
 
 # Change ownership to non-root user
 RUN chown -R rustapp:rustapp /app
