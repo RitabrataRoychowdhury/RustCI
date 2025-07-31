@@ -43,7 +43,6 @@ COPY Cargo.toml ./
 COPY Cargo.loc[k] ./
 COPY src ./src
 COPY docs ./docs
-COPY examples ./examples
 
 # Build application with optimizations
 RUN cargo build --release
