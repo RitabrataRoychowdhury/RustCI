@@ -1,81 +1,88 @@
 name: "RustCI Docker Deploy"
-description: "Build and deploy RustCI as a Docker container via SSH"
+description: "Build and deploy RustCI using Docker on remote machine"
+ 
 triggers:
-- trigger_type: manual
-  config: {}
-
+  - trigger_type: manual
+    config: {}
+ 
 stages:
-- name: "Build and Deploy"
-  steps:
-  - name: "fetch-code"
-    step_type: shell
-    config:
-      command: |
-        echo "Current directory: $(pwd)" && \
-        echo "Workspace contents:" && \
-        ls -la && \
-        git clone https://github.com/RitabrataRoychowdhury/RustCI.git . && \
-        echo "Repository cloned successfully" && \
-        ls -la
-
-  - name: "build-docker-image"
-    step_type: shell
-    config:
-      command: |
-        echo "Current directory: $(pwd)" && \
-        echo "Building Docker image..." && \
-        docker build -t rustci:latest . && \
-        echo "Docker image built successfully" && \
-        docker images | grep rustci
-
-  - name: "transfer-docker-image"
-    step_type: shell
-    config:
-      command: |
-        echo "Transferring Docker image..." && \
-        docker save rustci:latest | \
-        sshpass -p abc123 ssh -o StrictHostKeyChecking=no -p 2222 user@localhost 'docker load' && \
-        echo "Docker image transferred successfully"
-
-  - name: "deploy-container"
-    step_type: shell
-    config:
-      deployment_type: custom
-      command: |
-        echo "Deploying container..." && \
-        sshpass -p abc123 ssh -o StrictHostKeyChecking=no -p 2222 user@localhost "
-          docker rm -f rustci || true &&
-          docker run -d --name rustci -p 8989:8000 \
-            -e MONGODB_URI='mongodb+srv://ritabrataroychowdhury2002:Physics676@cluster0.uyzku.mongodb.net/dqms?retryWrites=true&w=majority' \
-            -e MONGODB_DATABASE='dqms' \
-            -e JWT_SECRET='404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970' \
-            -e JWT_EXPIRED_IN='1d' \
-            -e JWT_SIGNUP_EXPIRED_IN='1h' \
-            -e JWT_REFRESH_EXPIRED_IN='7d' \
-            -e GITHUB_OAUTH_CLIENT_ID='Ov23li18bhj2ixmL6GlY' \
-            -e GITHUB_OAUTH_CLIENT_SECRET='329e1afc2c5009efca526b5e9ae8f3a52bc546bc' \
-            -e GITHUB_OAUTH_REDIRECT_URL='http://localhost:8989/api/sessions/oauth/github/callback' \
-            -e CLIENT_ORIGIN='http://localhost:3000' \
-            -e PORT=8000 \
-            -e RUST_ENV=development \
-            -e RUST_LOG=info \
-            rustci:latest
-        " && \
-        echo "Container deployed successfully"
-
-  - name: "verify-container"
-    step_type: shell
-    config:
-      deployment_type: custom
-      command: |
-        echo "Verifying container deployment..." && \
-        sshpass -p abc123 ssh -o StrictHostKeyChecking=no -p 2222 user@localhost "
-          docker ps | grep rustci &&
-          echo 'Container is running successfully' &&
-          sleep 5 &&
-          curl -f http://localhost:8989/api/healthchecker || echo 'Health check endpoint not available yet'
-        "
-
+  - name: "Build and Deploy"
+    steps:
+      - name: "fetch-and-build"
+        step_type: shell
+        config:
+          command: |
+            echo "🌀 Cloning RustCI repo..."
+            git clone https://github.com/RitabrataRoychowdhury/RustCI.git rustci || { echo '❌ Git clone failed'; exit 1; }
+ 
+            echo "🐳 Building Docker image..."
+            cd rustci && docker build -t rustci:latest . || { echo '❌ Docker build failed'; exit 1; }
+ 
+            echo "✅ Docker image built successfully"
+ 
+      - name: "transfer-image"
+        step_type: shell
+        config:
+          command: |
+            echo "📦 Saving and transferring image to remote..."
+            docker save rustci:latest | sshpass -p "abc123" \
+              ssh -o StrictHostKeyChecking=no -p 2222 user@localhost "docker load" || { echo '❌ Docker image transfer failed'; exit 1; }
+            echo "✅ Image loaded on remote"
+ 
+      - name: "stop-existing-container"
+        step_type: shell
+        config:
+          command: |
+            echo "🧹 Stopping any existing container..."
+            sshpass -p "abc123" ssh -o StrictHostKeyChecking=no -p 2222 user@localhost \
+              "docker rm -f rustci || true"
+            echo "✅ Cleaned up old container"
+ 
+      - name: "deploy-container"
+        step_type: shell
+        config:
+          deployment_type: custom
+          command: |
+            echo "🚀 Running new container on remote..."
+            sshpass -p "abc123" ssh -o StrictHostKeyChecking=no -p 2222 user@localhost '
+              docker run -d --name rustci -p 8989:8000 \
+              -e MONGODB_URI="mongodb+srv://ritabrataroychowdhury2002:Physics676@cluster0.uyzku.mongodb.net/dqms?retryWrites=true&w=majority" \
+              -e MONGODB_DATABASE="dqms" \
+              -e JWT_SECRET="404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970" \
+              -e JWT_EXPIRED_IN="1d" \
+              -e JWT_SIGNUP_EXPIRED_IN="1h" \
+              -e JWT_REFRESH_EXPIRED_IN="7d" \
+              -e GITHUB_OAUTH_CLIENT_ID="Ov23li18bhj2ixmL6GlY" \
+              -e GITHUB_OAUTH_CLIENT_SECRET="329e1afc2c5009efca526b5e9ae8f3a52bc546bc" \
+              -e GITHUB_OAUTH_REDIRECT_URL="http://localhost:8000/api/sessions/oauth/github/callback" \
+              -e CLIENT_ORIGIN="http://localhost:3000" \
+              -e PORT=8000 \
+              -e RUST_ENV=development \
+              -e RUST_LOG=info \
+              -e ENABLE_METRICS=false \
+              rustci:latest
+            ' || { echo '❌ Container deployment failed'; exit 1; }
+            echo "✅ Container deployed"
+ 
+      - name: "verify-container"
+        step_type: shell
+        config:
+          deployment_type: custom
+          command: |
+            echo "🔍 Waiting for service to become healthy..."
+            sshpass -p "abc123" ssh -o StrictHostKeyChecking=no -p 2222 user@localhost '
+              for i in {1..10}; do
+                if curl -fs http://localhost:8989/api/healthchecker; then
+                  echo "✅ Health check passed"
+                  exit 0
+                fi
+                sleep 3
+              done
+              echo "❌ Health check failed"
+              exit 1
+            '
+ 
 environment: {}
-timeout: 3600
+timeout: 1800
 retry_count: 0
+ 
