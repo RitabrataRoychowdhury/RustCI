@@ -136,6 +136,9 @@ pub enum AppError {
 
     #[error("Operation timed out: {0}")]
     TimeoutError(String),
+
+    #[error("Invalid pipeline type: {0}")]
+    InvalidPipelineType(String),
 }
 
 // Add From implementations for common error types
@@ -239,6 +242,7 @@ impl IntoResponse for AppError {
             AppError::ConcurrencyError(msg) => (StatusCode::CONFLICT, msg),
             AppError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
             AppError::TimeoutError(msg) => (StatusCode::REQUEST_TIMEOUT, msg),
+            AppError::InvalidPipelineType(msg) => (StatusCode::BAD_REQUEST, msg),
         };
 
         let body = Json(json!({

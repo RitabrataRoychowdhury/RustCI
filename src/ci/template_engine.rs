@@ -1,5 +1,6 @@
-use crate::ci::{config::CIPipeline, workspace::WorkspaceContext};
+use crate::ci::{config::{CIPipeline, PipelineType, SimpleStep, PipelineJob, JobScript}, workspace::WorkspaceContext};
 use crate::error::Result;
+use std::collections::HashMap;
 use tracing::debug;
 
 /// Pipeline template engine for processing commands with workspace context
@@ -12,24 +13,181 @@ impl PipelineTemplateEngine {
         Self { workspace_context }
     }
     
-    /// Process entire pipeline to inject workspace paths
+    /// Process entire pipeline to inject workspace paths and handle different pipeline structures
     pub fn process_pipeline(&self, pipeline: &mut CIPipeline) -> Result<()> {
         debug!("🔧 Processing pipeline with workspace context injection");
         
-        for stage in &mut pipeline.stages {
-            for step in &mut stage.steps {
-                if let Some(command) = &step.config.command {
-                    let processed_command = self.process_command(command)?;
-                    step.config.command = Some(processed_command);
-                    debug!("🔄 Processed command for step '{}': {}", step.name, step.config.command.as_ref().unwrap());
+        let pipeline_type = pipeline.get_pipeline_type();
+        
+        match pipeline_type {
+            PipelineType::Minimal => {
+                // For minimal pipelines, process repo URL if present
+                if let Some(repo) = &pipeline.repo {
+                    let processed_repo = self.process_command(repo)?;
+                    pipeline.repo = Some(processed_repo);
+                    debug!("🔄 Processed repo URL: {}", pipeline.repo.as_ref().unwrap());
                 }
-                if let Some(script) = &step.config.script {
-                    let processed_script = self.process_command(script)?;
-                    step.config.script = Some(processed_script);
-                    debug!("🔄 Processed script for step '{}': {}", step.name, step.config.script.as_ref().unwrap());
+            }
+            PipelineType::Simple => {
+                // Process simple steps
+                if let Some(steps) = &mut pipeline.steps {
+                    for (i, step) in steps.iter_mut().enumerate() {
+                        match step {
+                            SimpleStep::Command(cmd) => {
+                                let processed_cmd = self.process_command(cmd)?;
+                                *cmd = processed_cmd;
+                                debug!("🔄 Processed simple command {}: {}", i, cmd);
+                            }
+                            SimpleStep::Detailed { run, .. } => {
+                                let processed_run = self.process_command(run)?;
+                                *run = processed_run;
+                                debug!("🔄 Processed simple detailed command {}: {}", i, run);
+                            }
+                        }
+                    }
+                }
+            }
+            PipelineType::Standard => {
+                // Process standard stages (existing logic)
+                for stage in &mut pipeline.stages {
+                    for step in &mut stage.steps {
+                        if let Some(command) = &step.config.command {
+                            let processed_command = self.process_command(command)?;
+                            step.config.command = Some(processed_command);
+                            debug!("🔄 Processed command for step '{}': {}", step.name, step.config.command.as_ref().unwrap());
+                        }
+                        if let Some(script) = &step.config.script {
+                            let processed_script = self.process_command(script)?;
+                            step.config.script = Some(processed_script);
+                            debug!("🔄 Processed script for step '{}': {}", step.name, step.config.script.as_ref().unwrap());
+                        }
+                    }
+                }
+            }
+            PipelineType::Advanced => {
+                // Process advanced jobs
+                if let Some(jobs) = &mut pipeline.jobs {
+                    for (job_name, job) in jobs.iter_mut() {
+                        match job {
+                            PipelineJob::Simple(script) => {
+                                match script {
+                                    JobScript::Single(cmd) => {
+                                        let processed_cmd = self.process_command(cmd)?;
+                                        *cmd = processed_cmd;
+                                        debug!("🔄 Processed job '{}' single script: {}", job_name, cmd);
+                                    }
+                                    JobScript::Multiple(cmds) => {
+                                        for (i, cmd) in cmds.iter_mut().enumerate() {
+                                            let processed_cmd = self.process_command(cmd)?;
+                                            *cmd = processed_cmd;
+                                            debug!("🔄 Processed job '{}' script {}: {}", job_name, i, cmd);
+                                        }
+                                    }
+                                }
+                            }
+                            PipelineJob::Detailed { script, .. } => {
+                                match script {
+                                    JobScript::Single(cmd) => {
+                                        let processed_cmd = self.process_command(cmd)?;
+                                        *cmd = processed_cmd;
+                                        debug!("🔄 Processed detailed job '{}' single script: {}", job_name, cmd);
+                                    }
+                                    JobScript::Multiple(cmds) => {
+                                        for (i, cmd) in cmds.iter_mut().enumerate() {
+                                            let processed_cmd = self.process_command(cmd)?;
+                                            *cmd = processed_cmd;
+                                            debug!("🔄 Processed detailed job '{}' script {}: {}", job_name, i, cmd);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Also process standard stages if present
+                for stage in &mut pipeline.stages {
+                    for step in &mut stage.steps {
+                        if let Some(command) = &step.config.command {
+                            let processed_command = self.process_command(command)?;
+                            step.config.command = Some(processed_command);
+                            debug!("🔄 Processed command for step '{}': {}", step.name, step.config.command.as_ref().unwrap());
+                        }
+                        if let Some(script) = &step.config.script {
+                            let processed_script = self.process_command(script)?;
+                            step.config.script = Some(processed_script);
+                            debug!("🔄 Processed script for step '{}': {}", step.name, step.config.script.as_ref().unwrap());
+                        }
+                    }
                 }
             }
         }
+        
+        Ok(())
+    }
+    
+    /// Process pipeline with variable substitution
+    pub fn process_pipeline_with_variables(&self, pipeline: &mut CIPipeline, variables: &HashMap<String, String>) -> Result<()> {
+        debug!("🔧 Processing pipeline with variable substitution");
+        
+        // First apply workspace context
+        self.process_pipeline(pipeline)?;
+        
+        // Then apply variable substitution
+        let pipeline_type = pipeline.get_pipeline_type();
+        
+        match pipeline_type {
+            PipelineType::Simple => {
+                if let Some(steps) = &mut pipeline.steps {
+                    for step in steps.iter_mut() {
+                        match step {
+                            SimpleStep::Command(cmd) => {
+                                *cmd = self.substitute_variables(cmd, variables);
+                            }
+                            SimpleStep::Detailed { run, .. } => {
+                                *run = self.substitute_variables(run, variables);
+                            }
+                        }
+                    }
+                }
+            }
+            PipelineType::Advanced => {
+                if let Some(jobs) = &mut pipeline.jobs {
+                    for (_, job) in jobs.iter_mut() {
+                        match job {
+                            PipelineJob::Simple(script) => {
+                                match script {
+                                    JobScript::Single(cmd) => {
+                                        *cmd = self.substitute_variables(cmd, variables);
+                                    }
+                                    JobScript::Multiple(cmds) => {
+                                        for cmd in cmds.iter_mut() {
+                                            *cmd = self.substitute_variables(cmd, variables);
+                                        }
+                                    }
+                                }
+                            }
+                            PipelineJob::Detailed { script, .. } => {
+                                match script {
+                                    JobScript::Single(cmd) => {
+                                        *cmd = self.substitute_variables(cmd, variables);
+                                    }
+                                    JobScript::Multiple(cmds) => {
+                                        for cmd in cmds.iter_mut() {
+                                            *cmd = self.substitute_variables(cmd, variables);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                // For minimal and standard, variables are handled at execution time
+            }
+        }
+        
         Ok(())
     }
     
@@ -105,6 +263,23 @@ impl PipelineTemplateEngine {
         }
         command.to_string()
     }
+    
+    /// Substitute variables in command string
+    fn substitute_variables(&self, command: &str, variables: &HashMap<String, String>) -> String {
+        let mut result = command.to_string();
+        
+        for (key, value) in variables {
+            let placeholder = format!("${{{}}}", key);
+            result = result.replace(&placeholder, value);
+            
+            // Also handle $VAR format (without braces)
+            let simple_placeholder = format!("${}", key);
+            result = result.replace(&simple_placeholder, value);
+        }
+        
+        debug!("🔄 Variable substitution: '{}' -> '{}'", command, result);
+        result
+    }
 }
 
 #[cfg(test)]
@@ -165,5 +340,51 @@ mod tests {
         
         assert!(processed.contains("/tmp/test-workspace/source"));
         assert!(processed.contains("/tmp/test-workspace/build"));
+    }
+
+    #[test]
+    fn test_variable_substitution() {
+        let context = create_test_workspace_context();
+        let engine = PipelineTemplateEngine::new(context);
+        
+        let mut variables = HashMap::new();
+        variables.insert("RUST_VERSION".to_string(), "1.70".to_string());
+        variables.insert("BUILD_TYPE".to_string(), "release".to_string());
+        
+        let command = "cargo build --${BUILD_TYPE} --rust-version ${RUST_VERSION}";
+        let result = engine.substitute_variables(command, &variables);
+        
+        assert_eq!(result, "cargo build --release --rust-version 1.70");
+    }
+
+    #[test]
+    fn test_simple_pipeline_processing() {
+        use crate::ci::config::{CIPipeline, PipelineType, SimpleStep};
+        
+        let context = create_test_workspace_context();
+        let engine = PipelineTemplateEngine::new(context);
+        
+        let mut pipeline = CIPipeline::new("test".to_string());
+        pipeline.pipeline_type = Some(PipelineType::Simple);
+        pipeline.steps = Some(vec![
+            SimpleStep::Command("echo ${SOURCE_DIR}".to_string()),
+            SimpleStep::Detailed {
+                run: "ls ${BUILD_DIR}".to_string(),
+                name: Some("list".to_string()),
+                working_directory: None,
+            },
+        ]);
+        
+        let result = engine.process_pipeline(&mut pipeline);
+        assert!(result.is_ok());
+        
+        if let Some(steps) = &pipeline.steps {
+            match &steps[0] {
+                SimpleStep::Command(cmd) => {
+                    assert!(cmd.contains("/tmp/test-workspace/source"));
+                }
+                _ => panic!("Expected command step"),
+            }
+        }
     }
 }

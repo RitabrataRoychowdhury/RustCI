@@ -1,0 +1,89 @@
+# Simple Pipeline Example
+# GitHub Actions style - linear steps execution
+# Perfect for straightforward CI/CD workflows
+
+name: "Simple Linear Pipeline"
+description: "Simple pipeline with linear step execution"
+type: simple
+
+# Repository information
+repo: https://github.com/user/my-rust-app.git
+branch: main
+
+# Linear steps - executed sequentially
+steps:
+  - run: "echo 'Starting build process...'"
+    name: "Initialize"
+  
+  - run: "cargo fmt --check"
+    name: "Format Check"
+  
+  - run: "cargo clippy -- -D warnings"
+    name: "Lint Check"
+  
+  - run: "cargo test"
+    name: "Run Tests"
+  
+  - run: "cargo build --release"
+    name: "Build Release"
+  
+  - run: |
+      docker build -t my-rust-app:${BUILD_ID:-latest} .
+      docker tag my-rust-app:${BUILD_ID:-latest} my-rust-app:latest
+    name: "Build Docker Image"
+  
+  - run: |
+      if [ -n "${DOCKER_REGISTRY}" ]; then
+        docker push my-rust-app:${BUILD_ID:-latest}
+        docker push my-rust-app:latest
+      fi
+    name: "Push to Registry"
+  
+  - run: |
+      docker run --rm -d --name my-app-test -p 8080:8080 my-rust-app:latest
+      sleep 10
+      curl -f http://localhost:8080/health || exit 1
+      docker stop my-app-test
+    name: "Health Check"
+
+# Triggers
+triggers:
+  - trigger_type: manual
+    config: {}
+  - trigger_type: git_push
+    config:
+      repository: "user/my-rust-app"
+      branch_patterns: ["main", "develop"]
+  - trigger_type: pull_request
+    config:
+      repository: "user/my-rust-app"
+      events: ["opened", "synchronize"]
+
+# Environment variables
+environment:
+  RUST_BACKTRACE: "1"
+  CARGO_TERM_COLOR: "always"
+  BUILD_ID: "${GITHUB_SHA:-local}"
+  DOCKER_REGISTRY: "registry.example.com"
+
+# Global settings
+timeout: 2400  # 40 minutes
+retry_count: 2
+
+# Notifications
+notifications:
+  on_success:
+    - target_type: github
+      config:
+        github_status: true
+    - target_type: slack
+      config:
+        slack_channel: "#ci-cd"
+        slack_token: "${SLACK_TOKEN}"
+  on_failure:
+    - target_type: email
+      config:
+        email: "dev-team@example.com"
+    - target_type: github
+      config:
+        github_status: true

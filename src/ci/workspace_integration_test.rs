@@ -22,44 +22,36 @@ async fn test_git_clone_workspace_fix() {
         .unwrap();
     
     // Create a test pipeline with the problematic Git clone command
-    let mut pipeline = CIPipeline {
-        mongo_id: None,
-        id: Some(Uuid::new_v4()),
-        name: "test-git-clone".to_string(),
-        description: Some("Test Git clone fix".to_string()),
-        triggers: vec![],
-        stages: vec![Stage {
-            name: "fetch-code".to_string(),
-            condition: None,
-            parallel: Some(false),
-            timeout: Some(600),
-            retry_count: Some(0),
-            environment: None,
-            steps: vec![Step {
-                name: "fetch-code".to_string(),
-                step_type: StepType::Shell,
-                config: StepConfig {
-                    command: Some(
-                        "rm -rf /tmp/rustci && \
-                        git clone https://github.com/RitabrataRoychowdhury/RustCI.git /tmp/rustci && \
-                        cd /tmp/rustci && \
-                        echo \"Repository cloned successfully\" && \
-                        ls -la".to_string()
-                    ),
-                    ..Default::default()
-                },
-                condition: None,
-                continue_on_error: Some(false),
-                timeout: Some(300),
-            }],
-        }],
-        environment: HashMap::new(),
-        timeout: Some(3600),
+    let mut pipeline = CIPipeline::new("test-git-clone".to_string());
+    pipeline.description = Some("Test Git clone fix".to_string());
+    pipeline.stages = vec![Stage {
+        name: "fetch-code".to_string(),
+        condition: None,
+        parallel: Some(false),
+        timeout: Some(600),
         retry_count: Some(0),
-        notifications: None,
-        created_at: Some(chrono::Utc::now()),
-        updated_at: Some(chrono::Utc::now()),
-    };
+        environment: None,
+        steps: vec![Step {
+            name: "fetch-code".to_string(),
+            step_type: StepType::Shell,
+            config: StepConfig {
+                command: Some(
+                    "rm -rf /tmp/rustci && \
+                    git clone https://github.com/RitabrataRoychowdhury/RustCI.git /tmp/rustci && \
+                    cd /tmp/rustci && \
+                    echo \"Repository cloned successfully\" && \
+                    ls -la".to_string()
+                ),
+                ..Default::default()
+            },
+            condition: None,
+            continue_on_error: Some(false),
+            timeout: Some(300),
+        }],
+    }];
+    
+    pipeline.timeout = Some(3600);
+    pipeline.retry_count = Some(0);
     
     // Process pipeline with template engine
     let template_engine = PipelineTemplateEngine::new(workspace_context.clone());
@@ -114,43 +106,35 @@ async fn test_docker_build_workspace_fix() {
         .unwrap();
     
     // Create a test pipeline with Docker build command
-    let mut pipeline = CIPipeline {
-        mongo_id: None,
-        id: Some(Uuid::new_v4()),
-        name: "test-docker-build".to_string(),
-        description: Some("Test Docker build fix".to_string()),
-        triggers: vec![],
-        stages: vec![Stage {
-            name: "build-docker-image".to_string(),
-            condition: None,
-            parallel: Some(false),
-            timeout: Some(600),
-            retry_count: Some(0),
-            environment: None,
-            steps: vec![Step {
-                name: "build-docker-image".to_string(),
-                step_type: StepType::Shell,
-                config: StepConfig {
-                    command: Some(
-                        "cd /tmp/rustci && \
-                        echo \"Building Docker image...\" && \
-                        docker build -t rustci:latest . && \
-                        echo \"Docker image built successfully\"".to_string()
-                    ),
-                    ..Default::default()
-                },
-                condition: None,
-                continue_on_error: Some(false),
-                timeout: Some(300),
-            }],
-        }],
-        environment: HashMap::new(),
-        timeout: Some(3600),
+    let mut pipeline = CIPipeline::new("test-docker-build".to_string());
+    pipeline.description = Some("Test Docker build fix".to_string());
+    pipeline.stages = vec![Stage {
+        name: "build-docker-image".to_string(),
+        condition: None,
+        parallel: Some(false),
+        timeout: Some(600),
         retry_count: Some(0),
-        notifications: None,
-        created_at: Some(chrono::Utc::now()),
-        updated_at: Some(chrono::Utc::now()),
-    };
+        environment: None,
+        steps: vec![Step {
+            name: "build-docker-image".to_string(),
+            step_type: StepType::Shell,
+            config: StepConfig {
+                command: Some(
+                    "cd /tmp/rustci && \
+                    echo \"Building Docker image...\" && \
+                    docker build -t rustci:latest . && \
+                    echo \"Docker image built successfully\"".to_string()
+                ),
+                ..Default::default()
+            },
+            condition: None,
+            continue_on_error: Some(false),
+            timeout: Some(300),
+        }],
+    }];
+    
+    pipeline.timeout = Some(3600);
+    pipeline.retry_count = Some(0);
     
     // Process pipeline with template engine
     let template_engine = PipelineTemplateEngine::new(workspace_context.clone());

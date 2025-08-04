@@ -520,7 +520,7 @@ impl ConfigValidator for ObservabilityConfigValidator {
     }
 }
 
-/// CI configuration validator
+/// CI configuration validator with tiered pipeline support
 pub struct CIConfigValidator;
 
 #[async_trait::async_trait]
@@ -536,6 +536,434 @@ impl ConfigValidator for CIConfigValidator {
 
     fn description(&self) -> &'static str {
         "Validates CI configuration including pipelines and executors"
+    }
+}
+
+/// Tiered pipeline validator for multi-tier pipeline system
+pub struct TieredPipelineValidator;
+
+impl TieredPipelineValidator {
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Validate pipeline based on its detected or specified type
+    pub fn validate(&self, pipeline: &crate::ci::config::CIPipeline) -> Result<ValidationReport> {
+        let pipeline_type = pipeline.get_pipeline_type();
+        
+        match pipeline_type {
+            crate::ci::config::PipelineType::Minimal => self.validate_minimal(pipeline),
+            crate::ci::config::PipelineType::Simple => self.validate_simple(pipeline),
+            crate::ci::config::PipelineType::Standard => self.validate_standard(pipeline),
+            crate::ci::config::PipelineType::Advanced => self.validate_advanced(pipeline),
+        }
+    }
+
+    /// Validate minimal pipeline - requires only repo and server fields
+    fn validate_minimal(&self, pipeline: &crate::ci::config::CIPipeline) -> Result<ValidationReport> {
+        let mut report = ValidationReport::new();
+
+        // Check required fields for minimal pipeline
+        if pipeline.repo.is_none() {
+            report.add_error(
+                "repo".to_string(),
+                "Minimal pipeline requires 'repo' field".to_string(),
+            );
+        } else {
+            report.add_success("repo".to_string());
+        }
+
+        if pipeline.server.is_none() {
+            report.add_error(
+                "server".to_string(),
+                "Minimal pipeline requires 'server' field".to_string(),
+            );
+        } else {
+            // Validate server configuration
+            match pipeline.server.as_ref().unwrap() {
+                crate::ci::config::ServerConfig::Simple(server_str) => {
+                    if server_str.is_empty() {
+                        report.add_error(
+                            "server".to_string(),
+                            "Server configuration cannot be empty".to_string(),
+                        );
+                    } else {
+                        report.add_success("server".to_string());
+                    }
+                }
+                crate::ci::config::ServerConfig::Detailed { host, .. } => {
+                    if host.is_empty() {
+                        report.add_error(
+                            "server".to_string(),
+                            "Server host cannot be empty".to_string(),
+                        );
+                    } else {
+                        report.add_success("server".to_string());
+                    }
+                }
+            }
+        }
+
+        // Optional branch validation
+        if let Some(branch) = &pipeline.branch {
+            if branch.is_empty() {
+                report.add_warning(
+                    "branch".to_string(),
+                    "Branch field is empty, will default to 'main'".to_string(),
+                );
+            }
+        }
+
+        // Warn about unused fields in minimal pipeline
+        if pipeline.steps.is_some() {
+            report.add_warning(
+                "steps".to_string(),
+                "Steps field ignored in minimal pipeline".to_string(),
+            );
+        }
+        if pipeline.jobs.is_some() {
+            report.add_warning(
+                "jobs".to_string(),
+                "Jobs field ignored in minimal pipeline".to_string(),
+            );
+        }
+        if !pipeline.stages.is_empty() {
+            report.add_warning(
+                "stages".to_string(),
+                "Stages field ignored in minimal pipeline".to_string(),
+            );
+        }
+
+        Ok(report)
+    }
+
+    /// Validate simple pipeline - requires non-empty steps array
+    fn validate_simple(&self, pipeline: &crate::ci::config::CIPipeline) -> Result<ValidationReport> {
+        let mut report = ValidationReport::new();
+
+        // Check required steps field
+        if let Some(steps) = &pipeline.steps {
+            if steps.is_empty() {
+                report.add_error(
+                    "steps".to_string(),
+                    "Simple pipeline must have at least one step".to_string(),
+                );
+            } else {
+                // Validate each step
+                for (i, step) in steps.iter().enumerate() {
+                    match step {
+                        crate::ci::config::SimpleStep::Command(cmd) => {
+                            if cmd.is_empty() {
+                                report.add_error(
+                                    format!("step_{}", i),
+                                    "Step command cannot be empty".to_string(),
+                                );
+                            }
+                        }
+                        crate::ci::config::SimpleStep::Detailed { run, .. } => {
+                            if run.is_empty() {
+                                report.add_error(
+                                    format!("step_{}", i),
+                                    "Step run command cannot be empty".to_string(),
+                                );
+                            }
+                        }
+                    }
+                }
+                report.add_success("steps".to_string());
+            }
+        } else {
+            report.add_error(
+                "steps".to_string(),
+                "Simple pipeline requires 'steps' field".to_string(),
+            );
+        }
+
+        // Warn about unused fields in simple pipeline
+        if pipeline.jobs.is_some() {
+            report.add_warning(
+                "jobs".to_string(),
+                "Jobs field ignored in simple pipeline".to_string(),
+            );
+        }
+        if !pipeline.stages.is_empty() {
+            report.add_warning(
+                "stages".to_string(),
+                "Stages field ignored in simple pipeline".to_string(),
+            );
+        }
+        if pipeline.matrix.is_some() {
+            report.add_warning(
+                "matrix".to_string(),
+                "Matrix field ignored in simple pipeline".to_string(),
+            );
+        }
+
+        Ok(report)
+    }
+
+    /// Validate standard pipeline - requires stages and jobs mappings
+    fn validate_standard(&self, pipeline: &crate::ci::config::CIPipeline) -> Result<ValidationReport> {
+        let mut report = ValidationReport::new();
+
+        // Check pipeline name
+        if pipeline.name.is_empty() {
+            report.add_error(
+                "name".to_string(),
+                "Pipeline name cannot be empty".to_string(),
+            );
+        } else {
+            report.add_success("name".to_string());
+        }
+
+        // Check stages
+        if pipeline.stages.is_empty() {
+            report.add_error(
+                "stages".to_string(),
+                "Standard pipeline must have at least one stage".to_string(),
+            );
+        } else {
+            // Validate each stage
+            for (i, stage) in pipeline.stages.iter().enumerate() {
+                if stage.name.is_empty() {
+                    report.add_error(
+                        format!("stage_{}", i),
+                        "Stage name cannot be empty".to_string(),
+                    );
+                }
+
+                if stage.steps.is_empty() {
+                    report.add_error(
+                        format!("stage_{}_steps", stage.name),
+                        format!("Stage '{}' must have at least one step", stage.name),
+                    );
+                }
+
+                // Validate steps within stage
+                for (j, step) in stage.steps.iter().enumerate() {
+                    if step.name.is_empty() {
+                        report.add_error(
+                            format!("stage_{}_step_{}", stage.name, j),
+                            format!("Step {} in stage '{}' name cannot be empty", j, stage.name),
+                        );
+                    }
+                }
+            }
+            report.add_success("stages".to_string());
+        }
+
+        // Check jobs mapping if present
+        if let Some(jobs) = &pipeline.jobs {
+            if jobs.is_empty() {
+                report.add_warning(
+                    "jobs".to_string(),
+                    "Jobs mapping is empty".to_string(),
+                );
+            } else {
+                // Validate job-stage relationships
+                let stage_names: std::collections::HashSet<_> = 
+                    pipeline.stages.iter().map(|s| &s.name).collect();
+
+                for (job_name, job) in jobs {
+                    match job {
+                        crate::ci::config::PipelineJob::Simple(_) => {
+                            // Simple jobs don't specify stages, that's ok
+                        }
+                        crate::ci::config::PipelineJob::Detailed { stage, script, .. } => {
+                            if !stage_names.contains(stage) {
+                                report.add_error(
+                                    format!("job_{}_stage", job_name),
+                                    format!("Job '{}' references non-existent stage '{}'", job_name, stage),
+                                );
+                            }
+                            
+                            // Validate script
+                            match script {
+                                crate::ci::config::JobScript::Single(cmd) => {
+                                    if cmd.is_empty() {
+                                        report.add_error(
+                                            format!("job_{}_script", job_name),
+                                            format!("Job '{}' script cannot be empty", job_name),
+                                        );
+                                    }
+                                }
+                                crate::ci::config::JobScript::Multiple(cmds) => {
+                                    if cmds.is_empty() {
+                                        report.add_error(
+                                            format!("job_{}_script", job_name),
+                                            format!("Job '{}' script array cannot be empty", job_name),
+                                        );
+                                    }
+                                    for (i, cmd) in cmds.iter().enumerate() {
+                                        if cmd.is_empty() {
+                                            report.add_error(
+                                                format!("job_{}_script_{}", job_name, i),
+                                                format!("Job '{}' script command {} cannot be empty", job_name, i),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                report.add_success("jobs".to_string());
+            }
+        }
+
+        // Warn about advanced features in standard pipeline
+        if pipeline.matrix.is_some() {
+            report.add_warning(
+                "matrix".to_string(),
+                "Matrix configuration may not be fully supported in standard pipeline".to_string(),
+            );
+        }
+        if pipeline.variables.is_some() {
+            report.add_warning(
+                "variables".to_string(),
+                "Variables may not be fully supported in standard pipeline".to_string(),
+            );
+        }
+
+        Ok(report)
+    }
+
+    /// Validate advanced pipeline - accepts all extended keys
+    fn validate_advanced(&self, pipeline: &crate::ci::config::CIPipeline) -> Result<ValidationReport> {
+        let mut report = ValidationReport::new();
+
+        // Check pipeline name
+        if pipeline.name.is_empty() {
+            report.add_error(
+                "name".to_string(),
+                "Pipeline name cannot be empty".to_string(),
+            );
+        } else {
+            report.add_success("name".to_string());
+        }
+
+        // Validate jobs if present
+        if let Some(jobs) = &pipeline.jobs {
+            if jobs.is_empty() {
+                report.add_error(
+                    "jobs".to_string(),
+                    "Advanced pipeline with jobs must have at least one job".to_string(),
+                );
+            } else {
+                // Validate each job
+                for (job_name, job) in jobs {
+                    match job {
+                        crate::ci::config::PipelineJob::Simple(script) => {
+                            match script {
+                                crate::ci::config::JobScript::Single(cmd) => {
+                                    if cmd.is_empty() {
+                                        report.add_error(
+                                            format!("job_{}", job_name),
+                                            format!("Job '{}' script cannot be empty", job_name),
+                                        );
+                                    }
+                                }
+                                crate::ci::config::JobScript::Multiple(cmds) => {
+                                    if cmds.is_empty() {
+                                        report.add_error(
+                                            format!("job_{}", job_name),
+                                            format!("Job '{}' script array cannot be empty", job_name),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        crate::ci::config::PipelineJob::Detailed { script, .. } => {
+                            match script {
+                                crate::ci::config::JobScript::Single(cmd) => {
+                                    if cmd.is_empty() {
+                                        report.add_error(
+                                            format!("job_{}", job_name),
+                                            format!("Job '{}' script cannot be empty", job_name),
+                                        );
+                                    }
+                                }
+                                crate::ci::config::JobScript::Multiple(cmds) => {
+                                    if cmds.is_empty() {
+                                        report.add_error(
+                                            format!("job_{}", job_name),
+                                            format!("Job '{}' script array cannot be empty", job_name),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                report.add_success("jobs".to_string());
+            }
+        }
+
+        // Validate matrix configuration if present
+        if let Some(matrix) = &pipeline.matrix {
+            if matrix.variables.is_empty() {
+                report.add_warning(
+                    "matrix".to_string(),
+                    "Matrix configuration is empty".to_string(),
+                );
+            } else {
+                for (var_name, values) in &matrix.variables {
+                    if values.is_empty() {
+                        report.add_warning(
+                            format!("matrix_{}", var_name),
+                            format!("Matrix variable '{}' has no values", var_name),
+                        );
+                    }
+                }
+                report.add_success("matrix".to_string());
+            }
+        }
+
+        // Validate cache configuration if present
+        if let Some(cache) = &pipeline.cache {
+            if cache.paths.is_empty() {
+                report.add_warning(
+                    "cache".to_string(),
+                    "Cache configuration has no paths".to_string(),
+                );
+            } else {
+                report.add_success("cache".to_string());
+            }
+        }
+
+        // Validate include configuration if present
+        if let Some(includes) = &pipeline.include {
+            if includes.is_empty() {
+                report.add_warning(
+                    "include".to_string(),
+                    "Include configuration is empty".to_string(),
+                );
+            } else {
+                for (i, include) in includes.iter().enumerate() {
+                    if include.local.is_none() && include.remote.is_none() && include.template.is_none() {
+                        report.add_error(
+                            format!("include_{}", i),
+                            "Include configuration must specify local, remote, or template".to_string(),
+                        );
+                    }
+                }
+                report.add_success("include".to_string());
+            }
+        }
+
+        // Validate variables if present
+        if let Some(variables) = &pipeline.variables {
+            if variables.is_empty() {
+                report.add_warning(
+                    "variables".to_string(),
+                    "Variables configuration is empty".to_string(),
+                );
+            } else {
+                report.add_success("variables".to_string());
+            }
+        }
+
+        Ok(report)
     }
 }
 
@@ -771,5 +1199,136 @@ mod tests {
         // Should have error for experimental features in production
         assert!(!report.is_valid());
         assert!(report.errors.contains_key("experimental_in_production"));
+    }
+
+    #[test]
+    fn test_tiered_pipeline_validator_minimal() {
+        let validator = TieredPipelineValidator::new();
+        
+        // Test valid minimal pipeline
+        let mut pipeline = crate::ci::config::CIPipeline::new("test".to_string());
+        pipeline.pipeline_type = Some(crate::ci::config::PipelineType::Minimal);
+        pipeline.repo = Some("https://github.com/user/repo.git".to_string());
+        pipeline.server = Some(crate::ci::config::ServerConfig::Simple("user@host".to_string()));
+        
+        let report = validator.validate(&pipeline).unwrap();
+        assert!(report.is_valid());
+        assert!(report.successes.contains(&"repo".to_string()));
+        assert!(report.successes.contains(&"server".to_string()));
+
+        // Test minimal pipeline missing server
+        pipeline.server = None;
+        let report = validator.validate(&pipeline).unwrap();
+        assert!(!report.is_valid());
+        assert!(report.errors.contains_key("server"));
+    }
+
+    #[test]
+    fn test_tiered_pipeline_validator_simple() {
+        let validator = TieredPipelineValidator::new();
+        
+        // Test valid simple pipeline
+        let mut pipeline = crate::ci::config::CIPipeline::new("test".to_string());
+        pipeline.pipeline_type = Some(crate::ci::config::PipelineType::Simple);
+        pipeline.steps = Some(vec![
+            crate::ci::config::SimpleStep::Command("cargo build".to_string()),
+            crate::ci::config::SimpleStep::Detailed {
+                run: "cargo test".to_string(),
+                name: Some("test".to_string()),
+                working_directory: None,
+            }
+        ]);
+        
+        let report = validator.validate(&pipeline).unwrap();
+        assert!(report.is_valid());
+        assert!(report.successes.contains(&"steps".to_string()));
+
+        // Test simple pipeline with empty steps
+        pipeline.steps = Some(vec![]);
+        let report = validator.validate(&pipeline).unwrap();
+        assert!(!report.is_valid());
+        assert!(report.errors.contains_key("steps"));
+    }
+
+    #[test]
+    fn test_tiered_pipeline_validator_standard() {
+        let validator = TieredPipelineValidator::new();
+        
+        // Test valid standard pipeline
+        let mut pipeline = crate::ci::config::CIPipeline::new("test".to_string());
+        pipeline.pipeline_type = Some(crate::ci::config::PipelineType::Standard);
+        pipeline.stages = vec![
+            crate::ci::config::Stage {
+                name: "build".to_string(),
+                condition: None,
+                parallel: None,
+                steps: vec![
+                    crate::ci::config::Step {
+                        name: "build step".to_string(),
+                        step_type: crate::ci::config::StepType::Shell,
+                        config: crate::ci::config::StepConfig {
+                            command: Some("cargo build".to_string()),
+                            ..Default::default()
+                        },
+                        condition: None,
+                        continue_on_error: None,
+                        timeout: None,
+                    }
+                ],
+                environment: None,
+                timeout: None,
+                retry_count: None,
+            }
+        ];
+        
+        let report = validator.validate(&pipeline).unwrap();
+        assert!(report.is_valid());
+        assert!(report.successes.contains(&"name".to_string()));
+        assert!(report.successes.contains(&"stages".to_string()));
+
+        // Test standard pipeline with empty stages
+        pipeline.stages = vec![];
+        let report = validator.validate(&pipeline).unwrap();
+        assert!(!report.is_valid());
+        assert!(report.errors.contains_key("stages"));
+    }
+
+    #[test]
+    fn test_tiered_pipeline_validator_advanced() {
+        let validator = TieredPipelineValidator::new();
+        
+        // Test valid advanced pipeline
+        let mut pipeline = crate::ci::config::CIPipeline::new("test".to_string());
+        pipeline.pipeline_type = Some(crate::ci::config::PipelineType::Advanced);
+        
+        let mut jobs = HashMap::new();
+        jobs.insert(
+            "build".to_string(),
+            crate::ci::config::PipelineJob::Simple(
+                crate::ci::config::JobScript::Single("cargo build".to_string())
+            )
+        );
+        pipeline.jobs = Some(jobs);
+        
+        pipeline.variables = Some({
+            let mut vars = HashMap::new();
+            vars.insert("RUST_VERSION".to_string(), "1.70".to_string());
+            vars
+        });
+        
+        pipeline.matrix = Some(crate::ci::config::MatrixConfig {
+            variables: {
+                let mut matrix_vars = HashMap::new();
+                matrix_vars.insert("rust".to_string(), vec!["1.70".to_string(), "1.71".to_string()]);
+                matrix_vars
+            }
+        });
+        
+        let report = validator.validate(&pipeline).unwrap();
+        assert!(report.is_valid());
+        assert!(report.successes.contains(&"name".to_string()));
+        assert!(report.successes.contains(&"jobs".to_string()));
+        assert!(report.successes.contains(&"variables".to_string()));
+        assert!(report.successes.contains(&"matrix".to_string()));
     }
 }

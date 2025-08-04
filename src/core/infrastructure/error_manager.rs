@@ -374,6 +374,7 @@ impl ErrorManager {
             AppError::ConcurrencyError(_) => "concurrency_error".to_string(),
             AppError::NotImplemented(_) => "not_implemented".to_string(),
             AppError::RateLimitExceededSimple(_) => "rate_limit_exceeded".to_string(),
+            AppError::InvalidPipelineType(_) => "invalid_pipeline_type".to_string(),
         }
     }
 
@@ -418,6 +419,7 @@ impl ErrorManager {
             AppError::ConcurrencyError(_) => "CONCURRENCY_ERROR".to_string(),
             AppError::NotImplemented(_) => "NOT_IMPLEMENTED".to_string(),
             AppError::RateLimitExceededSimple(_) => "RATE_LIMIT_EXCEEDED".to_string(),
+            AppError::InvalidPipelineType(_) => "INVALID_PIPELINE_TYPE".to_string(),
         }
     }
 

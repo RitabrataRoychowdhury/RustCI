@@ -1,13 +1,33 @@
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::OpenApi;
 
-use crate::domain::entities::{
-    cluster::{ClusterNode, ClusterStatus},
-    runner::{Job, JobStatus, RunnerEntity, RunnerStatus, RunnerType},
+use crate::{
+    domain::entities::{
+        cluster::{ClusterNode, ClusterStatus},
+        runner::{Job, JobStatus, RunnerEntity, RunnerStatus, RunnerType},
+    },
+    ci::config::{
+        PipelineType, CIPipeline, ServerConfig, SimpleStep, MatrixConfig, 
+        CacheConfig, IncludeConfig, PipelineJob, JobScript
+    },
+    application::handlers::ci::{
+        CreatePipelineRequest, TriggerPipelineRequest, ExecutePipelineRequest,
+        PipelineResponse, PipelineStatus, ExecutionResponse, TriggerResponse
+    },
 };
 
 #[derive(OpenApi)]
 #[openapi(
+    paths(
+        crate::application::handlers::ci::create_pipeline,
+        crate::application::handlers::ci::create_pipeline_multipart,
+        crate::application::handlers::ci::list_pipelines,
+        crate::application::handlers::ci::get_pipeline,
+        crate::application::handlers::ci::get_pipeline_yaml,
+        crate::application::handlers::ci::trigger_pipeline,
+        crate::application::handlers::ci::get_execution,
+        crate::application::handlers::ci::list_executions,
+    ),
     components(
         schemas(
             // Domain entities
@@ -18,6 +38,26 @@ use crate::domain::entities::{
             RunnerStatus,
             Job,
             JobStatus,
+
+            // Pipeline types and configurations
+            PipelineType,
+            CIPipeline,
+            ServerConfig,
+            SimpleStep,
+            MatrixConfig,
+            CacheConfig,
+            IncludeConfig,
+            PipelineJob,
+            JobScript,
+
+            // API request/response types
+            CreatePipelineRequest,
+            TriggerPipelineRequest,
+            ExecutePipelineRequest,
+            PipelineResponse,
+            PipelineStatus,
+            ExecutionResponse,
+            TriggerResponse,
 
             // Common types
             crate::error::ApiError,

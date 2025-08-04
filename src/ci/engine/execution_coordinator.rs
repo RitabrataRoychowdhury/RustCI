@@ -131,24 +131,11 @@ impl ExecutionCoordinator {
         executor: Arc<crate::ci::executor::PipelineExecutor>,
         workspace_manager: Arc<crate::ci::workspace::WorkspaceManager>,
     ) -> Self {
-        use super::execution_strategies::{SequentialExecutionStrategy, ParallelExecutionStrategy};
-        
-        let mut strategy_factory = ExecutionStrategyFactory::new();
-        
-        // Register sequential strategy
-        let sequential_strategy = SequentialExecutionStrategy::new(
-            executor.clone(),
-            workspace_manager.clone(),
-        );
-        strategy_factory.register_strategy(Box::new(sequential_strategy));
-        
-        // Register parallel strategy
-        let parallel_strategy = ParallelExecutionStrategy::new(
+        // Use the multi-tier strategy factory that includes all pipeline types
+        let strategy_factory = ExecutionStrategyFactory::with_multi_tier_strategies(
             executor,
             workspace_manager,
-            4, // max parallel stages
         );
-        strategy_factory.register_strategy(Box::new(parallel_strategy));
         
         Self {
             strategy_factory: Arc::new(strategy_factory),
@@ -203,17 +190,38 @@ impl ExecutionCoordinator {
             .register_execution(execution_id, context.clone())
             .await?;
 
-        // Determine execution strategy based on pipeline configuration
-        let strategy_type = self.determine_execution_strategy(context);
-
+        // Get pipeline type and try to use specific strategy
+        let pipeline_type = context.pipeline.get_pipeline_type();
+        
         debug!(
             execution_id = %execution_id,
-            strategy_type = ?strategy_type,
-            "Selected execution strategy"
+            pipeline_type = ?pipeline_type,
+            "Detected pipeline type"
         );
 
-        // Get strategy from factory
-        let strategy = self.strategy_factory.create_strategy(strategy_type)?;
+        // Try to get strategy for specific pipeline type first
+        let strategy = match self.strategy_factory.create_strategy_for_pipeline_type(pipeline_type) {
+            Ok(strategy) => {
+                info!(
+                    execution_id = %execution_id,
+                    strategy_name = strategy.strategy_name(),
+                    "Using pipeline type-specific strategy"
+                );
+                strategy
+            }
+            Err(_) => {
+                // Fallback to traditional strategy selection
+                let strategy_type = self.determine_execution_strategy(context);
+                
+                debug!(
+                    execution_id = %execution_id,
+                    strategy_type = ?strategy_type,
+                    "Falling back to traditional strategy selection"
+                );
+                
+                self.strategy_factory.create_strategy(strategy_type)?
+            }
+        };
 
         // Execute pipeline with selected strategy
         let execution_result = strategy.execute(context).await;
@@ -309,25 +317,67 @@ impl ExecutionCoordinator {
 
     /// Determine the best execution strategy for a pipeline
     fn determine_execution_strategy(&self, context: &ExecutionContext) -> ExecutionStrategyType {
-        // Analyze pipeline configuration to determine best strategy
-        let has_parallel_stages = context
-            .pipeline
-            .stages
-            .iter()
-            .any(|stage| stage.parallel.unwrap_or(false));
+        // First, try to use the pipeline type to determine strategy
+        let pipeline_type = context.pipeline.get_pipeline_type();
+        
+        // Map pipeline types to execution strategy types
+        match pipeline_type {
+            crate::ci::config::PipelineType::Minimal => {
+                // Check if we have a Minimal strategy registered
+                if self.strategy_factory.available_strategies().iter()
+                    .any(|s| matches!(s, ExecutionStrategyType::Sequential)) {
+                    // For now, use Sequential as Minimal isn't in ExecutionStrategyType enum
+                    ExecutionStrategyType::Sequential
+                } else {
+                    ExecutionStrategyType::Sequential
+                }
+            }
+            crate::ci::config::PipelineType::Simple => {
+                // Use Sequential for simple linear execution
+                ExecutionStrategyType::Sequential
+            }
+            crate::ci::config::PipelineType::Standard => {
+                // Analyze if parallel execution would be beneficial
+                let has_parallel_stages = context
+                    .pipeline
+                    .stages
+                    .iter()
+                    .any(|stage| stage.parallel.unwrap_or(false));
 
-        let total_steps: usize = context
-            .pipeline
-            .stages
-            .iter()
-            .map(|stage| stage.steps.len())
-            .sum();
+                if has_parallel_stages {
+                    ExecutionStrategyType::Parallel
+                } else {
+                    ExecutionStrategyType::Sequential
+                }
+            }
+            crate::ci::config::PipelineType::Advanced => {
+                // Advanced pipelines can benefit from parallel execution
+                // Check if we have matrix configurations or multiple jobs
+                let has_matrix = context.pipeline.matrix.is_some() || 
+                    context.pipeline.jobs.as_ref().map_or(false, |jobs| {
+                        jobs.values().any(|job| match job {
+                            crate::ci::config::PipelineJob::Detailed { matrix, .. } => matrix.is_some(),
+                            _ => false,
+                        })
+                    });
 
-        // Strategy selection logic
-        if has_parallel_stages || total_steps > 10 {
-            ExecutionStrategyType::Parallel
-        } else {
-            ExecutionStrategyType::Sequential
+                if has_matrix {
+                    ExecutionStrategyType::Parallel
+                } else {
+                    // Fallback to analyzing stage structure
+                    let has_parallel_stages = context
+                        .pipeline
+                        .stages
+                        .iter()
+                        .any(|stage| stage.parallel.unwrap_or(false));
+
+                    if has_parallel_stages {
+                        ExecutionStrategyType::Parallel
+                    } else {
+                        ExecutionStrategyType::Sequential
+                    }
+                }
+            }
         }
     }
 
@@ -365,13 +415,9 @@ mod tests {
 
     fn create_test_context() -> ExecutionContext {
         // ✅ Build the test pipeline
-        let pipeline = CIPipeline {
-            mongo_id: None,
-            id: Some(Uuid::new_v4()),
-            name: "test-pipeline".to_string(),
-            description: Some("Test pipeline".to_string()),
-            triggers: vec![],
-            stages: vec![
+        let mut pipeline = CIPipeline::new("test-pipeline".to_string());
+        pipeline.description = Some("Test pipeline".to_string());
+        pipeline.stages = vec![
                 Stage {
                     name: "build".to_string(),
                     condition: None,
@@ -393,14 +439,10 @@ mod tests {
                     retry_count: Some(0),
                     environment: None,
                 }
-            ],
-            environment: HashMap::new(),
-            timeout: Some(3600),           // 1-hour pipeline timeout
-            retry_count: Some(0),
-            notifications: None,
-            created_at: Some(Utc::now()),
-            updated_at: Some(Utc::now()),
-        };
+            ];
+        
+        pipeline.timeout = Some(3600);           // 1-hour pipeline timeout
+        pipeline.retry_count = Some(0);
     
         // ✅ Build the ExecutionContext
         ExecutionContext {

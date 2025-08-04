@@ -29,68 +29,61 @@ mod integration_tests {
     }
 
     fn create_test_pipeline() -> CIPipeline {
-        CIPipeline {
-            mongo_id: None,
-            id: Some(Uuid::new_v4()),
-            name: "Test Pipeline".to_string(),
-            description: Some("Integration test pipeline".to_string()),
-            triggers: vec![Trigger {
-                trigger_type: TriggerType::Manual,
-                config: TriggerConfig {
-                    webhook_url: None,
+        let mut pipeline = CIPipeline::new("Test Pipeline".to_string());
+        pipeline.description = Some("Integration test pipeline".to_string());
+        pipeline.triggers = vec![Trigger {
+            trigger_type: TriggerType::Manual,
+            config: TriggerConfig {
+                webhook_url: None,
                     cron_expression: None,
                     branch_patterns: None,
                     repository: None,
                     events: None,
                 },
-            }],
-            stages: vec![Stage {
-                name: "Build".to_string(),
-                condition: None,
-                parallel: Some(false),
-                steps: vec![
-                    Step {
-                        name: "docker-build".to_string(),
-                        step_type: StepType::Docker,
-                        config: StepConfig {
-                            image: Some("alpine:latest".to_string()),
-                            command: Some("echo 'Building application'".to_string()),
-                            ..Default::default()
-                        },
-                        condition: None,
-                        continue_on_error: None,
-                        timeout: Some(60),
+            }];
+        
+        pipeline.stages = vec![Stage {
+            name: "Build".to_string(),
+            condition: None,
+            parallel: Some(false),
+            steps: vec![
+                Step {
+                    name: "docker-build".to_string(),
+                    step_type: StepType::Docker,
+                    config: StepConfig {
+                        image: Some("alpine:latest".to_string()),
+                        command: Some("echo 'Building application'".to_string()),
+                        ..Default::default()
                     },
-                    Step {
-                        name: "kubernetes-deploy".to_string(),
-                        step_type: StepType::Kubernetes,
-                        config: StepConfig {
-                            image: Some("kubectl:latest".to_string()),
-                            command: Some("echo 'Deploying to Kubernetes'".to_string()),
-                            namespace: Some("default".to_string()),
-                            ..Default::default()
-                        },
-                        condition: None,
-                        continue_on_error: None,
-                        timeout: Some(120),
+                    condition: None,
+                    continue_on_error: None,
+                    timeout: Some(60),
+                },
+                Step {
+                    name: "kubernetes-deploy".to_string(),
+                    step_type: StepType::Kubernetes,
+                    config: StepConfig {
+                        image: Some("kubectl:latest".to_string()),
+                        command: Some("echo 'Deploying to Kubernetes'".to_string()),
+                        namespace: Some("default".to_string()),
+                        ..Default::default()
                     },
-                ],
-                environment: None,
-                timeout: None,
-                retry_count: None,
-            }],
-            environment: {
-                let mut env = HashMap::new();
-                env.insert("CI".to_string(), "true".to_string());
-                env.insert("BUILD_ENV".to_string(), "test".to_string());
-                env
-            },
-            notifications: None,
-            timeout: Some(3600),
-            retry_count: Some(1),
-            created_at: Some(chrono::Utc::now()),
-            updated_at: Some(chrono::Utc::now()),
-        }
+                    condition: None,
+                    continue_on_error: None,
+                    timeout: Some(120),
+                },
+            ],
+            environment: None,
+            timeout: None,
+            retry_count: None,
+        }];
+        
+        pipeline.environment.insert("CI".to_string(), "true".to_string());
+        pipeline.environment.insert("BUILD_ENV".to_string(), "test".to_string());
+        pipeline.timeout = Some(3600);
+        pipeline.retry_count = Some(1);
+        
+        pipeline
     }
 
     #[tokio::test]

@@ -659,7 +659,7 @@ impl ConfigValidationRule for ObservabilityValidationRule {
     }
 }
 
-/// CI configuration validation
+/// CI configuration validation with tiered pipeline support
 pub struct CIValidationRule;
 
 impl ConfigValidationRule for CIValidationRule {
@@ -749,7 +749,7 @@ impl ConfigValidationRule for CIValidationRule {
     }
 
     fn description(&self) -> &'static str {
-        "Validates CI configuration including pipelines, executors, and resource limits"
+        "Validates CI configuration including pipelines, executors, and resource limits with tiered pipeline support"
     }
 }
 

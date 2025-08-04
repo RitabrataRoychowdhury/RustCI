@@ -412,13 +412,9 @@ mod tests {
     }
 
     fn create_test_pipeline() -> CIPipeline {
-        CIPipeline {
-            mongo_id: None,
-            id: Some(Uuid::new_v4()),
-            name: "test-pipeline".to_string(),
-            description: Some("Test pipeline".to_string()),
-            triggers: vec![],                      // No triggers for now
-            stages: vec![
+        let mut pipeline = CIPipeline::new("test-pipeline".to_string());
+        pipeline.description = Some("Test pipeline".to_string());
+        pipeline.stages = vec![
                 Stage {
                     name: "build".to_string(),
                     condition: None,               // No condition
@@ -440,14 +436,11 @@ mod tests {
                         }
                     ],
                 }
-            ],
-            environment: HashMap::new(),
-            timeout: Some(3600),                   // 1 hour pipeline timeout
-            retry_count: Some(0),                  // No retries for now
-            notifications: None,                   // No notifications
-            created_at: Some(chrono::Utc::now()),
-            updated_at: Some(chrono::Utc::now()),
-        }
+            ];
+        
+        pipeline.timeout = Some(3600);                   // 1 hour pipeline timeout
+        pipeline.retry_count = Some(0);                  // No retries for now
+        pipeline
     }    
 
     #[tokio::test]

@@ -588,13 +588,9 @@ mod tests {
     use crate::core::patterns::correlation::CorrelationTracker;
 
     fn create_test_context() -> ExecutionContext {
-        let pipeline = CIPipeline {
-            mongo_id: None,
-            id: Some(Uuid::new_v4()),
-            name: "test-pipeline".to_string(),
-            description: Some("Test pipeline".to_string()),
-            triggers: vec![],
-            stages: vec![Stage {
+        let mut pipeline = CIPipeline::new("test-pipeline".to_string());
+        pipeline.description = Some("Test pipeline".to_string());
+        pipeline.stages = vec![Stage {
                 name: "build".to_string(),
                 condition: None,
                 parallel: None,
@@ -612,14 +608,10 @@ mod tests {
                 environment: None,
                 timeout: None,
                 retry_count: None,
-            }],
-            environment: HashMap::new(),
-            timeout: None,
-            retry_count: None,
-            notifications: None,
-            created_at: Some(chrono::Utc::now()),
-            updated_at: Some(chrono::Utc::now()),
-        };
+            }];
+        
+        pipeline.timeout = None;
+        pipeline.retry_count = None;
 
         ExecutionContext {
             execution_id: Uuid::new_v4(),

@@ -10,5 +10,6 @@ pub mod kubernetes_runner_tests;
 pub mod local_runner_tests;
 pub mod native_runner_tests;
 pub mod node_communication_tests;
+pub mod pipeline_type_execution_tests;
 pub mod runner_lifecycle_tests;
 pub mod runner_pool_integration_tests;

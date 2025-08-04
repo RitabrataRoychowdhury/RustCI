@@ -30,6 +30,42 @@ retry_count: 0
 
 ## Available Pipeline Examples
 
+### Multi-Tier Pipeline System
+
+RustCI supports four progressive pipeline types that automatically adapt to your project's complexity:
+
+#### `minimal-pipeline.yaml` - **Minimal Type**
+- **Purpose**: Simplest possible pipeline with auto-detection
+- **Required Fields**: Only `repo` and `server`
+- **Features**: Auto-detects project type, builds with Docker by default
+- **Use Case**: Quick deployments without complex configuration
+- **Triggers**: Manual, Webhook
+- **Execution**: Auto-detection → Build → Docker Deploy
+
+#### `simple-pipeline.yaml` - **Simple Type**
+- **Purpose**: GitHub Actions style linear execution
+- **Required Fields**: `steps` array with `run` commands
+- **Features**: Sequential step execution, familiar syntax
+- **Use Case**: Straightforward CI/CD workflows
+- **Triggers**: Manual, Git Push, Pull Request
+- **Execution**: Format → Lint → Test → Build → Deploy → Verify
+
+#### `standard-pipeline.yaml` - **Standard Type**
+- **Purpose**: GitLab CI / Jenkins style declarative pipelines
+- **Required Fields**: `stages` and `jobs` mappings
+- **Features**: Organized stages, parallel job execution within stages
+- **Use Case**: Enterprise workflows with complex dependencies
+- **Triggers**: Manual, Git Push, Scheduled
+- **Execution**: Prepare → Build → Test → Security → Deploy → Verify
+
+#### `advanced-pipeline.yaml` - **Advanced Type**
+- **Purpose**: Full-featured pipelines with matrix strategies
+- **Required Fields**: Advanced features (`matrix`, `variables`, `include`, `cache`)
+- **Features**: Matrix builds, includes, variables, caching, multi-platform
+- **Use Case**: Complex CI/CD with multiple environments and configurations
+- **Triggers**: Manual, Git Push, Pull Request, Scheduled
+- **Execution**: Multi-matrix parallel execution across platforms and environments
+
 ### 1. Application Deployment
 
 #### `docker-deployment-pipeline.yaml`
@@ -86,6 +122,21 @@ retry_count: 0
 
 ## Pipeline Features
 
+### Multi-Tier Pipeline Types
+
+#### Type Detection
+RustCI automatically detects pipeline type based on YAML structure:
+- **Minimal**: Contains only `repo` and `server` fields
+- **Simple**: Contains `steps` array
+- **Standard**: Contains `stages` and `jobs` mappings  
+- **Advanced**: Contains `matrix`, `variables`, `include`, or `cache`
+
+#### Explicit Type Declaration
+You can explicitly set the pipeline type:
+```yaml
+type: minimal  # or simple, standard, advanced
+```
+
 ### Step Types
 - **shell**: Execute shell commands
 - **manual_approval**: Require human approval before proceeding
@@ -94,12 +145,22 @@ retry_count: 0
 - **manual**: Manually triggered pipelines
 - **webhook**: Triggered by Git events (push, pull_request)
 - **scheduled**: Cron-based scheduling
+- **git_push**: Triggered by Git push events
+- **pull_request**: Triggered by pull request events
 
 ### Configuration Options
+- **type**: Explicit pipeline type (minimal, simple, standard, advanced)
 - **deployment_type: custom**: Prevents automatic project type detection
 - **timeout**: Maximum execution time in seconds
 - **retry_count**: Number of retry attempts on failure
 - **environment**: Environment variables for the pipeline
+
+### Advanced Features (Advanced Type Only)
+- **matrix**: Multi-dimensional build matrices
+- **variables**: Global pipeline variables
+- **include**: Include external pipeline configurations
+- **cache**: Dependency and build caching
+- **jobs**: Complex job definitions with stage mapping
 
 ### Common Patterns
 
@@ -150,6 +211,7 @@ Common environment variables used across pipelines:
 
 ## Best Practices
 
+### General Guidelines
 1. **Use descriptive names** for pipelines and steps
 2. **Include verification steps** after deployments
 3. **Handle errors gracefully** with `|| true` where appropriate
@@ -158,6 +220,35 @@ Common environment variables used across pipelines:
 6. **Include cleanup steps** to prevent resource leaks
 7. **Add deployment_type: custom** for deployment steps
 8. **Use multi-line commands** for complex operations
+
+### Multi-Tier Pipeline Best Practices
+
+#### Minimal Pipelines
+- Keep it simple with just `repo` and `server`
+- Let auto-detection handle project type
+- Use for quick prototypes and simple deployments
+
+#### Simple Pipelines  
+- Use clear, descriptive step names
+- Keep steps focused on single responsibilities
+- Ideal for linear CI/CD workflows
+
+#### Standard Pipelines
+- Organize jobs into logical stages
+- Use parallel execution within stages for efficiency
+- Map jobs to stages clearly with `stage` field
+
+#### Advanced Pipelines
+- Use matrix strategies for multi-platform builds
+- Leverage caching for faster builds
+- Include external configurations for reusability
+- Use variables for configuration management
+
+### Migration Path
+- **Start Minimal**: Begin with minimal pipelines for quick setup
+- **Grow to Simple**: Add linear steps as workflows become more complex
+- **Evolve to Standard**: Organize into stages when parallel execution is needed
+- **Advance**: Use matrix and advanced features for complex multi-environment deployments
 
 ## Testing Pipelines
 

@@ -16,6 +16,7 @@ pub use execution_coordinator::{ExecutionCoordinator, ResourceLimits};
 pub use execution_strategies::{
     ExecutionContext, ExecutionResult, ExecutionStrategyFactory, ExecutionStrategyType,
     ParallelExecutionStrategy, SequentialExecutionStrategy,
+    MinimalExecutionStrategy, SimpleExecutionStrategy, StandardExecutionStrategy, AdvancedExecutionStrategy,
 };
 pub use metrics::MetricsCollector;
 pub use monitoring::{ExecutionMetrics, ExecutionMonitoring};

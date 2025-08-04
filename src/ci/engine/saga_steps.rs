@@ -578,13 +578,9 @@ mod tests {
     use std::collections::HashMap;
 
     fn create_test_execution_context() -> ExecutionContext {
-        let pipeline = CIPipeline {
-            mongo_id: None,
-            id: Some(Uuid::new_v4()),
-            name: "test-pipeline".to_string(),
-            description: Some("Test pipeline".to_string()),
-            triggers: vec![], // no triggers
-            stages: vec![Stage {
+        let mut pipeline = CIPipeline::new("test-pipeline".to_string());
+        pipeline.description = Some("Test pipeline".to_string());
+        pipeline.stages = vec![Stage {
                 name: "build".to_string(),
                 condition: None,
                 parallel: Some(false),
@@ -602,14 +598,10 @@ mod tests {
                     continue_on_error: Some(false),
                     timeout: Some(300),      // 5 min step timeout
                 }],
-            }],
-            environment: HashMap::new(),
-            timeout: Some(3600),           // 1 hour pipeline timeout
-            retry_count: Some(0),
-            notifications: None,
-            created_at: Some(chrono::Utc::now()),
-            updated_at: Some(chrono::Utc::now()),
-        };
+            }];
+        
+        pipeline.timeout = Some(3600);           // 1 hour pipeline timeout
+        pipeline.retry_count = Some(0);
     
         ExecutionContext {
             execution_id: Uuid::new_v4(),

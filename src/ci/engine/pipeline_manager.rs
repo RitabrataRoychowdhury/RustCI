@@ -380,38 +380,30 @@ mod tests {
     use std::collections::HashMap;
 
     fn create_test_pipeline() -> CIPipeline {
-        CIPipeline {
-            mongo_id: None,
-            id: None,
-            name: "test-pipeline".to_string(),
-            description: Some("Test pipeline".to_string()),
-            triggers: vec![], // ✅ required
-            stages: vec![Stage {
-                name: "build".to_string(),
-                condition: None,         // ✅ required
-                steps: vec![Step {
-                    name: "compile".to_string(),
-                    step_type: StepType::Shell,
-                    config: StepConfig {
-                        command: Some("echo 'Building...'".to_string()),
-                        ..Default::default()
-                    },
-                    condition: None,     // ✅ required in Step
-                    continue_on_error: Some(false),
-                    timeout: None,       // ✅ required in Step
-                }],
-                parallel: Some(false),
-                timeout: Some(600),      // ✅ required
-                retry_count: Some(0),    // ✅ required
-                environment: None,
+        let mut pipeline = CIPipeline::new("test-pipeline".to_string());
+        pipeline.description = Some("Test pipeline".to_string());
+        pipeline.stages = vec![Stage {
+            name: "build".to_string(),
+            condition: None,         // ✅ required
+            steps: vec![Step {
+                name: "compile".to_string(),
+                step_type: StepType::Shell,
+                config: StepConfig {
+                    command: Some("echo 'Building...'".to_string()),
+                    ..Default::default()
+                },
+                condition: None,     // ✅ required in Step
+                continue_on_error: Some(false),
+                timeout: None,       // ✅ required in Step
             }],
-            environment: HashMap::new(),
-            timeout: Some(3600),           // ✅ required
-            retry_count: Some(0),          // ✅ required
-            notifications: None,           // ✅ required
-            created_at: Some(chrono::Utc::now()),
-            updated_at: Some(chrono::Utc::now()),
-        }
+            parallel: Some(false),
+            timeout: Some(600),      // ✅ required
+            retry_count: Some(0),    // ✅ required
+            environment: None,
+        }];
+        pipeline.timeout = Some(3600);           // ✅ required
+        pipeline.retry_count = Some(0);          // ✅ required
+        pipeline
     }
     
 

@@ -1,0 +1,45 @@
+# Minimal Pipeline Example
+# This is the simplest possible pipeline - just specify repo and server
+# The system will auto-detect project type and deploy with Docker
+
+name: "Minimal Deployment Pipeline"
+description: "Minimal pipeline with auto-detection and Docker deployment"
+type: minimal
+
+# Required fields for minimal pipeline
+repo: https://github.com/user/my-app.git
+server: user@deploy.example.com
+
+# Optional fields
+branch: main
+
+# Triggers
+triggers:
+  - trigger_type: manual
+    config: {}
+  - trigger_type: webhook
+    config:
+      repository: "user/my-app"
+      events: ["push"]
+      branch_patterns: ["main", "master"]
+
+# Environment variables (optional)
+environment:
+  DEPLOY_ENV: "production"
+  APP_NAME: "my-app"
+
+# Timeout and retry settings
+timeout: 1800  # 30 minutes
+retry_count: 1
+
+# Notifications (optional)
+notifications:
+  on_success:
+    - target_type: email
+      config:
+        email: "admin@example.com"
+  on_failure:
+    - target_type: slack
+      config:
+        slack_channel: "#deployments"
+        slack_token: "${SLACK_TOKEN}"

@@ -1,7 +1,7 @@
 use crate::{
     application::handlers::ci::{
         cancel_execution, create_pipeline, create_pipeline_multipart, get_execution,
-        get_pipeline_yaml, list_executions, list_pipelines, trigger_pipeline, webhook_handler,
+        get_pipeline, get_pipeline_yaml, list_executions, list_pipelines, trigger_pipeline, webhook_handler,
     },
     AppState,
 };
@@ -16,6 +16,7 @@ pub fn ci_router() -> Router<AppState> {
         .route("/pipelines", post(create_pipeline))
         .route("/pipelines/upload", post(create_pipeline_multipart))
         .route("/pipelines", get(list_pipelines))
+        .route("/pipelines/:pipeline_id", get(get_pipeline))
         .route("/pipelines/:pipeline_id/yaml", get(get_pipeline_yaml))
         // Pipeline execution
         .route("/pipelines/:pipeline_id/trigger", post(trigger_pipeline))
