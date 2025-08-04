@@ -1,10 +1,10 @@
 name: "RustCI Docker Deploy"
 description: "Build and deploy RustCI using Docker on remote machine"
- 
+
 triggers:
   - trigger_type: manual
     config: {}
- 
+
 stages:
   - name: "Build and Deploy"
     steps:
@@ -14,12 +14,12 @@ stages:
           command: |
             echo "🌀 Cloning RustCI repo..."
             git clone https://github.com/RitabrataRoychowdhury/RustCI.git rustci || { echo '❌ Git clone failed'; exit 1; }
- 
+
             echo "🐳 Building Docker image..."
             cd rustci && docker build -t rustci:latest . || { echo '❌ Docker build failed'; exit 1; }
- 
+
             echo "✅ Docker image built successfully"
- 
+
       - name: "transfer-image"
         step_type: shell
         config:
@@ -28,7 +28,7 @@ stages:
             docker save rustci:latest | sshpass -p "abc123" \
               ssh -o StrictHostKeyChecking=no -p 2222 user@localhost "docker load" || { echo '❌ Docker image transfer failed'; exit 1; }
             echo "✅ Image loaded on remote"
- 
+
       - name: "stop-existing-container"
         step_type: shell
         config:
@@ -37,7 +37,7 @@ stages:
             sshpass -p "abc123" ssh -o StrictHostKeyChecking=no -p 2222 user@localhost \
               "docker rm -f rustci || true"
             echo "✅ Cleaned up old container"
- 
+
       - name: "deploy-container"
         step_type: shell
         config:
@@ -63,7 +63,7 @@ stages:
               rustci:latest
             ' || { echo '❌ Container deployment failed'; exit 1; }
             echo "✅ Container deployed"
- 
+
       - name: "verify-container"
         step_type: shell
         config:
@@ -81,7 +81,7 @@ stages:
               echo "❌ Health check failed"
               exit 1
             '
- 
+
 environment: {}
 timeout: 1800
 retry_count: 0

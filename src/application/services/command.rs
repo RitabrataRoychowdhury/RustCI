@@ -15,7 +15,7 @@ use crate::{
 pub enum CommandResult {
     BranchCreated(GitHubBranch),
     FileCreated(GitHubCommit),
-    PullRequestCreated(GitHubPullRequest),
+    PullRequestCreated(Box<GitHubPullRequest>),
     BranchDeleted(String),
     ValidationCompleted(crate::domain::entities::ValidationResult),
     WorkspaceUpdated(Uuid),
@@ -302,27 +302,31 @@ pub struct CreateFileCommand {
     branch: String,
 }
 
+pub struct CreateFileParams {
+    pub access_token: String,
+    pub owner: String,
+    pub repo: String,
+    pub file_path: String,
+    pub content: String,
+    pub commit_message: String,
+    pub branch: String,
+}
+
 impl CreateFileCommand {
     pub fn new(
         github_service: Arc<dyn GitHubService>,
-        access_token: String,
-        owner: String,
-        repo: String,
-        file_path: String,
-        content: String,
-        commit_message: String,
-        branch: String,
+        params: CreateFileParams,
     ) -> Self {
         Self {
             id: Uuid::new_v4(),
             github_service,
-            access_token,
-            owner,
-            repo,
-            file_path,
-            content,
-            commit_message,
-            branch,
+            access_token: params.access_token,
+            owner: params.owner,
+            repo: params.repo,
+            file_path: params.file_path,
+            content: params.content,
+            commit_message: params.commit_message,
+            branch: params.branch,
         }
     }
 }
@@ -402,7 +406,7 @@ impl Command for CreatePullRequestCommand {
             .create_pull_request(&self.access_token, &self.pr_request)
             .await?;
 
-        Ok(CommandResult::PullRequestCreated(pr))
+        Ok(CommandResult::PullRequestCreated(Box::new(pr)))
     }
 
     async fn undo(&self) -> Result<()> {
@@ -447,36 +451,36 @@ impl DockerfilePRWorkflowCommand {
         dockerfile_content: String,
         pr_request: PullRequestRequest,
     ) -> Self {
-        let mut commands: Vec<Box<dyn Command>> = Vec::new();
-
-        // Step 1: Create branch
-        commands.push(Box::new(CreateBranchCommand::new(
-            github_service.clone(),
-            access_token.clone(),
-            owner.clone(),
-            repo.clone(),
-            "rustci/dockerfile-autogen".to_string(),
-            "main".to_string(),
-        )));
-
-        // Step 2: Create Dockerfile
-        commands.push(Box::new(CreateFileCommand::new(
-            github_service.clone(),
-            access_token.clone(),
-            owner.clone(),
-            repo.clone(),
-            "Dockerfile".to_string(),
-            dockerfile_content,
-            "feat: Add auto-generated Dockerfile".to_string(),
-            "rustci/dockerfile-autogen".to_string(),
-        )));
-
-        // Step 3: Create Pull Request
-        commands.push(Box::new(CreatePullRequestCommand::new(
-            github_service,
-            access_token,
-            pr_request,
-        )));
+        let commands: Vec<Box<dyn Command>> = vec![
+            // Step 1: Create branch
+            Box::new(CreateBranchCommand::new(
+                github_service.clone(),
+                access_token.clone(),
+                owner.clone(),
+                repo.clone(),
+                "rustci/dockerfile-autogen".to_string(),
+                "main".to_string(),
+            )),
+            // Step 2: Create Dockerfile
+            Box::new(CreateFileCommand::new(
+                github_service.clone(),
+                CreateFileParams {
+                    access_token: access_token.clone(),
+                    owner: owner.clone(),
+                    repo: repo.clone(),
+                    file_path: "Dockerfile".to_string(),
+                    content: dockerfile_content,
+                    commit_message: "feat: Add auto-generated Dockerfile".to_string(),
+                    branch: "rustci/dockerfile-autogen".to_string(),
+                },
+            )),
+            // Step 3: Create Pull Request
+            Box::new(CreatePullRequestCommand::new(
+                github_service,
+                access_token,
+                pr_request,
+            )),
+        ];
 
         Self {
             id: Uuid::new_v4(),
@@ -522,6 +526,16 @@ impl Command for DockerfilePRWorkflowCommand {
     }
 }
 
+pub struct BranchAndFileParams {
+    pub access_token: String,
+    pub owner: String,
+    pub repo: String,
+    pub branch_name: String,
+    pub file_path: String,
+    pub file_content: String,
+    pub commit_message: String,
+}
+
 // Factory for creating common command sequences
 pub struct CommandFactory;
 
@@ -546,32 +560,28 @@ impl CommandFactory {
 
     pub fn create_branch_and_file_commands(
         github_service: Arc<dyn GitHubService>,
-        access_token: String,
-        owner: String,
-        repo: String,
-        branch_name: String,
-        file_path: String,
-        file_content: String,
-        commit_message: String,
+        params: BranchAndFileParams,
     ) -> Vec<Box<dyn Command>> {
         vec![
             Box::new(CreateBranchCommand::new(
                 github_service.clone(),
-                access_token.clone(),
-                owner.clone(),
-                repo.clone(),
-                branch_name.clone(),
+                params.access_token.clone(),
+                params.owner.clone(),
+                params.repo.clone(),
+                params.branch_name.clone(),
                 "main".to_string(),
             )),
             Box::new(CreateFileCommand::new(
                 github_service,
-                access_token,
-                owner,
-                repo,
-                file_path,
-                file_content,
-                commit_message,
-                branch_name,
+                CreateFileParams {
+                    access_token: params.access_token,
+                    owner: params.owner,
+                    repo: params.repo,
+                    file_path: params.file_path,
+                    content: params.file_content,
+                    commit_message: params.commit_message,
+                    branch: params.branch_name,
+                },
             )),
         ]
     }
@@ -794,16 +804,17 @@ mod tests {
     #[tokio::test]
     async fn test_create_file_command() {
         let github_service = Arc::new(MockGitHubService);
-        let command = CreateFileCommand::new(
-            github_service,
-            "test_token".to_string(),
-            "testowner".to_string(),
-            "testrepo".to_string(),
-            "Dockerfile".to_string(),
-            "FROM ubuntu:20.04".to_string(),
-            "Add Dockerfile".to_string(),
-            "test-branch".to_string(),
-        );
+        let params = CreateFileParams {
+            access_token: "test_token".to_string(),
+            owner: "testowner".to_string(),
+            repo: "testrepo".to_string(),
+            file_path: "Dockerfile".to_string(),
+            content: "FROM ubuntu:20.04".to_string(),
+            commit_message: "Add Dockerfile".to_string(),
+            branch: "test-branch".to_string(),
+        };
+    
+        let command = CreateFileCommand::new(github_service.clone(), params);
 
         assert!(!command.can_undo()); // File creation is not easily reversible
         assert!(command.description().contains("Dockerfile"));
@@ -822,13 +833,15 @@ mod tests {
         let github_service = Arc::new(MockGitHubService);
         let commands = CommandFactory::create_branch_and_file_commands(
             github_service,
-            "test_token".to_string(),
-            "testowner".to_string(),
-            "testrepo".to_string(),
-            "test-branch".to_string(),
-            "README.md".to_string(),
-            "# Test".to_string(),
-            "Add README".to_string(),
+            BranchAndFileParams {
+                access_token: "test_token".to_string(),
+                owner: "testowner".to_string(),
+                repo: "testrepo".to_string(),
+                branch_name: "test-branch".to_string(),
+                file_path: "README.md".to_string(),
+                file_content: "# Test".to_string(),
+                commit_message: "Add README".to_string(),
+            },
         );
 
         assert_eq!(commands.len(), 2);

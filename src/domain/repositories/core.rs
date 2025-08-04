@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use tracing::debug;
 use uuid::Uuid;
 
-use crate::core::traits::{Repository, UnitOfWork};
+use crate::core::infrastructure::traits::{Repository, UnitOfWork};
 use crate::error::{AppError, Result};
 
 /// MongoDB repository implementation

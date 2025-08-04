@@ -12,7 +12,7 @@ use crate::ci::{
     config::Stage, executor::PipelineExecutor, pipeline::PipelineExecution,
     workspace::WorkspaceManager,
 };
-use crate::core::sagas::{SagaContext, SagaStep, SagaStepResult};
+use crate::core::patterns::sagas::{SagaContext, SagaStep, SagaStepResult};
 use crate::error::{AppError, Result};
 
 use super::{ExecutionContext, ExecutionMonitoring, MetricsCollector};
@@ -573,7 +573,7 @@ mod tests {
     use super::*;
     use crate::ci::config::{CIPipeline, Stage, Step, StepConfig, StepType};
     use crate::ci::pipeline::TriggerInfo;
-    use crate::core::{sagas::SagaContext, CorrelationTracker};
+    use crate::core::patterns::{sagas::SagaContext, correlation::CorrelationTracker};
     use uuid::Uuid;
     use std::collections::HashMap;
 

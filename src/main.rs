@@ -32,14 +32,16 @@ mod infrastructure;
 mod presentation;
 
 use config::{AppConfiguration, HotReloadConfigManager};
-use core::security::AuditLogger;
+use core::networking::security::AuditLogger;
 use infrastructure::database::DatabaseManager;
-use presentation::routes::{auth_router, ci_router, pr_router};
+use presentation::routes::{auth_router, ci_router, complete_control_plane_router, pr_router};
 use presentation::swagger::ApiDoc;
 use utoipa::OpenApi;
-use core::audit::{AuditConfig, EnhancedAuditLogger};
-use core::monitoring::HealthStatus;
-use core::observability::{ObservabilityConfig, ObservabilityService};
+use core::observability::{
+    audit::{AuditConfig, EnhancedAuditLogger},
+    monitoring::HealthStatus,
+    observability::{ObservabilityConfig, ObservabilityService},
+};
 use presentation::middleware::{comprehensive_security_middleware, create_cors_middleware};
 
 // CI Engine imports
@@ -48,9 +50,11 @@ use ci::engine::{
     PipelineExecutionSagaFactory, MetricsCollector,
 };
 use core::{
-    events::EventBus,
-    sagas::{SagaOrchestrator, SagaPersistence, SagaExecution, SagaStatus, SagaStatistics},
-    CorrelationTracker,
+    patterns::{
+        events::EventBus,
+        sagas::{SagaOrchestrator, SagaPersistence, SagaExecution, SagaStatus, SagaStatistics},
+        correlation::CorrelationTracker,
+    },
 };
 use error::Result;
 
@@ -325,6 +329,7 @@ async fn create_app(state: AppState) -> std::result::Result<Router, Box<dyn std:
         .nest("/api/sessions", auth_router(state.clone()))
         .nest("/api/ci", ci_router())
         .nest("/api/pr", pr_router())
+        .nest("/api/control-plane", complete_control_plane_router())
         // Add observability endpoints
         .nest(
             "/observability",
@@ -352,7 +357,7 @@ async fn create_app(state: AppState) -> std::result::Result<Router, Box<dyn std:
 
 fn init_tracing() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Use the new structured logging system
-    Ok(core::logging::init_structured_logging()?)
+    Ok(crate::core::observability::logging::init_structured_logging()?)
 }
 
 async fn health_check_handler(State(state): State<AppState>) -> std::result::Result<Json<Value>, StatusCode> {

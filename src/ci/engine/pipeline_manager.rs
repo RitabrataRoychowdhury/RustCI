@@ -8,7 +8,7 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::ci::config::CIPipeline;
-use crate::core::events::EventBus;
+use crate::core::patterns::events::EventBus;
 use crate::error::{AppError, Result};
 use crate::infrastructure::database::DatabaseManager;
 
@@ -309,7 +309,7 @@ impl PipelineManager {
         pipeline_id: Uuid,
         pipeline: &CIPipeline,
     ) -> Result<()> {
-        use crate::core::events::PipelineStartedEvent;
+        use crate::core::patterns::events::PipelineStartedEvent;
 
         let event = PipelineStartedEvent {
             pipeline_id,
@@ -333,7 +333,7 @@ impl PipelineManager {
         pipeline_id: Uuid,
         pipeline: &CIPipeline,
     ) -> Result<()> {
-        use crate::core::events::PipelineStartedEvent;
+        use crate::core::patterns::events::PipelineStartedEvent;
 
         let event = PipelineStartedEvent {
             pipeline_id,
@@ -353,7 +353,7 @@ impl PipelineManager {
     }
 
     async fn publish_pipeline_deleted_event(&self, pipeline_id: Uuid) -> Result<()> {
-        use crate::core::events::PipelineStartedEvent;
+        use crate::core::patterns::events::PipelineStartedEvent;
 
         let event = PipelineStartedEvent {
             pipeline_id,
@@ -376,7 +376,7 @@ impl PipelineManager {
 mod tests {
     use super::*;
     use crate::ci::config::{Stage, Step, StepConfig, StepType};
-    use crate::core::CorrelationTracker;
+    use crate::core::patterns::correlation::CorrelationTracker;
     use std::collections::HashMap;
 
     fn create_test_pipeline() -> CIPipeline {

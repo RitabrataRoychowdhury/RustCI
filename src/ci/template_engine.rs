@@ -1,5 +1,5 @@
 use crate::ci::{config::CIPipeline, workspace::WorkspaceContext};
-use crate::error::{AppError, Result};
+use crate::error::Result;
 use tracing::debug;
 
 /// Pipeline template engine for processing commands with workspace context

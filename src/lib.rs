@@ -23,15 +23,15 @@ pub mod upload;
 pub use error::{AppError, Result};
 
 // Re-export health check handler
-pub use crate::core::monitoring::health_check_handler;
+pub use crate::core::observability::monitoring::health_check_handler;
 
 /// Application state shared across handlers
 #[derive(Clone)]
 pub struct AppState {
     pub env: Arc<config::AppConfiguration>,
     pub db: Arc<infrastructure::database::DatabaseManager>,
-    pub audit_logger: Option<Arc<dyn core::security::AuditLogger>>,
+    pub audit_logger: Option<Arc<dyn core::networking::security::AuditLogger>>,
     pub config_manager: Arc<tokio::sync::RwLock<config::HotReloadConfigManager>>,
-    pub observability: Arc<core::observability::ObservabilityService>,
+    pub observability: Arc<core::observability::observability::ObservabilityService>,
     pub ci_engine: Arc<ci::engine::CIEngineOrchestrator>,
 }

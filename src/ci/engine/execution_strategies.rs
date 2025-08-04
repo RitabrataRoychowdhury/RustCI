@@ -14,7 +14,6 @@ use crate::ci::{
     config::{CIPipeline, Stage},
     executor::PipelineExecutor,
     pipeline::{ExecutionStatus, TriggerInfo},
-    template_engine::PipelineTemplateEngine,
     workspace::{Workspace, WorkspaceContext, WorkspaceManager},
 };
 use crate::error::{AppError, Result};

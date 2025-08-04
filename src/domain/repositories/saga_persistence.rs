@@ -13,7 +13,7 @@ use std::sync::Arc;
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
-use crate::core::sagas::{SagaExecution, SagaPersistence, SagaStatistics, SagaStatus};
+use crate::core::patterns::sagas::{SagaExecution, SagaPersistence, SagaStatistics, SagaStatus};
 use crate::domain::repositories::advanced::AdvancedDatabaseManager;
 use crate::error::{AppError, Result};
 
@@ -453,7 +453,7 @@ impl SagaCleanupService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::sagas::{SagaContext, SagaExecution, SagaStatus};
+    use crate::core::patterns::sagas::{SagaContext, SagaExecution, SagaStatus};
     use chrono::Utc;
 
     #[test]

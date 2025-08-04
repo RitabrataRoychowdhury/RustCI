@@ -210,7 +210,7 @@ impl Command for MockCreatePRCommand {
     async fn execute(&self) -> Result<CommandResult> {
         self.base.check_should_fail()?;
 
-        Ok(CommandResult::PullRequestCreated(GitHubPullRequest {
+        Ok(CommandResult::PullRequestCreated(Box::new(GitHubPullRequest {
             id: 123,
             number: 1,
             title: self.pr_request.title.clone(),
@@ -227,7 +227,7 @@ impl Command for MockCreatePRCommand {
             updated_at: Utc::now(),
             merged_at: None,
             closed_at: None,
-        }))
+        })))
     }
 
     async fn undo(&self) -> Result<()> {

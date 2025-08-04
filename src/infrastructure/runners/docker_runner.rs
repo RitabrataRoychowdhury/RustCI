@@ -23,12 +23,12 @@ use tokio::time::{timeout, Instant};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::core::event_loop::{Event, EventDemultiplexer, EventHandler, EventPayload, EventType};
+use crate::core::infrastructure::event_loop::{Event, EventDemultiplexer, EventHandler, EventPayload, EventType};
 use crate::domain::entities::{
     DockerConfig, HealthStatus, Job, JobId, JobResult, JobStatus, RunnerCapacity, RunnerId,
     RunnerMetadata, RunnerType, StepResult, VolumeMount,
 };
-use crate::domain::entities::runner::Runner;
+
 use crate::error::{AppError, Result};
 
 /// Docker runner configuration
@@ -989,6 +989,7 @@ mod tests {
     use super::*;
     use crate::domain::entities::{BackoffStrategy, JobRequirements, JobStep, RetryPolicy};
     use std::collections::HashMap;
+    use crate::domain::entities::runner::Runner;
 
     fn create_test_job() -> Job {
         Job {

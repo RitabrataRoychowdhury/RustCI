@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::core::CorrelationTracker;
+use crate::core::patterns::correlation::CorrelationTracker;
 use crate::error::{AppError, Result};
 
 use super::{ExecutionContext, ExecutionResult, ExecutionStrategyFactory, ExecutionStrategyType};

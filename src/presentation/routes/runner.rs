@@ -3,11 +3,9 @@ use crate::{
         deregister_runner, fetch_job_artifacts, fetch_job_logs, get_runner_status, list_runners,
         register_runner, trigger_job_on_runner,
     },
-    presentation::middleware::auth::enhanced_auth,
     AppState,
 };
 use axum::{
-    middleware,
     routing::{delete, get, post},
     Router,
 };

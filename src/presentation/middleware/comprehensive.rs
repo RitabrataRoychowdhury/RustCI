@@ -1,6 +1,6 @@
 use crate::{
     config::AppConfiguration,
-    core::security::{AuditAction, AuditEvent, JwtManager, SecurityContext},
+    core::networking::security::{AuditAction, AuditEvent, JwtManager, SecurityContext},
     error::{AppError, Result},
     AppState,
 };
@@ -79,33 +79,14 @@ impl ComprehensiveSecurityPipeline {
         }
 
         // 2. Rate limiting with advanced algorithms
-        let rate_limit_result = {
-            let _ip = client_ip.as_deref().unwrap_or("unknown");
+        if state.env.security.rate_limiting.enabled {
+            // Basic rate limiting check - in production, use Redis or proper rate limiter
             let path = req.uri().path().to_string();
-
-            // Simple rate limiting check - in a real implementation,
-            // you would use a proper rate limiter like Redis or in-memory store
-            // For now, we'll just do a basic check
-            if path.starts_with("/api/") {
-                // Allow up to 100 requests per minute per IP for API endpoints
-                // This is a placeholder - real implementation would track actual rates
-                Ok(())
-            } else {
-                Ok(())
+            if path.starts_with("/api/control-plane/") {
+                // Apply stricter rate limits to control plane endpoints
+                debug!("🚦 Applying rate limiting to control plane endpoint: {}", path);
+                // TODO: Implement actual rate limiting logic
             }
-        };
-
-        if let Err(e) = rate_limit_result {
-            Self::log_security_violation(
-                &state,
-                "rate_limit_exceeded",
-                None,
-                client_ip.clone(),
-                user_agent.clone(),
-                Some(format!("Rate limit exceeded: {}", e)),
-            )
-            .await;
-            return Err(e);
         }
 
         // 3. Authentication and RBAC (skip for public endpoints)
@@ -478,8 +459,8 @@ impl ComprehensiveSecurityPipeline {
     fn get_required_permission(
         method: &axum::http::Method,
         path: &str,
-    ) -> Option<crate::core::security::Permission> {
-        use crate::core::security::Permission;
+    ) -> Option<crate::core::networking::security::Permission> {
+        use crate::core::networking::security::Permission;
 
         match (method.as_str(), path) {
             ("GET", path) if path.starts_with("/api/ci/pipelines") => {

@@ -1,0 +1,41 @@
+# Unified RustCI Runner Configuration
+# Migrated from legacy Kubernetes configuration on Sun Aug  3 10:50:57 IST 2025
+
+name: "kubernetes-runner"
+runner_type:
+  Kubernetes:
+    name: "kubernetes-runner"
+    max_concurrent_jobs: 10
+    namespace: "default"
+    default_image: "ubuntu:22.04"
+    service_account: null
+    resource_limits:
+      cpu_limit: 1000      # 1 CPU
+      memory_limit: 512    # 512MB
+      storage_limit: 1024  # 1GB
+    volume_mounts: []
+    environment: {}
+    cleanup_settings:
+      remove_jobs: true
+      remove_pods: true
+      cleanup_timeout_seconds: 60
+      ttl_seconds_after_finished: 300
+    image_pull_policy: "IfNotPresent"
+    security_context: null
+    node_selector: {}
+    tolerations: []
+
+compatibility_flags:
+  legacy_mode: true
+  runner_compat: true
+  hybrid_deployment: true
+  feature_flags: {}
+
+control_plane_integration:
+  enabled: false
+  endpoint: null
+  auth_config: null
+  registration:
+    auto_register: true
+    retry_attempts: 3
+    timeout_seconds: 30

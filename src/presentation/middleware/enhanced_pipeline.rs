@@ -1,5 +1,5 @@
 use crate::{
-    core::security::{AuditAction, AuditEvent, Permission, Role, SecurityContext},
+    core::networking::security::{AuditAction, AuditEvent, Permission, Role, SecurityContext},
     error::{AppError, Result},
     AppState,
 };
@@ -59,7 +59,7 @@ impl EnhancedMiddlewarePipeline {
         })?;
 
         // Verify token and create security context
-        let jwt_manager = crate::core::security::JwtManager::new(
+        let jwt_manager = crate::core::networking::security::JwtManager::new(
             state.env.security.jwt.secret.clone(),
             state.env.security.jwt.expires_in_seconds,
         );

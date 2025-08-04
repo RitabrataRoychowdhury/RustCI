@@ -5,6 +5,7 @@
 pub mod auth;
 pub mod ci;
 pub mod cluster;
+pub mod control_plane;
 pub mod dockerfile;
 pub mod oauth;
 pub mod pr;

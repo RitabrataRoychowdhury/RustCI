@@ -1,5 +1,5 @@
 use crate::{
-    core::security::{AuditAction, AuditEvent, JwtManager, SecurityContext},
+    core::networking::security::{AuditAction, AuditEvent, JwtManager, SecurityContext},
     error::{AppError, Result},
     AppState,
 };
@@ -173,7 +173,7 @@ pub async fn auth(
 
 /// Permission-based authorization middleware
 pub fn require_permission(
-    permission: crate::core::security::Permission,
+    permission: crate::core::networking::security::Permission,
 ) -> impl Fn(
     Request<Body>,
     Next,
@@ -214,7 +214,7 @@ pub fn require_permission(
 
 /// Role-based authorization middleware
 pub fn require_role(
-    role: crate::core::security::Role,
+    role: crate::core::networking::security::Role,
 ) -> impl Fn(
     Request<Body>,
     Next,
@@ -257,7 +257,7 @@ pub fn require_role(
 /// Create a middleware that combines authentication and authorization
 /// Note: This is a simplified version - in practice, you'd need more complex composition
 pub async fn auth_with_permission_middleware(
-    _permission: crate::core::security::Permission,
+    _permission: crate::core::networking::security::Permission,
     cookie_jar: CookieJar,
     state: State<AppState>,
     req: Request<Body>,

@@ -1,4 +1,4 @@
-use RustAutoDevOps::core::security::{JwtClaims, JwtManager, Role};
+use RustAutoDevOps::core::networking::security::{JwtClaims, JwtManager, Role};
 use std::collections::HashSet;
 
 fn main() {

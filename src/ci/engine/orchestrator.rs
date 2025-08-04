@@ -9,8 +9,8 @@ use uuid::Uuid;
 
 use crate::ci::pipeline::{ExecutionStatus, TriggerInfo};
 use crate::core::{
-    events::EventBus,
-    sagas::{SagaContext, SagaOrchestrator},
+    patterns::events::EventBus,
+    patterns::sagas::{SagaContext, SagaOrchestrator},
 };
 use crate::error::Result;
 
@@ -106,11 +106,11 @@ impl CIEngineOrchestrator {
                     execution_id = %execution_id,
                     "Pipeline execution completed successfully through coordinator"
                 );
-                Ok(crate::core::sagas::SagaExecution {
+                Ok(crate::core::patterns::sagas::SagaExecution {
                     saga_id: execution_id,
                     correlation_id,
                     saga_name: "pipeline-execution".to_string(),
-                    status: crate::core::sagas::SagaStatus::Completed,
+                    status: crate::core::patterns::sagas::SagaStatus::Completed,
                     started_at: execution_context.started_at,
                     completed_at: Some(chrono::Utc::now()),
                     current_step: execution_context.pipeline.stages.len(),
@@ -126,11 +126,11 @@ impl CIEngineOrchestrator {
                     error = %e,
                     "Pipeline execution failed through coordinator"
                 );
-                Ok(crate::core::sagas::SagaExecution {
+                Ok(crate::core::patterns::sagas::SagaExecution {
                     saga_id: execution_id,
                     correlation_id,
                     saga_name: "pipeline-execution".to_string(),
-                    status: crate::core::sagas::SagaStatus::Failed,
+                    status: crate::core::patterns::sagas::SagaStatus::Failed,
                     started_at: execution_context.started_at,
                     completed_at: Some(chrono::Utc::now()),
                     current_step: 0,
@@ -356,7 +356,7 @@ impl CIEngineOrchestrator {
 mod tests {
     use super::*;
     use crate::ci::config::{CIPipeline, Stage, Step, StepConfig, StepType};
-    use crate::core::{sagas::SagaPersistence, CorrelationTracker};
+    use crate::core::patterns::{sagas::SagaPersistence, correlation::CorrelationTracker};
     use std::collections::HashMap;
     use crate::ci::engine::MetricsCollector;
     use std::env;
@@ -369,7 +369,7 @@ mod tests {
     impl SagaPersistence for MockSagaPersistence {
         async fn save_execution(
             &self,
-            _execution: &crate::core::sagas::SagaExecution,
+            _execution: &crate::core::patterns::sagas::SagaExecution,
         ) -> Result<()> {
             Ok(())
         }
@@ -377,21 +377,21 @@ mod tests {
         async fn load_execution(
             &self,
             _saga_id: Uuid,
-        ) -> Result<Option<crate::core::sagas::SagaExecution>> {
+        ) -> Result<Option<crate::core::patterns::sagas::SagaExecution>> {
             Ok(None)
         }
 
         async fn find_by_status(
             &self,
-            _status: crate::core::sagas::SagaStatus,
-        ) -> Result<Vec<crate::core::sagas::SagaExecution>> {
+            _status: crate::core::patterns::sagas::SagaStatus,
+        ) -> Result<Vec<crate::core::patterns::sagas::SagaExecution>> {
             Ok(Vec::new())
         }
 
         async fn find_by_correlation_id(
             &self,
             _correlation_id: Uuid,
-        ) -> Result<Vec<crate::core::sagas::SagaExecution>> {
+        ) -> Result<Vec<crate::core::patterns::sagas::SagaExecution>> {
             Ok(Vec::new())
         }
 
@@ -399,8 +399,8 @@ mod tests {
             Ok(())
         }
 
-        async fn get_statistics(&self) -> Result<crate::core::sagas::SagaStatistics> {
-            Ok(crate::core::sagas::SagaStatistics {
+        async fn get_statistics(&self) -> Result<crate::core::patterns::sagas::SagaStatistics> {
+            Ok(crate::core::patterns::sagas::SagaStatistics {
                 total_executions: 0,
                 completed_executions: 0,
                 failed_executions: 0,

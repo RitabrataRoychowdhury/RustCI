@@ -1,6 +1,6 @@
 use crate::{
     AppState,
-    core::security::{JwtClaims, JwtManager, Role},
+    core::networking::security::{JwtClaims, JwtManager, Role},
     domain::entities::{User, UserData, UserLoginResponse, UserResponse},
     error::{AppError, Result},
 };

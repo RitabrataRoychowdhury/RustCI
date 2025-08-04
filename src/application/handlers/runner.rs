@@ -4,9 +4,9 @@
 //! including registration, job triggering, log fetching, artifact retrieval, and deregistration.
 
 use crate::{
-    core::security::{Permission, SecurityContext},
+    core::networking::security::{Permission, SecurityContext},
     domain::entities::runner::{
-        Job, JobId, JobPriority, JobResult, JobStatus, JobStep, RunnerId, RunnerEntity,
+        Job, JobId, JobPriority, JobStatus, JobStep, RunnerId, RunnerEntity,
         RunnerStatus, RunnerType,
     },
     error::{AppError, Result},
@@ -22,7 +22,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -534,7 +534,7 @@ pub async fn list_runners(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::security::{Role, SecurityContext};
+    use crate::core::networking::security::{Role, SecurityContext};
     use std::collections::HashSet;
 
     fn create_mock_security_context() -> SecurityContext {

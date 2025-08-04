@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::ci::pipeline::ExecutionStatus;
-use crate::core::CorrelationTracker;
+use crate::core::patterns::correlation::CorrelationTracker;
 use crate::error::{AppError, Result};
 
 use super::{ExecutionContext, MetricsCollector};
@@ -585,7 +585,7 @@ mod tests {
     use super::*;
     use crate::ci::config::{CIPipeline, Stage, Step, StepConfig, StepType};
     use crate::ci::pipeline::TriggerInfo;
-    use crate::core::CorrelationTracker;
+    use crate::core::patterns::correlation::CorrelationTracker;
 
     fn create_test_context() -> ExecutionContext {
         let pipeline = CIPipeline {

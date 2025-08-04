@@ -10,9 +10,9 @@ use crate::ci::{
     connectors::ConnectorManager, executor::PipelineExecutor, workspace::WorkspaceManager,
 };
 use crate::core::{
-    events::EventBus,
-    sagas::{SagaOrchestrator, SagaPersistence},
-    CorrelationTracker,
+    patterns::events::EventBus,
+    patterns::sagas::{SagaOrchestrator, SagaPersistence},
+    patterns::correlation::CorrelationTracker,
 };
 use crate::error::Result;
 use crate::infrastructure::database::DatabaseManager;
@@ -324,7 +324,7 @@ impl Default for CIEngineBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::sagas::{SagaExecution, SagaStatistics, SagaStatus};
+    use crate::core::patterns::sagas::{SagaExecution, SagaStatistics, SagaStatus};
     use uuid::Uuid;
 
     // Mock SAGA persistence for testing

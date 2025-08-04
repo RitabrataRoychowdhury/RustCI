@@ -1,46 +1,42 @@
 //! Core domain logic and foundational patterns
 //!
 //! This module contains the core architectural patterns and domain logic
-//! that form the foundation of the RustCI system.
+//! that form the foundation of the RustCI system. It's organized into
+//! logical subdirectories for better maintainability and separation of concerns.
 
-pub mod async_jobs;
-pub mod audit;
-pub mod caching;
-pub mod cluster_coordinator;
-pub mod commands;
-pub mod concurrency;
-pub mod correlation;
-pub mod dependency_injection;
-pub mod error_manager;
-pub mod event_loop;
-pub mod event_sourcing;
-pub mod events;
-pub mod integration_example;
-pub mod job_queue;
-pub mod logging;
-pub mod metrics;
-pub mod monitoring;
-pub mod node_registry;
+// Cluster management and coordination
+pub mod cluster;
+
+// Job scheduling, execution, and management
+pub mod jobs;
+
+// Runner lifecycle, discovery, and management
+pub mod runners;
+
+// Networking, communication, and security
+pub mod networking;
+
+// Observability, monitoring, and diagnostics
 pub mod observability;
-pub mod profiling;
-pub mod projections;
-pub mod prometheus_metrics;
-pub mod queries;
-pub mod resilience;
-pub mod runtime_optimization;
-pub mod sagas;
-pub mod security;
-pub mod service_decorators;
-pub mod traits;
 
-// Re-export core types for easy access
-pub use correlation::CorrelationTracker;
-pub use dependency_injection::{ServiceContainer, ServiceFactory, ServiceLifetime, ServiceScope};
-pub use resilience::{BulkheadConfig, BulkheadManager, BulkheadStats};
-pub use service_decorators::{
-    CircuitBreakerConfig, RetryConfig, Service, ServiceContext, ServiceDecorator,
-};
-// Removed unused imports - these can be imported directly when needed
+// Architectural patterns and design patterns
+pub mod patterns;
+
+// Core infrastructure services and utilities
+pub mod infrastructure;
+
+// Re-export commonly used types for easy access
+pub use cluster::{ClusterCoordinator, NodeRegistry, LeaderElectionManager};
+pub use jobs::{DefaultJobScheduler, JobQueue, InMemoryJobQueue, DistributedJobScheduler};
+pub use runners::{RunnerPoolManager, DefaultRunnerPoolManager, RunnerDiscoveryService, DefaultRunnerDiscoveryService};
+pub use networking::{Transport, Connection, TransportConfig};
+pub use observability::{MetricsCollector};
+pub use patterns::{CommandHandler, EventBus, EventHandler};
+pub use infrastructure::{ServiceContainer, ServiceFactory, Service, ServiceDecorator};
+
+// Re-export specific commonly used items
+pub use patterns::correlation::CorrelationTracker;
+pub use networking::security::{JwtManager, Permission, SecurityContext, AuditAction, AuditEvent};
 
 /// Core result type used throughout the system
 pub type CoreResult<T> = crate::error::Result<T>;

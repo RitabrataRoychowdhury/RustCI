@@ -99,6 +99,9 @@ num_cpus = "1.17"
 # File watching for hot-reload
 notify = "6.1"
 
+# WebSocket support for node communication
+tokio-tungstenite = { version = "0.20", features = ["native-tls"] }
+
 [dev-dependencies]
 # Testing framework
 tokio-test = "0.4"

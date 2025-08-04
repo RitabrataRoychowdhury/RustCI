@@ -1,483 +1,366 @@
-use crate::{
-    config::RateLimitConfig,
-    core::security::{AuditAction, AuditEvent, SecurityContext},
-    error::{AppError, Result},
-    AppState,
-};
-use axum::{
-    extract::{Request, State},
-    middleware::Next,
-    response::Response,
-};
-use std::{collections::HashMap, sync::Arc, time::Instant};
-use tracing::{debug, error, warn};
-use uuid::Uuid;
+//! Rate Limiting Middleware
+//!
+//! This module implements rate limiting for API endpoints to prevent abuse
+//! and ensure fair resource usage across users and nodes.
 
-/// Enhanced rate limiter with sliding window and multiple limit types
-pub struct RateLimiter {
-    config: RateLimitConfig,
-    // IP-based rate limiting
-    ip_windows: Arc<tokio::sync::RwLock<HashMap<String, SlidingWindow>>>,
-    // User-based rate limiting
-    user_windows: Arc<tokio::sync::RwLock<HashMap<String, SlidingWindow>>>,
-    // Endpoint-based rate limiting
-    endpoint_windows: Arc<tokio::sync::RwLock<HashMap<String, SlidingWindow>>>,
+use axum::{
+    body::Body,
+    extract::{Request, State},
+    http::{HeaderMap, StatusCode},
+    middleware::Next,
+    response::{IntoResponse, Response},
+};
+use std::collections::HashMap;
+use std::net::IpAddr;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
+use tracing::{debug, warn};
+
+use crate::{error::AppError, AppState};
+
+/// Rate limiting configuration
+#[derive(Debug, Clone)]
+pub struct RateLimitConfig {
+    /// Maximum requests per window
+    pub max_requests: u32,
+    /// Time window duration
+    pub window_duration: Duration,
+    /// Enable rate limiting
+    pub enabled: bool,
+    /// Rate limit per IP
+    pub per_ip_limit: Option<u32>,
+    /// Rate limit per user
+    pub per_user_limit: Option<u32>,
+    /// Rate limit per API key
+    pub per_api_key_limit: Option<u32>,
 }
 
-/// Sliding window for rate limiting
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            max_requests: 1000,
+            window_duration: Duration::from_secs(3600), // 1 hour
+            enabled: true,
+            per_ip_limit: Some(100),
+            per_user_limit: Some(500),
+            per_api_key_limit: Some(1000),
+        }
+    }
+}
+
+/// Rate limit bucket for tracking requests
 #[derive(Debug, Clone)]
-struct SlidingWindow {
-    requests: Vec<Instant>,
-    window_size: std::time::Duration,
+struct RateLimitBucket {
+    /// Number of requests in current window
+    requests: u32,
+    /// Window start time
+    window_start: Instant,
+    /// Window duration
+    window_duration: Duration,
+    /// Maximum requests allowed
     max_requests: u32,
 }
 
-impl SlidingWindow {
-    fn new(window_size: std::time::Duration, max_requests: u32) -> Self {
+impl RateLimitBucket {
+    fn new(max_requests: u32, window_duration: Duration) -> Self {
         Self {
-            requests: Vec::new(),
-            window_size,
+            requests: 0,
+            window_start: Instant::now(),
+            window_duration,
             max_requests,
         }
     }
 
-    fn can_make_request(&mut self) -> bool {
+    /// Check if request is allowed and increment counter
+    fn try_consume(&mut self) -> bool {
         let now = Instant::now();
+        
+        // Reset window if expired
+        if now.duration_since(self.window_start) >= self.window_duration {
+            self.requests = 0;
+            self.window_start = now;
+        }
 
-        // Remove old requests outside the window
-        self.requests
-            .retain(|&request_time| now.duration_since(request_time) < self.window_size);
-
-        // Check if we can make a new request
-        if self.requests.len() < self.max_requests as usize {
-            self.requests.push(now);
+        // Check if under limit
+        if self.requests < self.max_requests {
+            self.requests += 1;
             true
         } else {
             false
         }
     }
 
-    fn requests_in_window(&self) -> usize {
+    /// Get remaining requests in current window
+    fn remaining(&self) -> u32 {
         let now = Instant::now();
-        self.requests
-            .iter()
-            .filter(|&&request_time| now.duration_since(request_time) < self.window_size)
-            .count()
-    }
-
-    fn time_until_next_request(&self) -> Option<std::time::Duration> {
-        if self.requests.len() < self.max_requests as usize {
-            return None;
+        
+        // If window expired, full limit is available
+        if now.duration_since(self.window_start) >= self.window_duration {
+            self.max_requests
+        } else {
+            self.max_requests.saturating_sub(self.requests)
         }
-
-        let now = Instant::now();
-        self.requests
-            .iter()
-            .filter_map(|&request_time| {
-                let elapsed = now.duration_since(request_time);
-                if elapsed < self.window_size {
-                    Some(self.window_size - elapsed)
-                } else {
-                    None
-                }
-            })
-            .min()
     }
+
+    /// Get time until window reset
+    fn reset_time(&self) -> Duration {
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.window_start);
+        
+        if elapsed >= self.window_duration {
+            Duration::from_secs(0)
+        } else {
+            self.window_duration - elapsed
+        }
+    }
+}
+
+/// Rate limiter state
+pub struct RateLimiter {
+    /// Rate limit buckets by IP address
+    ip_buckets: Arc<RwLock<HashMap<IpAddr, RateLimitBucket>>>,
+    /// Rate limit buckets by user ID
+    user_buckets: Arc<RwLock<HashMap<String, RateLimitBucket>>>,
+    /// Rate limit buckets by API key
+    api_key_buckets: Arc<RwLock<HashMap<String, RateLimitBucket>>>,
+    /// Configuration
+    config: RateLimitConfig,
 }
 
 impl RateLimiter {
     pub fn new(config: RateLimitConfig) -> Self {
         Self {
+            ip_buckets: Arc::new(RwLock::new(HashMap::new())),
+            user_buckets: Arc::new(RwLock::new(HashMap::new())),
+            api_key_buckets: Arc::new(RwLock::new(HashMap::new())),
             config,
-            ip_windows: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
-            user_windows: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
-            endpoint_windows: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         }
     }
 
-    /// Check all rate limits for a request
-    pub async fn check_rate_limits(
-        &self,
-        client_ip: &str,
-        user_id: Option<&str>,
-        endpoint: &str,
-    ) -> Result<()> {
-        // Check if IP is whitelisted
-        if self.config.whitelist_ips.contains(&client_ip.to_string()) {
-            debug!(
-                client_ip = client_ip,
-                "✅ IP whitelisted, skipping rate limits"
-            );
-            return Ok(());
-        }
+    /// Check rate limit for IP address
+    async fn check_ip_limit(&self, ip: IpAddr) -> Result<(), RateLimitError> {
+        if let Some(limit) = self.config.per_ip_limit {
+            let mut buckets = self.ip_buckets.write().await;
+            let bucket = buckets
+                .entry(ip)
+                .or_insert_with(|| RateLimitBucket::new(limit, self.config.window_duration));
 
-        // Check IP-based rate limit
-        self.check_ip_rate_limit(client_ip).await?;
-
-        // Check user-based rate limit if enabled and user is authenticated
-        if self.config.enable_per_user_limits {
-            if let Some(uid) = user_id {
-                self.check_user_rate_limit(uid).await?;
+            if !bucket.try_consume() {
+                return Err(RateLimitError {
+                    limit_type: "ip".to_string(),
+                    identifier: ip.to_string(),
+                    limit: limit,
+                    remaining: bucket.remaining(),
+                    reset_time: bucket.reset_time(),
+                });
             }
         }
-
-        // Check endpoint-specific rate limits
-        self.check_endpoint_rate_limit(endpoint).await?;
-
         Ok(())
     }
 
-    async fn check_ip_rate_limit(&self, client_ip: &str) -> Result<()> {
-        let mut windows = self.ip_windows.write().await;
-        let window = windows.entry(client_ip.to_string()).or_insert_with(|| {
-            SlidingWindow::new(
-                std::time::Duration::from_secs(60),
-                self.config.requests_per_minute,
-            )
+    /// Check rate limit for user
+    async fn check_user_limit(&self, user_id: &str) -> Result<(), RateLimitError> {
+        if let Some(limit) = self.config.per_user_limit {
+            let mut buckets = self.user_buckets.write().await;
+            let bucket = buckets
+                .entry(user_id.to_string())
+                .or_insert_with(|| RateLimitBucket::new(limit, self.config.window_duration));
+
+            if !bucket.try_consume() {
+                return Err(RateLimitError {
+                    limit_type: "user".to_string(),
+                    identifier: user_id.to_string(),
+                    limit: limit,
+                    remaining: bucket.remaining(),
+                    reset_time: bucket.reset_time(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Check rate limit for API key
+    async fn check_api_key_limit(&self, api_key: &str) -> Result<(), RateLimitError> {
+        if let Some(limit) = self.config.per_api_key_limit {
+            let mut buckets = self.api_key_buckets.write().await;
+            let bucket = buckets
+                .entry(api_key.to_string())
+                .or_insert_with(|| RateLimitBucket::new(limit, self.config.window_duration));
+
+            if !bucket.try_consume() {
+                return Err(RateLimitError {
+                    limit_type: "api_key".to_string(),
+                    identifier: api_key.to_string(),
+                    limit: limit,
+                    remaining: bucket.remaining(),
+                    reset_time: bucket.reset_time(),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Rate limit error
+#[derive(Debug)]
+pub struct RateLimitError {
+    pub limit_type: String,
+    pub identifier: String,
+    pub limit: u32,
+    pub remaining: u32,
+    pub reset_time: Duration,
+}
+
+impl IntoResponse for RateLimitError {
+    fn into_response(self) -> Response {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-RateLimit-Limit", self.limit.to_string().parse().unwrap());
+        headers.insert("X-RateLimit-Remaining", self.remaining.to_string().parse().unwrap());
+        headers.insert("X-RateLimit-Reset", self.reset_time.as_secs().to_string().parse().unwrap());
+        headers.insert("Retry-After", self.reset_time.as_secs().to_string().parse().unwrap());
+
+        let body = serde_json::json!({
+            "error": "Rate limit exceeded",
+            "limit_type": self.limit_type,
+            "limit": self.limit,
+            "remaining": self.remaining,
+            "reset_in_seconds": self.reset_time.as_secs()
         });
 
-        if !window.can_make_request() {
-            let retry_after = window
-                .time_until_next_request()
-                .unwrap_or(std::time::Duration::from_secs(60));
-
-            warn!(
-                client_ip = client_ip,
-                requests_in_window = window.requests_in_window(),
-                limit = self.config.requests_per_minute,
-                retry_after_secs = retry_after.as_secs(),
-                "🚫 IP rate limit exceeded"
-            );
-
-            return Err(AppError::RateLimitExceeded {
-                limit: self.config.requests_per_minute,
-                window: "1 minute".to_string(),
-            });
-        }
-
-        debug!(
-            client_ip = client_ip,
-            requests_in_window = window.requests_in_window(),
-            limit = self.config.requests_per_minute,
-            "✅ IP rate limit check passed"
-        );
-
-        Ok(())
-    }
-
-    async fn check_user_rate_limit(&self, user_id: &str) -> Result<()> {
-        let user_limit = self.config.requests_per_minute * 2; // Users get higher limits
-        let mut windows = self.user_windows.write().await;
-        let window = windows
-            .entry(user_id.to_string())
-            .or_insert_with(|| SlidingWindow::new(std::time::Duration::from_secs(60), user_limit));
-
-        if !window.can_make_request() {
-            let retry_after = window
-                .time_until_next_request()
-                .unwrap_or(std::time::Duration::from_secs(60));
-
-            warn!(
-                user_id = user_id,
-                requests_in_window = window.requests_in_window(),
-                limit = user_limit,
-                retry_after_secs = retry_after.as_secs(),
-                "🚫 User rate limit exceeded"
-            );
-
-            return Err(AppError::RateLimitExceeded {
-                limit: user_limit,
-                window: "1 minute".to_string(),
-            });
-        }
-
-        debug!(
-            user_id = user_id,
-            requests_in_window = window.requests_in_window(),
-            limit = user_limit,
-            "✅ User rate limit check passed"
-        );
-
-        Ok(())
-    }
-
-    async fn check_endpoint_rate_limit(&self, endpoint: &str) -> Result<()> {
-        // Different endpoints have different limits
-        let endpoint_limit = self.get_endpoint_limit(endpoint);
-        if endpoint_limit == 0 {
-            return Ok(()); // No limit for this endpoint
-        }
-
-        let mut windows = self.endpoint_windows.write().await;
-        let window = windows.entry(endpoint.to_string()).or_insert_with(|| {
-            SlidingWindow::new(std::time::Duration::from_secs(60), endpoint_limit)
-        });
-
-        if !window.can_make_request() {
-            let retry_after = window
-                .time_until_next_request()
-                .unwrap_or(std::time::Duration::from_secs(60));
-
-            warn!(
-                endpoint = endpoint,
-                requests_in_window = window.requests_in_window(),
-                limit = endpoint_limit,
-                retry_after_secs = retry_after.as_secs(),
-                "🚫 Endpoint rate limit exceeded"
-            );
-
-            return Err(AppError::RateLimitExceeded {
-                limit: endpoint_limit,
-                window: "1 minute".to_string(),
-            });
-        }
-
-        debug!(
-            endpoint = endpoint,
-            requests_in_window = window.requests_in_window(),
-            limit = endpoint_limit,
-            "✅ Endpoint rate limit check passed"
-        );
-
-        Ok(())
-    }
-
-    fn get_endpoint_limit(&self, endpoint: &str) -> u32 {
-        match endpoint {
-            // High-frequency endpoints get higher limits
-            path if path.starts_with("/api/healthchecker") => 0, // No limit
-            path if path.starts_with("/api/ci/pipelines") && path.contains("/status") => {
-                self.config.requests_per_minute * 3
-            }
-
-            // Authentication endpoints get moderate limits
-            path if path.contains("/oauth") || path.contains("/login") => {
-                self.config.requests_per_minute / 2
-            }
-
-            // Pipeline execution gets lower limits (resource intensive)
-            path if path.contains("/execute") => self.config.requests_per_minute / 4,
-
-            // File upload gets very low limits
-            path if path.contains("/upload") => self.config.requests_per_minute / 8,
-
-            // Default limit for other endpoints
-            _ => self.config.requests_per_minute,
-        }
-    }
-
-    /// Clean up old windows periodically
-    pub async fn cleanup_old_windows(&self) {
-        let cleanup_threshold = std::time::Duration::from_secs(300); // 5 minutes
-        let now = Instant::now();
-
-        // Clean IP windows
-        {
-            let mut windows = self.ip_windows.write().await;
-            windows.retain(|_, window| {
-                window
-                    .requests
-                    .iter()
-                    .any(|&request_time| now.duration_since(request_time) < cleanup_threshold)
-            });
-        }
-
-        // Clean user windows
-        {
-            let mut windows = self.user_windows.write().await;
-            windows.retain(|_, window| {
-                window
-                    .requests
-                    .iter()
-                    .any(|&request_time| now.duration_since(request_time) < cleanup_threshold)
-            });
-        }
-
-        // Clean endpoint windows
-        {
-            let mut windows = self.endpoint_windows.write().await;
-            windows.retain(|_, window| {
-                window
-                    .requests
-                    .iter()
-                    .any(|&request_time| now.duration_since(request_time) < cleanup_threshold)
-            });
-        }
-
-        debug!("🧹 Rate limiter cleanup completed");
+        (StatusCode::TOO_MANY_REQUESTS, headers, body.to_string()).into_response()
     }
 }
 
 /// Rate limiting middleware
 pub async fn rate_limit_middleware(
     State(state): State<AppState>,
-    req: Request,
+    req: Request<Body>,
     next: Next,
-) -> Result<Response> {
-    let start_time = Instant::now();
-    let method = req.method().clone();
-    let uri = req.uri().clone();
-    let path = uri.path();
+) -> Result<Response, AppError> {
+    // Skip rate limiting if disabled
+    if !state.env.security.rate_limiting.enabled {
+        return Ok(next.run(req).await);
+    }
 
     // Extract client IP
-    let client_ip = req
-        .headers()
-        .get("x-forwarded-for")
-        .or_else(|| req.headers().get("x-real-ip"))
-        .and_then(|h| h.to_str().ok())
-        .map(|s| s.split(',').next().unwrap_or(s).trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
-
-    // Extract user ID from security context if available
-    let user_id = req
-        .extensions()
-        .get::<SecurityContext>()
+    let client_ip = extract_client_ip(&req);
+    
+    // Extract user ID from security context (if authenticated)
+    let user_id = req.extensions().get::<crate::core::networking::security::SecurityContext>()
         .map(|ctx| ctx.user_id.to_string());
 
-    // Create rate limiter
-    let rate_limiter = RateLimiter::new(state.env.security.rate_limiting.clone());
+    // Extract API key from headers
+    let api_key = req.headers()
+        .get("X-API-Key")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string());
 
-    // Check rate limits
-    if let Err(e) = rate_limiter
-        .check_rate_limits(&client_ip, user_id.as_deref(), path)
-        .await
-    {
-        // Log rate limit violation
-        if let Some(audit_logger) = &state.audit_logger {
-            let audit_event = AuditEvent::new(
-                AuditAction::Login, // Generic action for rate limit violations
-                "rate_limit".to_string(),
-                user_id.as_ref().and_then(|id| id.parse::<Uuid>().ok()),
-                None,
-            )
-            .with_client_info(Some(client_ip.clone()), None)
-            .with_error(format!("Rate limit exceeded: {}", e))
-            .with_details(
-                "endpoint".to_string(),
-                serde_json::Value::String(path.to_string()),
-            )
-            .with_details(
-                "method".to_string(),
-                serde_json::Value::String(method.to_string()),
+    // Create rate limiter from app config
+    let rate_limit_config = RateLimitConfig {
+        max_requests: state.env.security.rate_limiting.requests_per_minute,
+        window_duration: Duration::from_secs(60), // 1 minute window
+        enabled: state.env.security.rate_limiting.enabled,
+        per_ip_limit: Some(state.env.security.rate_limiting.requests_per_minute),
+        per_user_limit: if state.env.security.rate_limiting.enable_per_user_limits {
+            Some(state.env.security.rate_limiting.requests_per_minute * 2)
+        } else {
+            None
+        },
+        per_api_key_limit: Some(state.env.security.rate_limiting.requests_per_minute * 5),
+    };
+    let rate_limiter = RateLimiter::new(rate_limit_config);
+
+    // Check IP rate limit
+    if let Some(ip) = client_ip {
+        if let Err(e) = rate_limiter.check_ip_limit(ip).await {
+            warn!(
+                ip = %ip,
+                limit_type = %e.limit_type,
+                "Rate limit exceeded for IP"
             );
-
-            let audit_logger_clone = Arc::clone(audit_logger);
-            tokio::spawn(async move {
-                if let Err(e) = audit_logger_clone.log_event(audit_event).await {
-                    error!("Failed to log rate limit audit event: {}", e);
-                }
-            });
+            return Err(AppError::RateLimitExceededSimple(format!(
+                "Rate limit exceeded for IP {}: {} requests per {} seconds",
+                ip, e.limit, e.reset_time.as_secs()
+            )));
         }
-
-        error!(
-            client_ip = client_ip,
-            user_id = ?user_id,
-            method = %method,
-            path = path,
-            error = %e,
-            "🚫 Rate limit exceeded"
-        );
-
-        return Err(e);
     }
 
-    let response = next.run(req).await;
-    let duration = start_time.elapsed();
+    // Check user rate limit
+    if let Some(user_id) = &user_id {
+        if let Err(e) = rate_limiter.check_user_limit(user_id).await {
+            warn!(
+                user_id = %user_id,
+                limit_type = %e.limit_type,
+                "Rate limit exceeded for user"
+            );
+            return Err(AppError::RateLimitExceededSimple(format!(
+                "Rate limit exceeded for user {}: {} requests per {} seconds",
+                user_id, e.limit, e.reset_time.as_secs()
+            )));
+        }
+    }
+
+    // Check API key rate limit
+    if let Some(api_key) = &api_key {
+        if let Err(e) = rate_limiter.check_api_key_limit(api_key).await {
+            warn!(
+                api_key = %api_key,
+                limit_type = %e.limit_type,
+                "Rate limit exceeded for API key"
+            );
+            return Err(AppError::RateLimitExceededSimple(format!(
+                "Rate limit exceeded for API key: {} requests per {} seconds",
+                e.limit, e.reset_time.as_secs()
+            )));
+        }
+    }
 
     debug!(
-        client_ip = client_ip,
+        ip = ?client_ip,
         user_id = ?user_id,
-        method = %method,
-        path = path,
-        status = response.status().as_u16(),
-        duration_ms = duration.as_millis(),
-        "✅ Rate limit check passed"
+        api_key = ?api_key.as_ref().map(|k| &k[..8]),
+        "Rate limit check passed"
     );
 
-    Ok(response)
+    Ok(next.run(req).await)
 }
 
-/// Background task to clean up old rate limit windows
-pub async fn start_rate_limit_cleanup_task(rate_limiter: Arc<RateLimiter>) {
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(300)); // 5 minutes
-
-    loop {
-        interval.tick().await;
-        rate_limiter.cleanup_old_windows().await;
+/// Extract client IP from request headers
+fn extract_client_ip(req: &Request<Body>) -> Option<IpAddr> {
+    // Check X-Forwarded-For header first
+    if let Some(forwarded) = req.headers().get("x-forwarded-for") {
+        if let Ok(forwarded_str) = forwarded.to_str() {
+            // Take the first IP in the chain
+            if let Some(first_ip) = forwarded_str.split(',').next() {
+                if let Ok(ip) = first_ip.trim().parse::<IpAddr>() {
+                    return Some(ip);
+                }
+            }
+        }
     }
+
+    // Check X-Real-IP header
+    if let Some(real_ip) = req.headers().get("x-real-ip") {
+        if let Ok(real_ip_str) = real_ip.to_str() {
+            if let Ok(ip) = real_ip_str.parse::<IpAddr>() {
+                return Some(ip);
+            }
+        }
+    }
+
+    // TODO: Extract from connection info if available
+    None
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_sliding_window() {
-        let mut window = SlidingWindow::new(std::time::Duration::from_secs(60), 5);
-
-        // Should allow requests under the limit
-        assert!(window.can_make_request());
-        assert!(window.can_make_request());
-        assert!(window.can_make_request());
-        assert!(window.can_make_request());
-        assert!(window.can_make_request());
-
-        // Should reject the 6th request
-        assert!(!window.can_make_request());
-
-        // Check requests in window
-        assert_eq!(window.requests_in_window(), 5);
-    }
-
-    #[tokio::test]
-    async fn test_rate_limiter() {
-        let config = RateLimitConfig {
-            requests_per_minute: 5,
-            burst_size: 10,
-            enable_per_user_limits: true,
-            whitelist_ips: vec!["127.0.0.1".to_string()],
-        };
-
-        let limiter = RateLimiter::new(config);
-
-        // Should allow requests under the limit
-        assert!(limiter
-            .check_rate_limits("192.168.1.1", None, "/api/test")
-            .await
-            .is_ok());
-        assert!(limiter
-            .check_rate_limits("192.168.1.1", None, "/api/test")
-            .await
-            .is_ok());
-
-        // Whitelisted IP should always pass
-        assert!(limiter
-            .check_rate_limits("127.0.0.1", None, "/api/test")
-            .await
-            .is_ok());
-    }
-
-    #[test]
-    fn test_endpoint_limits() {
-        let config = RateLimitConfig {
-            requests_per_minute: 60,
-            burst_size: 10,
-            enable_per_user_limits: false,
-            whitelist_ips: vec![],
-        };
-
-        let limiter = RateLimiter::new(config);
-
-        // Health check should have no limit
-        assert_eq!(limiter.get_endpoint_limit("/api/healthchecker"), 0);
-
-        // Execute endpoints should have lower limits
-        assert_eq!(limiter.get_endpoint_limit("/api/ci/pipelines/execute"), 15);
-
-        // Upload endpoints should have very low limits
-        assert_eq!(limiter.get_endpoint_limit("/api/upload"), 7);
-
-        // Default endpoints should have normal limits
-        assert_eq!(limiter.get_endpoint_limit("/api/other"), 60);
+/// Create rate limiting middleware with custom configuration
+pub fn create_rate_limit_middleware(
+    config: RateLimitConfig,
+) -> impl Fn(State<AppState>, Request<Body>, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, AppError>> + Send>> + Clone {
+    move |state: State<AppState>, req: Request<Body>, next: Next| {
+        let _config = config.clone();
+        Box::pin(async move {
+            rate_limit_middleware(state, req, next).await
+        })
     }
 }

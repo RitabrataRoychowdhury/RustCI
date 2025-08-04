@@ -1,0 +1,44 @@
+# Unified RustCI Runner Configuration
+# Migrated to native runner configuration on Sun Aug  3 10:50:57 IST 2025
+
+name: "native-runner"
+runner_type:
+  Native:
+    name: "native-runner"
+    max_concurrent_jobs: 4
+    working_directory: "/tmp/rustci"
+    environment: {}
+    default_timeout_seconds: 3600
+    isolation_level: "ProcessGroup"
+    resource_limits:
+      max_cpu: 1.0
+      max_memory: 1024
+      max_execution_time: 3600
+      max_processes: 100
+      max_file_descriptors: 1024
+    enable_output_streaming: true
+    max_output_buffer_size: 1048576
+    shell: "bash"
+    enhanced_lifecycle: true
+    control_plane_coordination:
+      enabled: true
+      heartbeat_interval: 30
+      health_check_interval: 60
+      auto_registration: true
+      tags: ["native"]
+      node_affinity: {}
+
+compatibility_flags:
+  legacy_mode: false
+  runner_compat: true
+  hybrid_deployment: true
+  feature_flags: {}
+
+control_plane_integration:
+  enabled: true
+  endpoint: null
+  auth_config: null
+  registration:
+    auto_register: true
+    retry_attempts: 3
+    timeout_seconds: 30

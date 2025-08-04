@@ -1,0 +1,38 @@
+# Unified RustCI Runner Configuration
+# Migrated from legacy Docker configuration on Sun Aug  3 10:50:57 IST 2025
+
+name: "docker-runner"
+runner_type:
+  Docker:
+    name: "docker-runner"
+    max_concurrent_jobs: 4
+    docker_endpoint: "unix:///var/run/docker.sock"
+    default_image: "ubuntu:22.04"
+    network: null
+    volume_mounts: []
+    environment: {}
+    resource_limits:
+      memory_limit: 536870912  # 512MB
+      cpu_limit: 1000000000    # 1 CPU
+      cpu_shares: 1024
+      disk_limit: 1073741824   # 1GB
+    cleanup_settings:
+      remove_containers: true
+      remove_volumes: true
+      removal_timeout_seconds: 30
+    image_pull_policy: "IfNotPresent"
+
+compatibility_flags:
+  legacy_mode: true
+  runner_compat: true
+  hybrid_deployment: true
+  feature_flags: {}
+
+control_plane_integration:
+  enabled: false
+  endpoint: null
+  auth_config: null
+  registration:
+    auto_register: true
+    retry_attempts: 3
+    timeout_seconds: 30

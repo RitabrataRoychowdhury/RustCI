@@ -25,7 +25,7 @@ use tokio::time::timeout;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::core::event_loop::{Event, EventDemultiplexer, EventHandler, EventPayload, EventType};
+use crate::core::infrastructure::event_loop::{Event, EventDemultiplexer, EventHandler, EventPayload, EventType};
 use crate::domain::entities::{
     HealthStatus, Job, JobId, JobResult, ResourceLimits, RunnerCapacity, RunnerId, RunnerMetadata,
     RunnerType, StepResult, VolumeMount,

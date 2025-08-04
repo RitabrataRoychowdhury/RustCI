@@ -18,8 +18,8 @@ use tokio::time::{timeout, Instant};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::core::event_loop::{Event, EventDemultiplexer, EventHandler, EventPayload, EventType};
-use crate::core::job_queue::{InMemoryJobQueue, JobQueue};
+use crate::core::infrastructure::event_loop::{Event, EventDemultiplexer, EventHandler, EventPayload, EventType};
+use crate::core::jobs::job_queue::{InMemoryJobQueue, JobQueue};
 use crate::domain::entities::{
     HealthStatus, Job, JobId, JobResult, JobStatus, Runner, RunnerCapacity, RunnerId,
     RunnerMetadata, RunnerType, StepResult,
@@ -234,14 +234,14 @@ impl LocalRunner {
                 EventPayload::JobCompletion {
                     job_id,
                     result: match result {
-                        Ok(job_result) => crate::core::event_loop::JobCompletionResult {
+                        Ok(job_result) => crate::core::infrastructure::event_loop::JobCompletionResult {
                             success: job_result.is_success(),
                             exit_code: job_result.exit_code,
                             output: job_result.stdout,
                             error: job_result.error_message,
                             duration: job_result.duration.unwrap_or_default(),
                         },
-                        Err(e) => crate::core::event_loop::JobCompletionResult {
+                        Err(e) => crate::core::infrastructure::event_loop::JobCompletionResult {
                             success: false,
                             exit_code: Some(-1),
                             output: String::new(),

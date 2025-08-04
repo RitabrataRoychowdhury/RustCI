@@ -1,0 +1,294 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Check code formatting
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  # Check for clippy warnings
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # Compile check with zero warnings
+  check:
+    name: Check (Zero Warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check compilation with zero warnings
+        run: cargo check --all-targets --all-features
+        env:
+          RUSTFLAGS: "-D warnings"
+
+  # Unit tests
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping: 1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run tests
+        run: cargo test --all-features
+        env:
+          MONGODB_URI: mongodb://localhost:27017
+          MONGODB_DATABASE: rustci_test
+
+  # Integration tests with Docker
+  integration-docker:
+    name: Integration Tests (Docker)
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+      docker:
+        image: docker:dind
+        options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run Docker integration tests
+        run: cargo test --test integration -- --test-threads=1
+        env:
+          MONGODB_URI: mongodb://localhost:27017
+          MONGODB_DATABASE: rustci_integration_test
+          DOCKER_HOST: tcp://localhost:2376
+
+  # Integration tests with Kubernetes (K3s)
+  integration-k8s:
+    name: Integration Tests (K3s)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Setup K3s
+        uses: debianmaster/actions-k3s@master
+        id: k3s
+        with:
+          version: 'v1.28.2+k3s1'
+      - name: Run K3s integration tests
+        run: cargo test --test integration -- k8s --test-threads=1
+        env:
+          KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+  # Native runner tests
+  native-runner:
+    name: Native Runner Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run native runner tests
+        run: cargo test --test native_runner_tests
+
+  # Security audit
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v1.4.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Performance tests
+  performance:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run performance tests
+        run: cargo test --release --test performance
+
+  # Backward compatibility tests
+  compatibility:
+    name: Backward Compatibility
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test legacy configuration migration
+        run: |
+          ./scripts/migrate-runner-config.sh --update-examples
+          cargo test --test compatibility_tests
+      - name: Validate pipeline examples
+        run: |
+          # Test that all pipeline examples are valid
+          for pipeline in docs/pipeline-examples/*.yaml; do
+            echo "Validating $pipeline"
+            if command -v yq >/dev/null 2>&1; then
+              yq eval '.' "$pipeline" >/dev/null
+            fi
+          done
+      - name: Test hybrid deployment scenarios
+        run: cargo test --test hybrid_deployment_tests
+
+  # Build release binary
+  build:
+    name: Build Release
+    runs-on: ubuntu-latest
+    needs: [fmt, clippy, check, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: rustci-binary
+          path: target/release/RustAutoDevOps
+
+  # End-to-end tests
+  e2e:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v3
+        with:
+          name: rustci-binary
+          path: target/release/
+      - name: Make binary executable
+        run: chmod +x target/release/RustAutoDevOps
+      - name: Run end-to-end tests
+        run: |
+          # Start RustCI in background
+          ./target/release/RustAutoDevOps &
+          RUSTCI_PID=$!
+          
+          # Wait for startup
+          sleep 10
+          
+          # Run E2E test script
+          ./scripts/test-pipeline-execution.sh
+          
+          # Cleanup
+          kill $RUSTCI_PID
+        env:
+          MONGODB_URI: mongodb://localhost:27017
+          MONGODB_DATABASE: rustci_e2e_test
+
+  # Documentation tests
+  docs:
+    name: Documentation Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test documentation
+        run: cargo test --doc
+      - name: Check documentation links
+        run: |
+          # Check that all documentation links are valid
+          find docs -name "*.md" -exec grep -l "http" {} \; | while read file; do
+            echo "Checking links in $file"
+            # Add link checking logic here
+          done
+
+  # Coverage report
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate code coverage
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+        env:
+          MONGODB_URI: mongodb://localhost:27017
+          MONGODB_DATABASE: rustci_coverage_test
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: lcov.info
+          fail_ci_if_error: true
+
+  # Final status check
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [fmt, clippy, check, test, integration-docker, integration-k8s, native-runner, security, performance, compatibility, e2e, docs, coverage]
+    if: always()
+    steps:
+      - name: Check all jobs succeeded
+        run: |
+          if [[ "${{ needs.fmt.result }}" != "success" || \
+                "${{ needs.clippy.result }}" != "success" || \
+                "${{ needs.check.result }}" != "success" || \
+                "${{ needs.test.result }}" != "success" || \
+                "${{ needs.integration-docker.result }}" != "success" || \
+                "${{ needs.integration-k8s.result }}" != "success" || \
+                "${{ needs.native-runner.result }}" != "success" || \
+                "${{ needs.security.result }}" != "success" || \
+                "${{ needs.performance.result }}" != "success" || \
+                "${{ needs.compatibility.result }}" != "success" || \
+                "${{ needs.e2e.result }}" != "success" || \
+                "${{ needs.docs.result }}" != "success" || \
+                "${{ needs.coverage.result }}" != "success" ]]; then
+            echo "One or more CI jobs failed"
+            exit 1
+          fi
+          echo "All CI jobs passed successfully!"

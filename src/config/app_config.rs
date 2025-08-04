@@ -115,6 +115,7 @@ pub struct EncryptionConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RateLimitConfig {
+    pub enabled: bool,
     pub requests_per_minute: u32,
     pub burst_size: u32,
     pub enable_per_user_limits: bool,
@@ -284,6 +285,7 @@ impl Default for AppConfiguration {
                     algorithm: "AES-256-GCM".to_string(),
                 },
                 rate_limiting: RateLimitConfig {
+                    enabled: true,
                     requests_per_minute: 60,
                     burst_size: 10,
                     enable_per_user_limits: true,

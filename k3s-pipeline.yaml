@@ -1,10 +1,10 @@
 name: "RustCI Helm K8s Deploy"
 description: "Build and deploy RustCI to Kubernetes (K3s) using Helm on remote machine"
- 
+
 triggers:
   - trigger_type: manual
     config: {}
- 
+
 stages:
   - name: "Build and Deploy"
     steps:
@@ -15,12 +15,12 @@ stages:
             echo "🌀 Cloning RustCI repo into workspace..."
             rm -rf rustci
             git clone https://github.com/RitabrataRoychowdhury/RustCI.git rustci || { echo '❌ Git clone failed'; exit 1; }
- 
+
             echo "🐳 Building Docker image..."
             cd rustci && docker build -t rustci:latest . || { echo '❌ Docker build failed'; exit 1; }
- 
+
             echo "✅ Docker image built successfully"
- 
+
       - name: "push-image-to-k3s-containerd"
         step_type: shell
         config:
@@ -29,7 +29,7 @@ stages:
             docker save rustci:latest | sshpass -p "abc123" \
               ssh -o StrictHostKeyChecking=no -p 2223 k8suser@localhost "docker load" || { echo '❌ Image transfer via docker load failed'; exit 1; }
             echo "✅ Image loaded into containerd (ctr)"
- 
+
       - name: "helm-deploy-rustci"
         step_type: shell
         config:
@@ -39,7 +39,7 @@ stages:
               set -e
               echo "📂 Preparing Helm chart..."
               mkdir -p ~/deployments/rustci/templates
- 
+
               # Chart.yaml
               cat <<'YAML' > ~/deployments/rustci/Chart.yaml
               apiVersion: v2
@@ -47,7 +47,7 @@ stages:
               version: 0.1.0
               description: Helm chart for RustCI
               YAML
- 
+
               # Deployment.yaml
               cat <<'YAML' > ~/deployments/rustci/templates/deployment.yaml
               apiVersion: apps/v1
@@ -72,7 +72,7 @@ stages:
                         ports:
                           - containerPort: 8000
               YAML
- 
+
               # Service.yaml
               cat <<'YAML' > ~/deployments/rustci/templates/service.yaml
               apiVersion: v1
@@ -89,16 +89,16 @@ stages:
                     port: 8000
                     targetPort: 8000
               YAML
- 
+
               echo "⛵ Deploying with Helm..."
               helm upgrade --install rustci ~/deployments/rustci --namespace rustci --create-namespace \
                 --set image.pullPolicy=Never
- 
+
               echo "⏳ Waiting for rollout..."
               kubectl rollout status deployment/rustci -n rustci --timeout=300s
               echo "✅ Helm deployment successful"
             EOF
- 
+
       - name: "verify-health"
         step_type: shell
         config:
@@ -115,7 +115,7 @@ stages:
                 exit 1
               fi
             '
- 
+
 environment: {}
 timeout: 1800
 retry_count: 0

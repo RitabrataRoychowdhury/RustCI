@@ -8,8 +8,11 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::core::{
-    BulkheadConfig, BulkheadManager, CircuitBreakerConfig, RetryConfig, Service, ServiceContainer,
-    ServiceDecorator, ServiceFactory, ServiceLifetime, ServiceScope,
+    infrastructure::{
+        dependency_injection::{ServiceContainer, ServiceFactory, ServiceLifetime, ServiceScope},
+        resilience::{BulkheadConfig, BulkheadManager},
+        service_decorators::{CircuitBreakerConfig, RetryConfig, Service, ServiceDecorator},
+    },
 };
 use crate::error::{AppError, Result};
 
@@ -212,7 +215,7 @@ impl ServiceRegistry {
     pub async fn execute_in_bulkhead<F, T, Fut>(
         &self,
         service_name: &str,
-        context: &crate::core::ServiceContext,
+        context: &crate::core::infrastructure::service_decorators::ServiceContext,
         operation: F,
     ) -> Result<T>
     where
@@ -427,7 +430,7 @@ pub struct ServiceRegistryStats {
     pub lifetime_counts: HashMap<ServiceLifetime, usize>,
     pub total_di_services: usize,
     pub bulkhead_pools: usize,
-    pub bulkhead_stats: HashMap<String, crate::core::BulkheadStats>,
+    pub bulkhead_stats: HashMap<String, crate::core::infrastructure::resilience::BulkheadStats>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -481,7 +484,8 @@ impl<T: Send + Sync + Default + 'static> ServiceFactory for ExampleServiceFactor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::{Service, ServiceContext};
+    use crate::core::Service;
+    use crate::core::infrastructure::service_decorators::ServiceContext;
 
     struct TestService {
         name: String,

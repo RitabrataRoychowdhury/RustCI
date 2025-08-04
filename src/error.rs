@@ -119,6 +119,9 @@ pub enum AppError {
     #[error("Rate limit exceeded: {limit} requests per {window}")]
     RateLimitExceeded { limit: u32, window: String },
 
+    #[error("Rate limit exceeded: {0}")]
+    RateLimitExceededSimple(String),
+
     #[error("Configuration error: {0}")]
     ConfigError(String),
 
@@ -230,6 +233,7 @@ impl IntoResponse for AppError {
                 StatusCode::TOO_MANY_REQUESTS,
                 format!("Rate limit exceeded: {} requests per {}", limit, window),
             ),
+            AppError::RateLimitExceededSimple(msg) => (StatusCode::TOO_MANY_REQUESTS, msg),
             AppError::ConfigError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             AppError::ResourceExhausted(msg) => (StatusCode::TOO_MANY_REQUESTS, msg),
             AppError::ConcurrencyError(msg) => (StatusCode::CONFLICT, msg),

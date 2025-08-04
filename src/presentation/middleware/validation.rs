@@ -448,11 +448,11 @@ impl Validator for PipelineConfigValidator {
 
 /// Security validation for sensitive operations
 pub struct SecurityValidator {
-    required_permissions: Vec<crate::core::security::Permission>,
+    required_permissions: Vec<crate::core::networking::security::Permission>,
 }
 
 impl SecurityValidator {
-    pub fn new(required_permissions: Vec<crate::core::security::Permission>) -> Self {
+    pub fn new(required_permissions: Vec<crate::core::networking::security::Permission>) -> Self {
         Self {
             required_permissions,
         }

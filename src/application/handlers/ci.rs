@@ -5,7 +5,7 @@ use crate::{
         engine::CIEngineOrchestrator,
         pipeline::{PipelineExecution, TriggerInfo},
     },
-    core::security::{Permission, SecurityContext},
+    core::networking::security::{Permission, SecurityContext},
     error::{AppError, Result},
     upload::create_upload_handler,
 };
@@ -17,7 +17,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use utoipa::ToSchema;
 use uuid::Uuid;
 

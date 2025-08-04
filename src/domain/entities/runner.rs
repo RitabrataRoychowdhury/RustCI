@@ -257,12 +257,18 @@ pub struct ResourceRequirements {
 }
 
 /// Job priority levels
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum JobPriority {
     Low = 1,
     Normal = 2,
     High = 3,
     Critical = 4,
+}
+
+impl Default for JobPriority {
+    fn default() -> Self {
+        JobPriority::Normal
+    }
 }
 
 /// Retry policy for failed jobs
