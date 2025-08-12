@@ -1,0 +1,592 @@
+# Valkyrie Protocol Configuration
+# This is a comprehensive configuration file for the Valkyrie Protocol
+# Copy this file and customize it for your deployment
+
+# Protocol Core Configuration
+protocol:
+  version: "2.0"
+  bind_address: "0.0.0.0:8080"
+  max_message_size: 67108864  # 64MB
+  heartbeat_interval_seconds: 30
+  connection_timeout_seconds: 60
+  protocol_extensions:
+    - "compression"
+    - "multiplexing"
+    - "flow_control"
+  compatibility:
+    min_version: "1.0"
+    max_version: "2.0"
+    strict_version_check: false
+
+# Transport Layer Configuration
+transport:
+  # Primary transport (required)
+  primary: "tcp"
+  
+  # Fallback transports (optional)
+  fallbacks:
+    - "websocket"
+    - "unix"
+  
+  # Transport selection strategy
+  selection_strategy: "performance"  # "performance", "reliability", "latency"
+  
+  # Connection pooling
+  connection_pooling:
+    enabled: true
+    max_idle_connections: 100
+    max_connections_per_host: 50
+    idle_timeout_seconds: 300
+    connection_lifetime_seconds: 3600
+  
+  # Load balancing
+  load_balancing:
+    strategy: "round_robin"  # "round_robin", "least_connections", "weighted", "consistent_hash"
+    health_check_interval_seconds: 30
+    failure_threshold: 3
+    recovery_threshold: 2
+  
+  # TCP Transport Configuration
+  tcp:
+    enabled: true
+    nodelay: true
+    keepalive: true
+    keepalive_idle_seconds: 600
+    keepalive_interval_seconds: 60
+    keepalive_probes: 3
+    send_buffer_size: 65536
+    recv_buffer_size: 65536
+    linger_timeout_seconds: 30
+  
+  # QUIC Transport Configuration (Experimental)
+  quic:
+    enabled: false
+    max_streams: 1000
+    max_data: 1073741824  # 1GB
+    max_stream_data: 16777216  # 16MB
+    idle_timeout_seconds: 300
+    keep_alive_interval_seconds: 30
+    congestion_control: "cubic"  # "cubic", "bbr", "reno"
+  
+  # WebSocket Transport Configuration
+  websocket:
+    enabled: true
+    path: "/valkyrie/ws"
+    compression: true
+    max_frame_size: 16777216  # 16MB
+    ping_interval_seconds: 30
+    pong_timeout_seconds: 10
+    subprotocols:
+      - "valkyrie.v2"
+      - "valkyrie.v1"
+  
+  # Unix Socket Transport Configuration
+  unix:
+    enabled: true
+    socket_path: "/tmp/valkyrie.sock"
+    permissions: "0660"
+    cleanup_on_exit: true
+
+# Security Configuration
+security:
+  # Security mode: "plaintext", "token", "noise", "mtls", "post_quantum", "zero_trust"
+  mode: "token"
+  
+  # Token-based authentication
+  token:
+    secret: "${VALKYRIE_TOKEN_SECRET}"
+    algorithm: "HS256"  # "HS256", "HS384", "HS512", "RS256", "RS384", "RS512"
+    expires_in_seconds: 3600
+    refresh_expires_in_seconds: 86400
+    issuer: "valkyrie-protocol"
+    audience: "valkyrie-nodes"
+    custom_claims: {}
+  
+  # Mutual TLS Configuration
+  mtls:
+    enabled: false
+    cert_file: "/etc/valkyrie/certs/server.crt"
+    key_file: "/etc/valkyrie/certs/server.key"
+    ca_file: "/etc/valkyrie/certs/ca.crt"
+    verify_client: true
+    cipher_suites:
+      - "TLS_AES_256_GCM_SHA384"
+      - "TLS_CHACHA20_POLY1305_SHA256"
+      - "TLS_AES_128_GCM_SHA256"
+    min_tls_version: "1.3"
+    max_tls_version: "1.3"
+  
+  # Noise Protocol Configuration
+  noise:
+    enabled: false
+    pattern: "Noise_XK_25519_ChaChaPoly_BLAKE2s"
+    private_key: "${VALKYRIE_NOISE_PRIVATE_KEY}"
+    public_key: "${VALKYRIE_NOISE_PUBLIC_KEY}"
+  
+  # Post-Quantum Cryptography (Experimental)
+  post_quantum:
+    enabled: false
+    key_exchange: "kyber768"  # "kyber512", "kyber768", "kyber1024"
+    signature: "dilithium3"   # "dilithium2", "dilithium3", "dilithium5"
+    encryption: "chacha20_poly1305"
+    hash: "blake3"
+    key_bundle: "${VALKYRIE_PQ_KEY_BUNDLE}"
+  
+  # Zero-Trust Configuration
+  zero_trust:
+    enabled: false
+    verify_every_request: true
+    certificate_transparency: true
+    policy_engine: "opa"  # "opa", "cedar", "custom"
+    policy_file: "/etc/valkyrie/policies/zero_trust.rego"
+  
+  # Intrusion Detection System
+  intrusion_detection:
+    enabled: true
+    max_failed_attempts: 5
+    ban_duration_seconds: 300
+    whitelist_ips:
+      - "127.0.0.1"
+      - "::1"
+      - "10.0.0.0/8"
+      - "172.16.0.0/12"
+      - "192.168.0.0/16"
+    blacklist_ips: []
+    anomaly_detection:
+      enabled: true
+      threshold: 0.8
+      window_size_seconds: 300
+    pattern_matching:
+      enabled: true
+      rules_file: "/etc/valkyrie/ids/rules.yaml"
+  
+  # Security Audit Logging
+  audit:
+    enabled: true
+    log_file: "/var/log/valkyrie/audit.log"
+    max_file_size_mb: 100
+    max_files: 10
+    log_level: "info"
+    include_payload: false
+    encryption:
+      enabled: false
+      key: "${VALKYRIE_AUDIT_ENCRYPTION_KEY}"
+    remote_syslog:
+      enabled: false
+      server: "syslog.example.com:514"
+      protocol: "tcp"  # "tcp", "udp"
+
+# Stream Multiplexing Configuration
+streaming:
+  max_streams_per_connection: 1000
+  default_window_size: 65536
+  max_window_size: 16777216  # 16MB
+  min_window_size: 4096
+  window_update_threshold: 0.5
+  
+  # Flow control strategy: "fixed", "adaptive", "congestion_aware", "ml_optimized"
+  flow_control_strategy: "adaptive"
+  
+  # Priority configuration
+  priority_levels: 8
+  default_priority: 4
+  priority_scheduling: "weighted_fair_queuing"  # "fifo", "priority", "weighted_fair_queuing"
+  
+  # Congestion control
+  congestion_algorithm: "cubic"  # "cubic", "bbr", "reno", "vegas"
+  congestion_window_initial: 10
+  congestion_window_max: 1000
+  
+  # Stream lifecycle
+  stream_timeout_seconds: 300
+  idle_stream_timeout_seconds: 60
+  max_concurrent_streams: 100
+
+# Performance Configuration
+performance:
+  # Connection limits
+  max_connections: 100000
+  max_connections_per_ip: 1000
+  connection_rate_limit: 100  # connections per second
+  
+  # Threading
+  worker_threads: null  # null means auto-detect (number of CPU cores)
+  io_threads: null      # null means auto-detect
+  blocking_threads: 512
+  thread_stack_size: 2097152  # 2MB
+  
+  # Memory management
+  message_buffer_size: 65536
+  connection_pool_size: 100
+  memory_pool_size: 1073741824  # 1GB
+  enable_zero_copy: true
+  enable_memory_mapping: true
+  
+  # CPU optimizations
+  enable_simd: true
+  enable_vectorization: true
+  cpu_affinity: []  # Empty means no affinity
+  
+  # I/O optimizations
+  io_uring: false  # Linux io_uring support (experimental)
+  epoll_events: 1024
+  kqueue_events: 1024
+  
+  # Garbage collection (for managed runtimes)
+  gc_strategy: "generational"
+  gc_threshold: 0.8
+
+# HTTP/HTTPS Bridge Configuration
+bridge:
+  enabled: true
+  
+  # Port configuration
+  http_port: 8081
+  https_port: 8443
+  
+  # Protocol features
+  auto_upgrade: true
+  protocol_negotiation: true
+  websocket_upgrade: true
+  
+  # CORS configuration
+  cors:
+    enabled: true
+    allowed_origins:
+      - "http://localhost:3000"
+      - "https://localhost:3000"
+      - "http://127.0.0.1:3000"
+      - "https://127.0.0.1:3000"
+    allowed_methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "PATCH"
+      - "OPTIONS"
+      - "HEAD"
+    allowed_headers:
+      - "Content-Type"
+      - "Authorization"
+      - "X-Requested-With"
+      - "X-Correlation-ID"
+      - "X-Trace-ID"
+    expose_headers:
+      - "X-Response-Time"
+      - "X-Request-ID"
+    allow_credentials: true
+    max_age_seconds: 3600
+  
+  # Rate limiting
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 1000
+    burst_size: 100
+    per_ip_limit: 100
+    whitelist_ips:
+      - "127.0.0.1"
+      - "::1"
+  
+  # TLS configuration for HTTPS
+  tls:
+    cert_file: "/etc/valkyrie/certs/bridge.crt"
+    key_file: "/etc/valkyrie/certs/bridge.key"
+    ca_file: "/etc/valkyrie/certs/ca.crt"
+    cipher_suites:
+      - "TLS_AES_256_GCM_SHA384"
+      - "TLS_CHACHA20_POLY1305_SHA256"
+    min_version: "1.2"
+    max_version: "1.3"
+  
+  # Request/Response configuration
+  max_request_size: 104857600  # 100MB
+  max_response_size: 104857600  # 100MB
+  request_timeout_seconds: 30
+  response_timeout_seconds: 30
+  
+  # Compression
+  compression:
+    enabled: true
+    algorithms:
+      - "gzip"
+      - "deflate"
+      - "br"  # Brotli
+    min_size: 1024
+    level: 6
+
+# Observability Configuration
+observability:
+  # Metrics configuration
+  metrics:
+    enabled: true
+    endpoint: "/metrics"
+    collection_interval_seconds: 15
+    export_timeout_seconds: 10
+    prometheus_format: true
+    
+    # Custom metrics
+    custom_metrics:
+      business_metrics: true
+      detailed_latency: true
+      connection_metrics: true
+      stream_metrics: true
+    
+    # Metric labels
+    default_labels:
+      service: "valkyrie-protocol"
+      version: "2.0.0"
+      environment: "${ENVIRONMENT:-development}"
+    
+    # Histogram buckets
+    latency_buckets:
+      - 0.0001  # 100μs
+      - 0.0005  # 500μs
+      - 0.001   # 1ms
+      - 0.005   # 5ms
+      - 0.01    # 10ms
+      - 0.05    # 50ms
+      - 0.1     # 100ms
+      - 0.5     # 500ms
+      - 1.0     # 1s
+      - 5.0     # 5s
+  
+  # Distributed tracing
+  tracing:
+    enabled: true
+    service_name: "valkyrie-protocol"
+    service_version: "2.0.0"
+    sample_rate: 0.1
+    
+    # Jaeger configuration
+    jaeger:
+      enabled: true
+      endpoint: "http://localhost:14268/api/traces"
+      agent_host: "localhost"
+      agent_port: 6831
+      
+    # OpenTelemetry configuration
+    otlp:
+      enabled: false
+      endpoint: "http://localhost:4317"
+      headers: {}
+      compression: "gzip"
+    
+    # Zipkin configuration
+    zipkin:
+      enabled: false
+      endpoint: "http://localhost:9411/api/v2/spans"
+    
+    # Custom trace attributes
+    default_attributes:
+      deployment.environment: "${ENVIRONMENT:-development}"
+      service.namespace: "valkyrie"
+  
+  # Logging configuration
+  logging:
+    level: "info"  # "trace", "debug", "info", "warn", "error"
+    format: "json"  # "json", "pretty", "compact"
+    correlation_ids: true
+    structured_fields: true
+    
+    # Log outputs
+    outputs:
+      - type: "stdout"
+        level: "info"
+      - type: "file"
+        level: "debug"
+        path: "/var/log/valkyrie/valkyrie.log"
+        max_size_mb: 100
+        max_files: 10
+        compress: true
+    
+    # Log sampling
+    sampling:
+      enabled: false
+      rate: 0.1
+      burst: 100
+  
+  # Health checks
+  health:
+    enabled: true
+    endpoint: "/health"
+    detailed_endpoint: "/health/detailed"
+    check_interval_seconds: 30
+    timeout_seconds: 5
+    
+    # Health check components
+    checks:
+      - name: "database"
+        enabled: true
+        timeout_seconds: 5
+      - name: "transport"
+        enabled: true
+        timeout_seconds: 3
+      - name: "security"
+        enabled: true
+        timeout_seconds: 2
+      - name: "memory"
+        enabled: true
+        threshold: 0.9
+      - name: "disk"
+        enabled: true
+        threshold: 0.9
+
+# Cluster Configuration
+cluster:
+  enabled: false
+  node_id: "${VALKYRIE_NODE_ID:-node-1}"
+  
+  # Service discovery
+  discovery:
+    method: "static"  # "static", "dns", "kubernetes", "consul", "etcd"
+    
+    # Static node list
+    static_nodes:
+      - "valkyrie-node-1:8080"
+      - "valkyrie-node-2:8080"
+      - "valkyrie-node-3:8080"
+    
+    # DNS-based discovery
+    dns:
+      service_name: "_valkyrie._tcp.example.com"
+      refresh_interval_seconds: 60
+      resolver_timeout_seconds: 5
+    
+    # Kubernetes discovery
+    kubernetes:
+      namespace: "valkyrie-system"
+      label_selector: "app=valkyrie"
+      port: 8080
+      kubeconfig: null  # null means in-cluster config
+    
+    # Consul discovery
+    consul:
+      address: "localhost:8500"
+      service_name: "valkyrie"
+      health_check_interval_seconds: 30
+      tags:
+        - "valkyrie"
+        - "v2.0"
+    
+    # etcd discovery
+    etcd:
+      endpoints:
+        - "localhost:2379"
+      prefix: "/valkyrie/nodes"
+      lease_ttl_seconds: 60
+  
+  # Consensus algorithm
+  consensus:
+    algorithm: "raft"  # "raft", "pbft", "tendermint"
+    
+    # Raft configuration
+    raft:
+      election_timeout_ms: 5000
+      heartbeat_interval_ms: 1000
+      max_append_entries: 100
+      snapshot_interval: 10000
+      log_compaction: true
+    
+    # PBFT configuration
+    pbft:
+      view_change_timeout_ms: 10000
+      checkpoint_interval: 100
+      max_faulty_nodes: 1
+  
+  # Load balancing
+  load_balancing:
+    strategy: "consistent_hash"  # "round_robin", "least_connections", "consistent_hash"
+    health_check_interval_seconds: 30
+    failure_detection_timeout_seconds: 10
+  
+  # Replication
+  replication:
+    enabled: false
+    factor: 3
+    consistency_level: "quorum"  # "one", "quorum", "all"
+    async_replication: true
+
+# Feature Flags
+features:
+  # Core features
+  enable_http_bridge: true
+  enable_websocket_upgrade: true
+  enable_protocol_negotiation: true
+  enable_compression: true
+  enable_multiplexing: true
+  enable_flow_control: true
+  enable_priority_queuing: true
+  enable_load_balancing: true
+  enable_circuit_breaker: true
+  enable_retry_logic: true
+  enable_connection_pooling: true
+  
+  # Security features
+  enable_intrusion_detection: true
+  enable_audit_logging: true
+  enable_encryption: true
+  enable_authentication: true
+  enable_authorization: true
+  
+  # Observability features
+  enable_metrics: true
+  enable_tracing: true
+  enable_health_checks: true
+  enable_profiling: false
+  
+  # Experimental features
+  experimental_features:
+    enable_quic_transport: false
+    enable_rdma_transport: false
+    enable_shared_memory: false
+    enable_ml_routing: false
+    enable_quantum_crypto: false
+    enable_edge_computing: false
+    enable_blockchain_integration: false
+    enable_wasm_runtime: false
+  
+  # Custom feature flags
+  custom_flags:
+    enable_custom_middleware: false
+    enable_plugin_system: false
+    enable_graphql_bridge: false
+    enable_grpc_bridge: false
+
+# Environment-specific overrides
+environments:
+  development:
+    observability:
+      logging:
+        level: "debug"
+      tracing:
+        sample_rate: 1.0
+    security:
+      mode: "plaintext"
+    performance:
+      max_connections: 1000
+  
+  staging:
+    observability:
+      logging:
+        level: "info"
+      tracing:
+        sample_rate: 0.5
+    security:
+      mode: "token"
+    performance:
+      max_connections: 10000
+  
+  production:
+    observability:
+      logging:
+        level: "warn"
+      tracing:
+        sample_rate: 0.1
+    security:
+      mode: "mtls"
+    performance:
+      max_connections: 100000
+    features:
+      experimental_features:
+        enable_quic_transport: false
+        enable_rdma_transport: false

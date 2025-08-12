@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "valkyrie-protocol.fullname" . }}
+  labels:
+    {{- include "valkyrie-protocol.labels" . | nindent 4 }}
+  {{- with .Values.valkyrie.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.valkyrie.service.type }}
+  ports:
+    {{- range .Values.valkyrie.service.ports }}
+    - port: {{ .port }}
+      targetPort: {{ .targetPort }}
+      protocol: {{ .protocol }}
+      name: {{ .name }}
+    {{- end }}
+  selector:
+    {{- include "valkyrie-protocol.selectorLabels" . | nindent 4 }}
+---
+{{- if .Values.valkyrie.config.transport.quic.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "valkyrie-protocol.fullname" . }}-quic
+  labels:
+    {{- include "valkyrie-protocol.labels" . | nindent 4 }}
+    app.kubernetes.io/component: quic
+  {{- with .Values.valkyrie.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.valkyrie.service.type }}
+  ports:
+    - port: 8443
+      targetPort: 8443
+      protocol: UDP
+      name: quic
+  selector:
+    {{- include "valkyrie-protocol.selectorLabels" . | nindent 4 }}
+{{- end }}

@@ -1,0 +1,281 @@
+groups:
+  - name: valkyrie_protocol_alerts
+    rules:
+      # High Latency Alert
+      - alert: ValkyrieHighLatency
+        expr: histogram_quantile(0.95, rate(valkyrie_request_duration_ms_bucket[5m])) > 1000
+        for: 2m
+        labels:
+          severity: warning
+          component: valkyrie-protocol
+        annotations:
+          summary: "Valkyrie Protocol experiencing high latency"
+          description: "P95 latency is {{ $value }}ms, which is above the 1000ms threshold for more than 2 minutes."
+
+      # Critical Latency Alert
+      - alert: ValkyrieCriticalLatency
+        expr: histogram_quantile(0.95, rate(valkyrie_request_duration_ms_bucket[5m])) > 5000
+        for: 1m
+        labels:
+          severity: critical
+          component: valkyrie-protocol
+        annotations:
+          summary: "Valkyrie Protocol experiencing critical latency"
+          description: "P95 latency is {{ $value }}ms, which is above the 5000ms critical threshold."
+
+      # Low Throughput Alert
+      - alert: ValkyrieLowThroughput
+        expr: rate(valkyrie_requests_total[5m]) < 10
+        for: 5m
+        labels:
+          severity: warning
+          component: valkyrie-protocol
+        annotations:
+          summary: "Valkyrie Protocol low throughput"
+          description: "Request rate is {{ $value }} req/s, which is below the expected 10 req/s threshold."
+
+      # Health Check Failures
+      - alert: ValkyrieHealthCheckFailures
+        expr: (valkyrie_health_checks_total{status="unhealthy"} / valkyrie_health_checks_total) * 100 > 20
+        for: 3m
+        labels:
+          severity: warning
+          component: valkyrie-health
+        annotations:
+          summary: "Valkyrie health checks failing"
+          description: "{{ $value }}% of health checks are failing, which is above the 20% threshold."
+
+      # Critical Health Check Failures
+      - alert: ValkyrieCriticalHealthFailures
+        expr: (valkyrie_health_checks_total{status="unhealthy"} / valkyrie_health_checks_total) * 100 > 50
+        for: 1m
+        labels:
+          severity: critical
+          component: valkyrie-health
+        annotations:
+          summary: "Valkyrie critical health check failures"
+          description: "{{ $value }}% of health checks are failing, which is above the 50% critical threshold."
+
+      # Memory Usage Alert
+      - alert: ValkyrieHighMemoryUsage
+        expr: valkyrie_memory_usage_bytes / valkyrie_memory_limit_bytes * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: valkyrie-resources
+        annotations:
+          summary: "Valkyrie Protocol high memory usage"
+          description: "Memory usage is {{ $value }}%, which is above the 80% threshold."
+
+      # Critical Memory Usage Alert
+      - alert: ValkyrieCriticalMemoryUsage
+        expr: valkyrie_memory_usage_bytes / valkyrie_memory_limit_bytes * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: valkyrie-resources
+        annotations:
+          summary: "Valkyrie Protocol critical memory usage"
+          description: "Memory usage is {{ $value }}%, which is above the 95% critical threshold."
+
+      # Connection Pool Exhaustion
+      - alert: ValkyrieConnectionPoolExhaustion
+        expr: valkyrie_connection_pool_active / valkyrie_connection_pool_max * 100 > 90
+        for: 2m
+        labels:
+          severity: warning
+          component: valkyrie-connections
+        annotations:
+          summary: "Valkyrie connection pool near exhaustion"
+          description: "Connection pool usage is {{ $value }}%, which is above the 90% threshold."
+
+      # Error Rate Alert
+      - alert: ValkyrieHighErrorRate
+        expr: rate(valkyrie_errors_total[5m]) / rate(valkyrie_requests_total[5m]) * 100 > 5
+        for: 3m
+        labels:
+          severity: warning
+          component: valkyrie-protocol
+        annotations:
+          summary: "Valkyrie Protocol high error rate"
+          description: "Error rate is {{ $value }}%, which is above the 5% threshold."
+
+      # Critical Error Rate Alert
+      - alert: ValkyrieCriticalErrorRate
+        expr: rate(valkyrie_errors_total[5m]) / rate(valkyrie_requests_total[5m]) * 100 > 15
+        for: 1m
+        labels:
+          severity: critical
+          component: valkyrie-protocol
+        annotations:
+          summary: "Valkyrie Protocol critical error rate"
+          description: "Error rate is {{ $value }}%, which is above the 15% critical threshold."
+
+      # Observability System Down
+      - alert: ValkyrieObservabilityDown
+        expr: up{job="valkyrie-protocol"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: valkyrie-observability
+        annotations:
+          summary: "Valkyrie observability system is down"
+          description: "The Valkyrie observability system has been down for more than 1 minute."
+
+      # Metrics Collection Lag
+      - alert: ValkyrieMetricsCollectionLag
+        expr: time() - valkyrie_last_metric_timestamp > 300
+        for: 2m
+        labels:
+          severity: warning
+          component: valkyrie-metrics
+        annotations:
+          summary: "Valkyrie metrics collection lagging"
+          description: "Metrics collection is lagging by {{ $value }} seconds, which is above the 5-minute threshold."
+
+      # Correlation Tracking Issues
+      - alert: ValkyrieCorrelationTrackingIssues
+        expr: rate(valkyrie_correlation_errors_total[5m]) > 1
+        for: 3m
+        labels:
+          severity: warning
+          component: valkyrie-tracing
+        annotations:
+          summary: "Valkyrie correlation tracking errors"
+          description: "Correlation tracking error rate is {{ $value }} errors/s, indicating potential tracing issues."
+
+      # Dashboard Generation Failures
+      - alert: ValkyrieDashboardFailures
+        expr: rate(valkyrie_dashboard_generation_failures_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: valkyrie-dashboard
+        annotations:
+          summary: "Valkyrie dashboard generation failures"
+          description: "Dashboard generation failure rate is {{ $value }} failures/s."
+
+  - name: valkyrie_external_integration_alerts
+    rules:
+      # Prometheus Integration Issues
+      - alert: ValkyriePrometheusIntegrationDown
+        expr: valkyrie_prometheus_integration_status != 1
+        for: 2m
+        labels:
+          severity: warning
+          component: valkyrie-prometheus
+        annotations:
+          summary: "Valkyrie Prometheus integration is down"
+          description: "The Valkyrie Prometheus integration has been down for more than 2 minutes."
+
+      # OpenTelemetry Integration Issues
+      - alert: ValkyrieOpenTelemetryIntegrationDown
+        expr: valkyrie_opentelemetry_integration_status != 1
+        for: 2m
+        labels:
+          severity: warning
+          component: valkyrie-opentelemetry
+        annotations:
+          summary: "Valkyrie OpenTelemetry integration is down"
+          description: "The Valkyrie OpenTelemetry integration has been down for more than 2 minutes."
+
+      # Jaeger Integration Issues
+      - alert: ValkyrieJaegerIntegrationDown
+        expr: valkyrie_jaeger_integration_status != 1
+        for: 2m
+        labels:
+          severity: warning
+          component: valkyrie-jaeger
+        annotations:
+          summary: "Valkyrie Jaeger integration is down"
+          description: "The Valkyrie Jaeger integration has been down for more than 2 minutes."
+
+      # Grafana Integration Issues
+      - alert: ValkyrieGrafanaIntegrationDown
+        expr: valkyrie_grafana_integration_status != 1
+        for: 2m
+        labels:
+          severity: warning
+          component: valkyrie-grafana
+        annotations:
+          summary: "Valkyrie Grafana integration is down"
+          description: "The Valkyrie Grafana integration has been down for more than 2 minutes."
+
+      # Export Failures
+      - alert: ValkyrieMetricsExportFailures
+        expr: rate(valkyrie_metrics_export_failures_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          component: valkyrie-export
+        annotations:
+          summary: "Valkyrie metrics export failures"
+          description: "Metrics export failure rate is {{ $value }} failures/s."
+
+      # Trace Export Failures
+      - alert: ValkyrieTraceExportFailures
+        expr: rate(valkyrie_trace_export_failures_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          component: valkyrie-export
+        annotations:
+          summary: "Valkyrie trace export failures"
+          description: "Trace export failure rate is {{ $value }} failures/s."
+
+  - name: valkyrie_performance_alerts
+    rules:
+      # Sub-millisecond Performance Degradation
+      - alert: ValkyrieSubMillisecondPerformanceDegraded
+        expr: histogram_quantile(0.95, rate(valkyrie_request_duration_ms_bucket[1m])) > 1
+        for: 30s
+        labels:
+          severity: critical
+          component: valkyrie-performance
+        annotations:
+          summary: "Valkyrie sub-millisecond performance degraded"
+          description: "P95 latency is {{ $value }}ms, which exceeds the sub-millisecond target."
+
+      # Throughput Below Target
+      - alert: ValkyrieThroughputBelowTarget
+        expr: rate(valkyrie_requests_total[1m]) < 100000
+        for: 2m
+        labels:
+          severity: warning
+          component: valkyrie-performance
+        annotations:
+          summary: "Valkyrie throughput below target"
+          description: "Current throughput is {{ $value }} req/s, which is below the 100k req/s target."
+
+      # Connection Limit Approaching
+      - alert: ValkyrieConnectionLimitApproaching
+        expr: valkyrie_active_connections > 800000
+        for: 1m
+        labels:
+          severity: warning
+          component: valkyrie-performance
+        annotations:
+          summary: "Valkyrie approaching connection limit"
+          description: "Active connections ({{ $value }}) are approaching the 1M connection target."
+
+      # SIMD Processing Errors
+      - alert: ValkyrieSimdProcessingErrors
+        expr: rate(valkyrie_simd_processing_errors_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          component: valkyrie-simd
+        annotations:
+          summary: "Valkyrie SIMD processing errors detected"
+          description: "SIMD processing error rate is {{ $value }} errors/s."
+
+      # Zero-Copy Optimization Failures
+      - alert: ValkyrieZeroCopyOptimizationFailures
+        expr: rate(valkyrie_zero_copy_failures_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          component: valkyrie-zero-copy
+        annotations:
+          summary: "Valkyrie zero-copy optimization failures"
+          description: "Zero-copy optimization failure rate is {{ $value }} failures/s."

@@ -9,6 +9,10 @@ use axum::{
     Router,
 };
 
+/// Create the pull request management router
+/// 
+/// This router handles all PR-related endpoints including creation,
+/// status updates, and management operations.
 pub fn pr_router() -> Router<AppState> {
     Router::new()
         // PR management

@@ -10,6 +10,10 @@ use axum::{
     Router,
 };
 
+/// Create the CI/CD pipeline management router
+/// 
+/// This router handles all CI/CD pipeline endpoints including pipeline
+/// execution, status monitoring, and configuration management.
 pub fn ci_router() -> Router<AppState> {
     Router::new()
         // Pipeline management

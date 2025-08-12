@@ -13,11 +13,6 @@ use crate::core::{
         runtime_optimization::{RuntimeOptimizer, PerformanceReport},
     },
     patterns::correlation::CorrelationTracker,
-    cluster::{
-        control_plane_observability::ObservabilityStatus,
-        control_plane_health::ControlPlaneHealthResponse,
-        control_plane_metrics::MetricsSnapshot,
-    },
 };
 
 use super::{

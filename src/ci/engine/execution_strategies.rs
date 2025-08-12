@@ -944,7 +944,7 @@ impl ExecutionStrategy for SimpleExecutionStrategy {
         };
 
         let mut logs = Vec::new();
-        let mut artifacts = Vec::new();
+        let artifacts = Vec::new();
         let mut steps_executed = 0;
 
         let pipeline = &context.pipeline;
@@ -1552,7 +1552,7 @@ impl ExecutionStrategyFactory {
     /// Find best strategy for context based on pipeline type
     pub fn find_best_strategy(&self, context: &ExecutionContext) -> Option<ExecutionStrategyType> {
         // First try to find strategy based on pipeline type
-        let pipeline_type = context.pipeline.get_pipeline_type();
+        let _pipeline_type = context.pipeline.get_pipeline_type();
         
         for strategy in self.strategies.values() {
             if strategy.can_handle(context) {

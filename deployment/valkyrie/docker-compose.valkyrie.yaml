@@ -1,0 +1,254 @@
+# Valkyrie Protocol Standalone Docker Compose Configuration
+# This file provides a complete deployment of Valkyrie Protocol with observability stack
+
+version: '3.8'
+
+services:
+  # Valkyrie Protocol Server
+  valkyrie-server:
+    image: rustci/valkyrie-protocol:2.0.0
+    container_name: valkyrie-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"    # Valkyrie Protocol TCP
+      - "8443:8443/udp" # Valkyrie Protocol QUIC
+      - "9090:9090"    # Metrics endpoint
+      - "8081:8081"    # Health check endpoint
+    environment:
+      - VALKYRIE_CONFIG_FILE=/etc/valkyrie/config.yaml
+      - VALKYRIE_LOG_LEVEL=info
+      - VALKYRIE_LOG_FORMAT=json
+      - RUST_LOG=valkyrie=info
+      - RUST_BACKTRACE=1
+      - TOKIO_WORKER_THREADS=0  # Auto-detect
+    volumes:
+      - ./config/valkyrie.yaml:/etc/valkyrie/config.yaml:ro
+      - ./certs:/etc/valkyrie/tls:ro
+      - valkyrie-data:/var/lib/valkyrie
+      - /tmp:/tmp
+    networks:
+      - valkyrie-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - prometheus
+      - jaeger
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+  # Load Balancer (HAProxy)
+  valkyrie-lb:
+    image: haproxy:2.8-alpine
+    container_name: valkyrie-lb
+    restart: unless-stopped
+    ports:
+      - "80:80"      # HTTP
+      - "443:443"    # HTTPS
+      - "8404:8404"  # HAProxy Stats
+    volumes:
+      - ./config/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./certs:/etc/ssl/certs:ro
+    networks:
+      - valkyrie-network
+    depends_on:
+      - valkyrie-server
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8404/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus for Metrics Collection
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: valkyrie-prometheus
+    restart: unless-stopped
+    ports:
+      - "9091:9090"  # Prometheus UI (offset to avoid conflict)
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    networks:
+      - valkyrie-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Grafana for Visualization
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: valkyrie-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      - valkyrie-network
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Jaeger for Distributed Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.49
+    container_name: valkyrie-jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # HTTP collector
+      - "14250:14250"  # gRPC collector
+      - "6831:6831/udp" # UDP agent
+      - "6832:6832/udp" # UDP agent
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+    volumes:
+      - jaeger-data:/tmp
+    networks:
+      - valkyrie-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:16686/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for Caching and Pub/Sub (Optional)
+  redis:
+    image: redis:7.2-alpine
+    container_name: valkyrie-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - valkyrie-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # NATS for Message Streaming (Optional)
+  nats:
+    image: nats:2.10-alpine
+    container_name: valkyrie-nats
+    restart: unless-stopped
+    ports:
+      - "4222:4222"  # NATS client port
+      - "8222:8222"  # HTTP monitoring port
+      - "6222:6222"  # Routing port
+    command: ["-js", "-m", "8222"]
+    volumes:
+      - nats-data:/data
+    networks:
+      - valkyrie-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8222/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx for HTTP/HTTPS Reverse Proxy (Alternative to HAProxy)
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: valkyrie-nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"    # HTTP (alternative port)
+      - "8443:443"   # HTTPS (alternative port)
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certs:/etc/nginx/certs:ro
+      - nginx-logs:/var/log/nginx
+    networks:
+      - valkyrie-network
+    depends_on:
+      - valkyrie-server
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles:
+      - nginx  # Use with --profile nginx
+
+  # Certificate Generator (Init Container)
+  cert-generator:
+    image: alpine/openssl:latest
+    container_name: valkyrie-cert-generator
+    volumes:
+      - ./certs:/certs
+      - ./scripts:/scripts:ro
+    command: ["/scripts/generate-certs.sh"]
+    networks:
+      - valkyrie-network
+    profiles:
+      - init
+
+# Networks
+networks:
+  valkyrie-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Volumes
+volumes:
+  valkyrie-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  jaeger-data:
+    driver: local
+  redis-data:
+    driver: local
+  nats-data:
+    driver: local
+  nginx-logs:
+    driver: local
+
+# Health Check Configuration
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s

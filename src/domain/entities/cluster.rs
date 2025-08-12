@@ -434,6 +434,110 @@ impl Default for ClusterConfig {
     }
 }
 
+/// Builder for ClusterConfig using the Builder pattern
+pub struct ClusterConfigBuilder {
+    max_nodes: u32,
+    heartbeat_interval: u32,
+    failure_timeout: u32,
+    load_balancing_strategy: LoadBalancingStrategy,
+    auto_scaling: Option<AutoScalingConfig>,
+    security: SecurityConfig,
+}
+
+impl ClusterConfigBuilder {
+    /// Create a new cluster configuration builder
+    pub fn new() -> Self {
+        Self {
+            max_nodes: 10,
+            heartbeat_interval: 30,
+            failure_timeout: 120,
+            load_balancing_strategy: LoadBalancingStrategy::LeastLoaded,
+            auto_scaling: None,
+            security: SecurityConfig::default(),
+        }
+    }
+    
+    /// Set maximum number of nodes
+    pub fn max_nodes(mut self, max_nodes: u32) -> Self {
+        self.max_nodes = max_nodes;
+        self
+    }
+    
+    /// Set heartbeat interval in seconds
+    pub fn heartbeat_interval(mut self, interval: u32) -> Self {
+        self.heartbeat_interval = interval;
+        self
+    }
+    
+    /// Set failure timeout in seconds
+    pub fn failure_timeout(mut self, timeout: u32) -> Self {
+        self.failure_timeout = timeout;
+        self
+    }
+    
+    /// Set load balancing strategy
+    pub fn load_balancing_strategy(mut self, strategy: LoadBalancingStrategy) -> Self {
+        self.load_balancing_strategy = strategy;
+        self
+    }
+    
+    /// Enable auto-scaling with configuration
+    pub fn with_auto_scaling(mut self, config: AutoScalingConfig) -> Self {
+        self.auto_scaling = Some(config);
+        self
+    }
+    
+    /// Set security configuration
+    pub fn with_security(mut self, security: SecurityConfig) -> Self {
+        self.security = security;
+        self
+    }
+    
+    /// Configure for small cluster (development)
+    pub fn for_small_cluster(mut self) -> Self {
+        self.max_nodes = 3;
+        self.heartbeat_interval = 15;
+        self.failure_timeout = 60;
+        self.load_balancing_strategy = LoadBalancingStrategy::RoundRobin;
+        self
+    }
+    
+    /// Configure for large cluster (production)
+    pub fn for_large_cluster(mut self) -> Self {
+        self.max_nodes = 100;
+        self.heartbeat_interval = 60;
+        self.failure_timeout = 300;
+        self.load_balancing_strategy = LoadBalancingStrategy::LeastLoaded;
+        self
+    }
+    
+    /// Enable high availability configuration
+    pub fn with_high_availability(mut self) -> Self {
+        self.heartbeat_interval = 10;
+        self.failure_timeout = 30;
+        self.security.tls_enabled = true;
+        self
+    }
+    
+    /// Build the final configuration
+    pub fn build(self) -> ClusterConfig {
+        ClusterConfig {
+            max_nodes: self.max_nodes,
+            heartbeat_interval: self.heartbeat_interval,
+            failure_timeout: self.failure_timeout,
+            load_balancing_strategy: self.load_balancing_strategy,
+            auto_scaling: self.auto_scaling,
+            security: self.security,
+        }
+    }
+}
+
+impl Default for ClusterConfigBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Default for SecurityConfig {
     fn default() -> Self {
         Self {

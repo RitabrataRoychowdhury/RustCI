@@ -1,0 +1,6 @@
+warning: unused manifest key: build
+error: no test target named `valkyrie` in default-run packages
+help: available test targets:
+    compatibility_tests
+    hybrid_deployment_tests
+    mod

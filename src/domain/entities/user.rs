@@ -18,6 +18,13 @@ pub struct User {
 }
 
 impl User {
+    /// Create a new user entity
+    /// 
+    /// # Arguments
+    /// * `name` - The user's display name
+    /// * `email` - The user's email address
+    /// * `photo` - URL to the user's profile photo
+    /// * `provider` - OAuth provider (e.g., "github", "google")
     pub fn new(name: String, email: String, photo: String, provider: String) -> Self {
         Self {
             mongo_id: None,
@@ -33,6 +40,10 @@ impl User {
         }
     }
 
+    /// Create a filtered user representation for API responses
+    /// 
+    /// This method returns a sanitized version of the user data
+    /// suitable for public API responses, excluding sensitive information.
     pub fn filter_user(&self) -> FilteredUser {
         FilteredUser {
             id: self.id.to_string(),

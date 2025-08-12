@@ -12,14 +12,20 @@ use crate::core::networking::node_communication::{
 };
 use crate::core::networking::transport::{Transport, Connection, TransportConfig, TransportEndpoint, TransportType, AuthenticationConfig, AuthMethod, TimeoutConfig, BufferConfig};
 use crate::core::networking::secure_transport::{AuthenticationManager, SecurityAuditor, SecurityEventType, SecuritySeverity};
+use crate::core::networking::valkyrie::{ValkyrieEngine, ValkyrieConfig, MessageType, MessageHandler as ValkyrieMessageHandler, ValkyrieMessage, Endpoint};
+use crate::config::valkyrie::ValkyrieConfigManager;
 use crate::error::Result;
 
-/// Node communication manager handles all node-to-control-plane communication
+/// Enhanced Node communication manager with Valkyrie Protocol integration
 pub struct NodeCommunicationManager {
     /// Transport layer for communication
     transport: Arc<dyn Transport>,
     /// Authentication manager
     auth_manager: Arc<AuthenticationManager>,
+    /// Valkyrie Protocol engine for advanced communication
+    valkyrie_engine: Option<Arc<Mutex<ValkyrieEngine>>>,
+    /// Valkyrie configuration manager
+    valkyrie_config: Arc<Mutex<ValkyrieConfigManager>>,
     /// Active connections to nodes
     connections: Arc<RwLock<HashMap<NodeId, Arc<Mutex<Box<dyn Connection>>>>>>,
     /// Message handlers
@@ -33,6 +39,8 @@ pub struct NodeCommunicationManager {
     auditor: Arc<SecurityAuditor>,
     /// Shutdown signal
     shutdown_tx: Option<mpsc::Sender<()>>,
+    /// Enable Valkyrie Protocol
+    enable_valkyrie: bool,
 }
 
 impl NodeCommunicationManager {
@@ -43,10 +51,13 @@ impl NodeCommunicationManager {
     ) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let auditor = Arc::new(SecurityAuditor::new(10000));
+        let valkyrie_config = Arc::new(Mutex::new(ValkyrieConfigManager::new()));
         
         Self {
             transport,
             auth_manager,
+            valkyrie_engine: None,
+            valkyrie_config,
             connections: Arc::new(RwLock::new(HashMap::new())),
             message_handlers: Arc::new(RwLock::new(HashMap::new())),
             event_tx,
@@ -54,11 +65,100 @@ impl NodeCommunicationManager {
             config,
             auditor,
             shutdown_tx: None,
+            enable_valkyrie: false,
+        }
+    }
+
+    /// Create a new communication manager with Valkyrie Protocol enabled
+    pub fn with_valkyrie(
+        transport: Arc<dyn Transport>,
+        auth_manager: Arc<AuthenticationManager>,
+        config: CommunicationConfig,
+        valkyrie_config: ValkyrieConfig,
+    ) -> Result<Self> {
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let auditor = Arc::new(SecurityAuditor::new(10000));
+        let valkyrie_config_manager = Arc::new(Mutex::new({
+            let mut manager = ValkyrieConfigManager::new();
+            manager.update_config(valkyrie_config)?;
+            manager
+        }));
+        
+        Ok(Self {
+            transport,
+            auth_manager,
+            valkyrie_engine: None,
+            valkyrie_config: valkyrie_config_manager,
+            connections: Arc::new(RwLock::new(HashMap::new())),
+            message_handlers: Arc::new(RwLock::new(HashMap::new())),
+            event_tx,
+            event_rx: Arc::new(Mutex::new(event_rx)),
+            config,
+            auditor,
+            shutdown_tx: None,
+            enable_valkyrie: true,
+        })
+    }
+
+    /// Enable Valkyrie Protocol with configuration from environment
+    pub async fn enable_valkyrie_from_env(&mut self) -> Result<()> {
+        let mut config_manager = self.valkyrie_config.lock().await;
+        config_manager.load_from_env()?;
+        
+        let valkyrie_config = config_manager.get_config().clone();
+        let valkyrie_engine = ValkyrieEngine::new(valkyrie_config)?;
+        
+        self.valkyrie_engine = Some(Arc::new(Mutex::new(valkyrie_engine)));
+        self.enable_valkyrie = true;
+        
+        Ok(())
+    }
+
+    /// Enable Valkyrie Protocol with configuration from file
+    pub async fn enable_valkyrie_from_file(&mut self, config_path: &str) -> Result<()> {
+        let mut config_manager = self.valkyrie_config.lock().await;
+        config_manager.load_from_file(config_path).await?;
+        
+        let valkyrie_config = config_manager.get_config().clone();
+        let valkyrie_engine = ValkyrieEngine::new(valkyrie_config)?;
+        
+        self.valkyrie_engine = Some(Arc::new(Mutex::new(valkyrie_engine)));
+        self.enable_valkyrie = true;
+        
+        Ok(())
+    }
+
+    /// Get Valkyrie configuration summary
+    pub async fn get_valkyrie_summary(&self) -> Option<crate::config::valkyrie::ConfigSummary> {
+        if self.enable_valkyrie {
+            let config_manager = self.valkyrie_config.lock().await;
+            Some(config_manager.get_summary())
+        } else {
+            None
         }
     }
     
     /// Start the communication manager
     pub async fn start(&mut self) -> Result<()> {
+        // Start Valkyrie engine if enabled
+        if self.enable_valkyrie {
+            if let Some(valkyrie_engine) = &self.valkyrie_engine {
+                let mut engine = valkyrie_engine.lock().await;
+                engine.start().await?;
+                
+                // Register Valkyrie message handlers
+                self.register_valkyrie_handlers(&mut engine).await?;
+                
+                self.auditor.log_event(
+                    SecurityEventType::ConnectionEstablished,
+                    None,
+                    "valkyrie-engine".to_string(),
+                    HashMap::new(),
+                    SecuritySeverity::Info,
+                ).await;
+            }
+        }
+        
         // Start listening for incoming connections
         self.transport.listen(&self.config.transport_config).await?;
         
@@ -85,6 +185,22 @@ impl NodeCommunicationManager {
     pub async fn stop(&mut self) -> Result<()> {
         if let Some(tx) = &self.shutdown_tx {
             let _ = tx.send(()).await;
+        }
+        
+        // Stop Valkyrie engine if enabled
+        if self.enable_valkyrie {
+            if let Some(valkyrie_engine) = &self.valkyrie_engine {
+                let mut engine = valkyrie_engine.lock().await;
+                engine.stop().await?;
+                
+                self.auditor.log_event(
+                    SecurityEventType::ConnectionClosed,
+                    None,
+                    "valkyrie-engine".to_string(),
+                    HashMap::new(),
+                    SecuritySeverity::Info,
+                ).await;
+            }
         }
         
         // Close all connections
@@ -217,6 +333,86 @@ impl NodeCommunicationManager {
             authentication_failures: transport_metrics.authentication_failures,
         }
     }
+
+    /// Send a message using Valkyrie Protocol (if enabled)
+    pub async fn send_valkyrie_message(&self, node_id: NodeId, message: ValkyrieMessage) -> Result<()> {
+        if !self.enable_valkyrie {
+            return Err(crate::error::AppError::InternalServerError(
+                "Valkyrie Protocol is not enabled".to_string()
+            ));
+        }
+
+        if let Some(valkyrie_engine) = &self.valkyrie_engine {
+            let engine = valkyrie_engine.lock().await;
+            
+            // Convert NodeId to ConnectionId (this would need proper mapping in a real implementation)
+            let connection_id = uuid::Uuid::from_bytes(node_id.as_bytes().clone());
+            
+            engine.send_message(connection_id, message).await?;
+            
+            self.auditor.log_event(
+                SecurityEventType::SuspiciousActivity, // Using available enum variant
+                Some(node_id),
+                "valkyrie-message-sent".to_string(),
+                HashMap::new(),
+                SecuritySeverity::Info,
+            ).await;
+        }
+
+        Ok(())
+    }
+
+    /// Connect to a node using Valkyrie Protocol
+    pub async fn connect_valkyrie(&self, endpoint: Endpoint) -> Result<crate::core::networking::valkyrie::engine::ConnectionHandle> {
+        if !self.enable_valkyrie {
+            return Err(crate::error::AppError::InternalServerError(
+                "Valkyrie Protocol is not enabled".to_string()
+            ));
+        }
+
+        if let Some(valkyrie_engine) = &self.valkyrie_engine {
+            let engine = valkyrie_engine.lock().await;
+            let handle = engine.connect(endpoint).await?;
+            
+            self.auditor.log_event(
+                SecurityEventType::ConnectionEstablished,
+                None,
+                "valkyrie-connection".to_string(),
+                HashMap::new(),
+                SecuritySeverity::Info,
+            ).await;
+            
+            Ok(handle)
+        } else {
+            Err(crate::error::AppError::InternalServerError(
+                "Valkyrie engine not initialized".to_string()
+            ))
+        }
+    }
+
+    /// Get Valkyrie engine statistics
+    pub async fn get_valkyrie_stats(&self) -> Option<crate::core::networking::valkyrie::engine::EngineStats> {
+        if let Some(valkyrie_engine) = &self.valkyrie_engine {
+            let engine = valkyrie_engine.lock().await;
+            Some(engine.get_stats().await)
+        } else {
+            None
+        }
+    }
+
+    /// Register Valkyrie message handlers
+    async fn register_valkyrie_handlers(&self, engine: &mut ValkyrieEngine) -> Result<()> {
+        // Register handler for heartbeat messages
+        engine.register_handler(MessageType::Heartbeat, ValkyrieHeartbeatHandler::new());
+        
+        // Register handler for data messages
+        engine.register_handler(MessageType::Data, ValkyrieDataHandler::new());
+        
+        // Register handler for control messages
+        engine.register_handler(MessageType::Control, ValkyrieControlHandler::new());
+        
+        Ok(())
+    }
     
     /// Start the event processing loop
     async fn start_event_loop(&self, mut shutdown_rx: mpsc::Receiver<()>) {
@@ -245,6 +441,11 @@ impl NodeCommunicationManager {
                                                 NodeMessage::JobResult { .. } => "job_result",
                                                 NodeMessage::ShutdownNotice { .. } => "shutdown_notice",
                                                 NodeMessage::JobStatusUpdate { .. } => "job_status_update",
+                                                NodeMessage::StreamingLog { .. } => "streaming_log",
+                                                NodeMessage::MetricsUpdate { .. } => "metrics_update",
+                                                NodeMessage::ResourceRequest { .. } => "resource_request",
+                                                NodeMessage::CapabilityUpdate { .. } => "capability_update",
+                                                NodeMessage::Alert { .. } => "alert",
                                             };
                                             
                                             if let Some(handler) = handlers.get(message_type) {
@@ -448,8 +649,8 @@ impl RegistrationHandler {
 
 #[async_trait]
 impl MessageHandler for RegistrationHandler {
-    async fn handle_message(&self, node_id: NodeId, message: NodeMessage) -> Result<()> {
-        if let NodeMessage::RegisterNode { node_info, capabilities, auth_token } = message {
+    async fn handle_message(&self, _node_id: NodeId, message: NodeMessage) -> Result<()> {
+        if let NodeMessage::RegisterNode { node_info, capabilities: _capabilities, auth_token } = message {
             // Verify the authentication token
             let claims = self.auth_manager.verify_token(&auth_token).await?;
             
@@ -482,8 +683,8 @@ impl HeartbeatHandler {
 
 #[async_trait]
 impl MessageHandler for HeartbeatHandler {
-    async fn handle_message(&self, node_id: NodeId, message: NodeMessage) -> Result<()> {
-        if let NodeMessage::Heartbeat { status, resources, metrics, .. } = message {
+    async fn handle_message(&self, _node_id: NodeId, message: NodeMessage) -> Result<()> {
+        if let NodeMessage::Heartbeat { status: _status, resources: _resources, metrics: _metrics, .. } = message {
             // Process heartbeat - update node status, resources, metrics
             // This would typically update a node registry or database
             
@@ -508,8 +709,8 @@ impl JobResultHandler {
 
 #[async_trait]
 impl MessageHandler for JobResultHandler {
-    async fn handle_message(&self, node_id: NodeId, message: NodeMessage) -> Result<()> {
-        if let NodeMessage::JobResult { job_id, result, metrics, .. } = message {
+    async fn handle_message(&self, _node_id: NodeId, message: NodeMessage) -> Result<()> {
+        if let NodeMessage::JobResult { job_id: _job_id, result: _result, metrics: _metrics, .. } = message {
             // Process job result - update job status, store results, etc.
             // This would typically update a job database or trigger further processing
             
@@ -519,5 +720,77 @@ impl MessageHandler for JobResultHandler {
                 details: "Expected JobResult message".to_string(),
             }.into())
         }
+    }
+}
+
+/// Valkyrie Protocol message handler for heartbeat messages
+pub struct ValkyrieHeartbeatHandler;
+
+impl ValkyrieHeartbeatHandler {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[async_trait]
+impl ValkyrieMessageHandler for ValkyrieHeartbeatHandler {
+    async fn handle_message(
+        &self,
+        _connection_id: crate::core::networking::valkyrie::types::ConnectionId,
+        message: ValkyrieMessage,
+    ) -> Result<()> {
+        // Process heartbeat message
+        tracing::debug!("Received Valkyrie heartbeat message: {:?}", message.header.id);
+        
+        // In a real implementation, this would update node status, check health, etc.
+        Ok(())
+    }
+}
+
+/// Valkyrie Protocol message handler for data messages
+pub struct ValkyrieDataHandler;
+
+impl ValkyrieDataHandler {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[async_trait]
+impl ValkyrieMessageHandler for ValkyrieDataHandler {
+    async fn handle_message(
+        &self,
+        _connection_id: crate::core::networking::valkyrie::types::ConnectionId,
+        message: ValkyrieMessage,
+    ) -> Result<()> {
+        // Process data message
+        tracing::debug!("Received Valkyrie data message: {} bytes", message.payload.len());
+        
+        // In a real implementation, this would process the data payload
+        Ok(())
+    }
+}
+
+/// Valkyrie Protocol message handler for control messages
+pub struct ValkyrieControlHandler;
+
+impl ValkyrieControlHandler {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[async_trait]
+impl ValkyrieMessageHandler for ValkyrieControlHandler {
+    async fn handle_message(
+        &self,
+        _connection_id: crate::core::networking::valkyrie::types::ConnectionId,
+        message: ValkyrieMessage,
+    ) -> Result<()> {
+        // Process control message
+        tracing::debug!("Received Valkyrie control message: {:?}", message.header.message_type);
+        
+        // In a real implementation, this would handle control operations
+        Ok(())
     }
 }

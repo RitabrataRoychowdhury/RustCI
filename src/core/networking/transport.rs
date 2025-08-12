@@ -1,22 +1,26 @@
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
-use crate::core::networking::node_communication::{ProtocolMessage, ProtocolError};
+use crate::core::networking::node_communication::ProtocolMessage;
 use crate::error::Result;
 
-/// Abstract transport layer for node communication
+// Forward declarations for types that will be defined in valkyrie module
+pub use crate::core::networking::valkyrie::types::{
+    TransportCapabilities
+};
+
+/// Enhanced abstract transport layer for Valkyrie Protocol
 #[async_trait]
 pub trait Transport: Send + Sync {
+    /// Get transport type identifier
+    fn transport_type(&self) -> TransportType;
+    
     /// Start listening for incoming connections
-    async fn listen(&self, config: &TransportConfig) -> Result<()>;
+    async fn listen(&self, config: &TransportConfig) -> Result<Box<dyn Listener>>;
     
     /// Connect to a remote endpoint
     async fn connect(&self, endpoint: &TransportEndpoint) -> Result<Box<dyn Connection>>;
@@ -26,6 +30,18 @@ pub trait Transport: Send + Sync {
     
     /// Get transport-specific metrics
     async fn get_metrics(&self) -> TransportMetrics;
+    
+    /// Get transport capabilities
+    fn capabilities(&self) -> TransportCapabilities;
+    
+    /// Configure transport parameters
+    async fn configure(&mut self, config: TransportConfig) -> Result<()>;
+    
+    /// Check if transport supports the given endpoint
+    fn supports_endpoint(&self, endpoint: &TransportEndpoint) -> bool;
+    
+    /// Get optimal configuration for given network conditions
+    async fn optimize_for_conditions(&self, conditions: &NetworkConditions) -> TransportConfig;
 }
 
 /// Connection abstraction for different transport types
@@ -59,14 +75,27 @@ pub struct TransportConfig {
     pub buffer_sizes: BufferConfig,
 }
 
-/// Supported transport types
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Enhanced transport types for Valkyrie Protocol
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TransportType {
+    /// Standard TCP transport
     Tcp,
-    UnixSocket { path: PathBuf },
-    WebSocket,
+    /// TCP with TLS encryption
     SecureTcp,
+    /// QUIC transport for modern networking
+    Quic,
+    /// WebSocket transport for browser compatibility
+    WebSocket,
+    /// Secure WebSocket with TLS
     SecureWebSocket,
+    /// Unix domain socket transport
+    UnixSocket { path: PathBuf },
+    /// Shared memory transport for local communication
+    SharedMemory { segment_name: String },
+    /// UDP transport for low-latency scenarios
+    Udp,
+    /// RDMA transport for high-performance networking
+    Rdma { device: String },
 }
 
 /// TLS configuration
@@ -138,7 +167,7 @@ pub struct ConnectionMetadata {
     pub messages_received: u64,
 }
 
-/// Transport metrics
+/// Transport metrics with enhanced observability
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransportMetrics {
     pub active_connections: u32,
@@ -149,262 +178,53 @@ pub struct TransportMetrics {
     pub bytes_received: u64,
     pub connection_errors: u64,
     pub authentication_failures: u64,
+    pub average_latency_ms: f64,
+    pub throughput_mbps: f64,
+    pub packet_loss_rate: f64,
+    pub connection_success_rate: f64,
 }
 
-/// TCP transport implementation
-pub struct TcpTransport {
-    connections: Arc<RwLock<HashMap<Uuid, Arc<dyn Connection>>>>,
-    listener: Option<TcpListener>,
-    metrics: Arc<RwLock<TransportMetrics>>,
-    shutdown_tx: Option<mpsc::Sender<()>>,
+/// Network conditions for transport optimization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkConditions {
+    pub latency_ms: f64,
+    pub bandwidth_mbps: f64,
+    pub packet_loss_rate: f64,
+    pub jitter_ms: f64,
+    pub is_mobile: bool,
+    pub is_metered: bool,
+    pub congestion_level: CongestionLevel,
 }
 
-impl TcpTransport {
-    pub fn new() -> Self {
-        Self {
-            connections: Arc::new(RwLock::new(HashMap::new())),
-            listener: None,
-            metrics: Arc::new(RwLock::new(TransportMetrics::default())),
-            shutdown_tx: None,
-        }
-    }
+/// Network congestion levels
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CongestionLevel {
+    Low,
+    Medium,
+    High,
+    Critical,
 }
 
+/// Listener trait for accepting incoming connections
 #[async_trait]
-impl Transport for TcpTransport {
-    async fn listen(&self, config: &TransportConfig) -> Result<()> {
-        let addr: SocketAddr = format!("{}:{}", config.bind_address, config.port.unwrap_or(8080))
-            .parse()
-            .map_err(|e| ProtocolError::ConnectionError { 
-                message: format!("Invalid bind address: {}", e) 
-            })?;
-        
-        let _listener = TcpListener::bind(addr).await
-            .map_err(|e| ProtocolError::ConnectionError { 
-                message: format!("Failed to bind to {}: {}", addr, e) 
-            })?;
-        
-        // In a real implementation, we would start the server loop here
-        // For now, just store the listener for later use
-        
-        Ok(())
-    }
+pub trait Listener: Send + Sync {
+    /// Accept an incoming connection
+    async fn accept(&mut self) -> Result<Box<dyn Connection>>;
     
-    async fn connect(&self, endpoint: &TransportEndpoint) -> Result<Box<dyn Connection>> {
-        let addr = format!("{}:{}", endpoint.address, endpoint.port.unwrap_or(8080));
-        let stream = TcpStream::connect(&addr).await
-            .map_err(|e| ProtocolError::ConnectionError { 
-                message: format!("Failed to connect to {}: {}", addr, e) 
-            })?;
-        
-        let connection = TcpConnection::new(stream);
-        Ok(Box::new(connection))
-    }
+    /// Get the local address the listener is bound to
+    fn local_addr(&self) -> Result<SocketAddr>;
     
-    async fn shutdown(&self) -> Result<()> {
-        // Send shutdown signal
-        if let Some(tx) = &self.shutdown_tx {
-            let _ = tx.send(()).await;
-        }
-        
-        // Close all active connections
-        let mut connections = self.connections.write().await;
-        for (_, _connection) in connections.drain() {
-            // In a real implementation, we'd properly close each connection
-        }
-        
-        Ok(())
-    }
-    
-    async fn get_metrics(&self) -> TransportMetrics {
-        self.metrics.read().await.clone()
-    }
+    /// Close the listener
+    async fn close(&mut self) -> Result<()>;
 }
 
-/// TCP connection implementation
-pub struct TcpConnection {
-    stream: TcpStream,
-    metadata: ConnectionMetadata,
-    connected: bool,
-}
+// TCP transport implementation moved to valkyrie::transport::tcp
 
-impl TcpConnection {
-    pub fn new(stream: TcpStream) -> Self {
-        let remote_addr = stream.peer_addr()
-            .map(|addr| addr.to_string())
-            .unwrap_or_else(|_| "unknown".to_string());
-        
-        let local_addr = stream.local_addr()
-            .map(|addr| addr.to_string())
-            .unwrap_or_else(|_| "unknown".to_string());
-        
-        Self {
-            stream,
-            metadata: ConnectionMetadata {
-                connection_id: Uuid::new_v4(),
-                remote_address: remote_addr,
-                local_address: local_addr,
-                transport_type: TransportType::Tcp,
-                established_at: chrono::Utc::now(),
-                bytes_sent: 0,
-                bytes_received: 0,
-                messages_sent: 0,
-                messages_received: 0,
-            },
-            connected: true,
-        }
-    }
-}
+// TCP connection implementation moved to valkyrie::transport::tcp
 
-#[async_trait]
-impl Connection for TcpConnection {
-    async fn send(&mut self, message: &ProtocolMessage) -> Result<()> {
-        use tokio::io::AsyncWriteExt;
-        
-        let serialized = serde_json::to_vec(message)
-            .map_err(ProtocolError::SerializationError)?;
-        
-        // Write message length first (4 bytes)
-        let length = serialized.len() as u32;
-        self.stream.write_all(&length.to_be_bytes()).await
-            .map_err(|e| ProtocolError::ConnectionError { 
-                message: format!("Failed to write message length: {}", e) 
-            })?;
-        
-        // Write message data
-        self.stream.write_all(&serialized).await
-            .map_err(|e| ProtocolError::ConnectionError { 
-                message: format!("Failed to write message: {}", e) 
-            })?;
-        
-        self.stream.flush().await
-            .map_err(|e| ProtocolError::ConnectionError { 
-                message: format!("Failed to flush stream: {}", e) 
-            })?;
-        
-        Ok(())
-    }
-    
-    async fn receive(&mut self) -> Result<ProtocolMessage> {
-        use tokio::io::AsyncReadExt;
-        
-        // Read message length (4 bytes)
-        let mut length_bytes = [0u8; 4];
-        self.stream.read_exact(&mut length_bytes).await
-            .map_err(|e| ProtocolError::ConnectionError { 
-                message: format!("Failed to read message length: {}", e) 
-            })?;
-        
-        let length = u32::from_be_bytes(length_bytes) as usize;
-        
-        // Read message data
-        let mut buffer = vec![0u8; length];
-        self.stream.read_exact(&mut buffer).await
-            .map_err(|e| ProtocolError::ConnectionError { 
-                message: format!("Failed to read message: {}", e) 
-            })?;
-        
-        // Deserialize message
-        let message: ProtocolMessage = serde_json::from_slice(&buffer)
-            .map_err(ProtocolError::SerializationError)?;
-        
-        Ok(message)
-    }
-    
-    async fn close(&mut self) -> Result<()> {
-        use tokio::io::AsyncWriteExt;
-        
-        let _ = self.stream.shutdown().await;
-        self.connected = false;
-        Ok(())
-    }
-    
-    fn is_connected(&self) -> bool {
-        self.connected
-    }
-    
-    fn metadata(&self) -> ConnectionMetadata {
-        self.metadata.clone()
-    }
-}
+// WebSocket transport implementation moved to valkyrie::transport::websocket
 
-/// WebSocket transport implementation
-pub struct WebSocketTransport {
-    connections: Arc<RwLock<HashMap<Uuid, Arc<dyn Connection>>>>,
-    metrics: Arc<RwLock<TransportMetrics>>,
-}
-
-impl WebSocketTransport {
-    pub fn new() -> Self {
-        Self {
-            connections: Arc::new(RwLock::new(HashMap::new())),
-            metrics: Arc::new(RwLock::new(TransportMetrics::default())),
-        }
-    }
-}
-
-#[async_trait]
-impl Transport for WebSocketTransport {
-    async fn listen(&self, _config: &TransportConfig) -> Result<()> {
-        // WebSocket server implementation would go here
-        // This is a simplified placeholder
-        Ok(())
-    }
-    
-    async fn connect(&self, _endpoint: &TransportEndpoint) -> Result<Box<dyn Connection>> {
-        // WebSocket client implementation would go here
-        // This is a simplified placeholder
-        Err(ProtocolError::ConnectionError { 
-            message: "WebSocket transport not fully implemented".to_string() 
-        }.into())
-    }
-    
-    async fn shutdown(&self) -> Result<()> {
-        Ok(())
-    }
-    
-    async fn get_metrics(&self) -> TransportMetrics {
-        self.metrics.read().await.clone()
-    }
-}
-
-/// Unix socket transport implementation
-pub struct UnixSocketTransport {
-    connections: Arc<RwLock<HashMap<Uuid, Arc<dyn Connection>>>>,
-    metrics: Arc<RwLock<TransportMetrics>>,
-}
-
-impl UnixSocketTransport {
-    pub fn new() -> Self {
-        Self {
-            connections: Arc::new(RwLock::new(HashMap::new())),
-            metrics: Arc::new(RwLock::new(TransportMetrics::default())),
-        }
-    }
-}
-
-#[async_trait]
-impl Transport for UnixSocketTransport {
-    async fn listen(&self, _config: &TransportConfig) -> Result<()> {
-        // Unix socket server implementation would go here
-        Ok(())
-    }
-    
-    async fn connect(&self, _endpoint: &TransportEndpoint) -> Result<Box<dyn Connection>> {
-        // Unix socket client implementation would go here
-        Err(ProtocolError::ConnectionError { 
-            message: "Unix socket transport not fully implemented".to_string() 
-        }.into())
-    }
-    
-    async fn shutdown(&self) -> Result<()> {
-        Ok(())
-    }
-    
-    async fn get_metrics(&self) -> TransportMetrics {
-        self.metrics.read().await.clone()
-    }
-}
+// Unix socket transport implementation moved to valkyrie::transport::unix_socket
 
 impl Default for TransportMetrics {
     fn default() -> Self {
@@ -417,6 +237,24 @@ impl Default for TransportMetrics {
             bytes_received: 0,
             connection_errors: 0,
             authentication_failures: 0,
+            average_latency_ms: 0.0,
+            throughput_mbps: 0.0,
+            packet_loss_rate: 0.0,
+            connection_success_rate: 1.0,
+        }
+    }
+}
+
+impl Default for NetworkConditions {
+    fn default() -> Self {
+        Self {
+            latency_ms: 50.0,
+            bandwidth_mbps: 100.0,
+            packet_loss_rate: 0.0,
+            jitter_ms: 5.0,
+            is_mobile: false,
+            is_metered: false,
+            congestion_level: CongestionLevel::Low,
         }
     }
 }
@@ -438,6 +276,25 @@ impl Default for BufferConfig {
             read_buffer_size: 8192,
             write_buffer_size: 8192,
             max_message_size: 1024 * 1024, // 1MB
+        }
+    }
+}
+
+impl Default for TransportConfig {
+    fn default() -> Self {
+        Self {
+            transport_type: TransportType::Tcp,
+            bind_address: "0.0.0.0".to_string(),
+            port: Some(8080),
+            tls_config: None,
+            authentication: AuthenticationConfig {
+                method: AuthMethod::None,
+                jwt_secret: None,
+                token_expiry: Duration::from_secs(3600),
+                require_mutual_auth: false,
+            },
+            timeouts: TimeoutConfig::default(),
+            buffer_sizes: BufferConfig::default(),
         }
     }
 }

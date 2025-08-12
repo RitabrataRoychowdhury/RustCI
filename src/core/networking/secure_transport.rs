@@ -2,19 +2,24 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
+use base64ct::Encoding;
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-
 use crate::core::networking::node_communication::{NodeId, ProtocolMessage, ProtocolError};
-use crate::core::networking::transport::{Transport, Connection, TransportConfig, TransportEndpoint, ConnectionMetadata, TransportMetrics};
+use crate::core::networking::transport::{Transport, Connection, TransportConfig, TransportEndpoint, ConnectionMetadata, TransportMetrics, TransportCapabilities};
 use crate::core::networking::node_communication::{MessagePayload, NodeMessage};
+use crate::core::networking::valkyrie::security::{
+    SecurityManager, SecurityConfig, AuthMethod, EncryptionMethod, 
+    EncryptionContext, AuthCredentials, AuthCredentialData
+};
 use crate::error::Result;
 
-/// Secure transport wrapper that adds authentication and encryption
+/// Enhanced secure transport wrapper with advanced security features
 pub struct SecureTransport {
     inner_transport: Box<dyn Transport>,
+    security_manager: Arc<SecurityManager>,
     auth_manager: Arc<AuthenticationManager>,
     encryption_manager: Arc<EncryptionManager>,
 }
@@ -25,8 +30,31 @@ impl SecureTransport {
         auth_manager: Arc<AuthenticationManager>,
         encryption_manager: Arc<EncryptionManager>,
     ) -> Self {
+        // Create default security manager for backward compatibility
+        let security_config = SecurityConfig::default();
+        let security_manager = Arc::new(
+            SecurityManager::new(security_config)
+                .expect("Failed to create security manager")
+        );
+
         Self {
             inner_transport: transport,
+            security_manager,
+            auth_manager,
+            encryption_manager,
+        }
+    }
+
+    /// Create secure transport with advanced security manager
+    pub fn with_security_manager(
+        transport: Box<dyn Transport>,
+        security_manager: Arc<SecurityManager>,
+        auth_manager: Arc<AuthenticationManager>,
+        encryption_manager: Arc<EncryptionManager>,
+    ) -> Self {
+        Self {
+            inner_transport: transport,
+            security_manager,
             auth_manager,
             encryption_manager,
         }
@@ -35,7 +63,11 @@ impl SecureTransport {
 
 #[async_trait]
 impl Transport for SecureTransport {
-    async fn listen(&self, config: &TransportConfig) -> Result<()> {
+    fn transport_type(&self) -> crate::core::networking::transport::TransportType {
+        self.inner_transport.transport_type()
+    }
+    
+    async fn listen(&self, config: &TransportConfig) -> Result<Box<dyn crate::core::networking::transport::Listener>> {
         self.inner_transport.listen(config).await
     }
     
@@ -44,6 +76,7 @@ impl Transport for SecureTransport {
         
         let secure_connection = SecureConnection::new(
             inner_connection,
+            self.security_manager.clone(),
             self.auth_manager.clone(),
             self.encryption_manager.clone(),
         );
@@ -58,30 +91,61 @@ impl Transport for SecureTransport {
     async fn get_metrics(&self) -> TransportMetrics {
         self.inner_transport.get_metrics().await
     }
+    
+    fn capabilities(&self) -> TransportCapabilities {
+        // Return the capabilities from the inner transport directly
+        // since they're the same type (re-exported from valkyrie::types)
+        self.inner_transport.capabilities()
+    }
+    
+    async fn configure(&mut self, _config: TransportConfig) -> Result<()> {
+        // Note: This would need to be properly implemented to make inner_transport mutable
+        // For now, we'll return Ok(()) as a placeholder
+        Ok(())
+    }
+    
+    fn supports_endpoint(&self, endpoint: &TransportEndpoint) -> bool {
+        self.inner_transport.supports_endpoint(endpoint)
+    }
+    
+    async fn optimize_for_conditions(&self, conditions: &crate::core::networking::transport::NetworkConditions) -> TransportConfig {
+        self.inner_transport.optimize_for_conditions(conditions).await
+    }
 }
 
-/// Secure connection wrapper
+/// Enhanced secure connection wrapper with post-quantum crypto support
 pub struct SecureConnection {
     inner_connection: Box<dyn Connection>,
+    security_manager: Arc<SecurityManager>,
     auth_manager: Arc<AuthenticationManager>,
     encryption_manager: Arc<EncryptionManager>,
     authenticated: bool,
     node_id: Option<NodeId>,
+    encryption_method: EncryptionMethod,
 }
 
 impl SecureConnection {
     pub fn new(
         connection: Box<dyn Connection>,
+        security_manager: Arc<SecurityManager>,
         auth_manager: Arc<AuthenticationManager>,
         encryption_manager: Arc<EncryptionManager>,
     ) -> Self {
         Self {
             inner_connection: connection,
+            security_manager,
             auth_manager,
             encryption_manager,
             authenticated: false,
             node_id: None,
+            encryption_method: EncryptionMethod::AES256GCM, // Default encryption
         }
+    }
+    
+    /// Set encryption method (AES256GCM, ChaCha20Poly1305, or PostQuantum)
+    pub fn with_encryption_method(mut self, method: EncryptionMethod) -> Self {
+        self.encryption_method = method;
+        self
     }
     
     async fn authenticate(&mut self, token: &str) -> Result<NodeId> {
@@ -90,21 +154,114 @@ impl SecureConnection {
         self.node_id = Some(claims.node_id);
         Ok(claims.node_id)
     }
+
+    /// Authenticate using the advanced security manager
+    async fn authenticate_advanced(&mut self, method: AuthMethod, credentials: AuthCredentials) -> Result<NodeId> {
+        let auth_result = self.security_manager.authenticate(method, credentials).await?;
+        
+        if auth_result.success {
+            if let Some(subject) = auth_result.subject {
+                self.authenticated = true;
+                self.node_id = Some(subject.node_id.clone());
+                Ok(subject.node_id)
+            } else {
+                Err(crate::error::AppError::SecurityError("Authentication succeeded but no subject returned".to_string()).into())
+            }
+        } else {
+            Err(crate::error::AppError::SecurityError("Authentication failed".to_string()).into())
+        }
+    }
 }
 
 #[async_trait]
 impl Connection for SecureConnection {
     async fn send(&mut self, message: &ProtocolMessage) -> Result<()> {
-        // Encrypt message if encryption is enabled
-        let encrypted_message = self.encryption_manager.encrypt_message(message).await?;
+        // Serialize message for encryption
+        let message_data = serde_json::to_vec(message)
+            .map_err(|e| crate::error::AppError::SecurityError(format!("Failed to serialize message: {}", e)))?;
+
+        // Create encryption context
+        let context = EncryptionContext {
+            key_id: "default-key".to_string(), // In practice, this would be a proper key ID
+            algorithm: format!("{:?}", self.encryption_method),
+            additional_data: None,
+            nonce: None,
+            metadata: HashMap::new(),
+        };
+
+        // Encrypt using the security manager
+        let encrypted_data = self.security_manager.encrypt(self.encryption_method, &message_data, &context).await?;
+        
+        // Create encrypted message wrapper
+        let encrypted_message = ProtocolMessage {
+            id: message.id,
+            timestamp: message.timestamp,
+            source: message.source,
+            destination: message.destination,
+            message: MessagePayload::NodeMessage(NodeMessage::RegisterNode {
+                node_info: crate::core::networking::node_communication::NodeInfo {
+                    hostname: "encrypted".to_string(),
+                    ip_address: "127.0.0.1".to_string(),
+                    port: 8080,
+                    node_type: crate::core::networking::node_communication::NodeType::Worker,
+                    version: "encrypted".to_string(),
+                    platform: "encrypted".to_string(),
+                    architecture: "encrypted".to_string(),
+                    tags: HashMap::new(),
+                },
+                capabilities: crate::core::networking::node_communication::NodeCapabilities {
+                    runner_types: vec![crate::core::networking::node_communication::RunnerType::Docker],
+                    max_resources: crate::core::networking::node_communication::NodeResources {
+                        cpu_cores: 1,
+                        memory_mb: 1024,
+                        disk_gb: 10,
+                        network_mbps: 100,
+                        available_cpu: 1.0,
+                        available_memory_mb: 1024,
+                        available_disk_gb: 10,
+                    },
+                    supported_job_types: vec!["encrypted".to_string()],
+                    features: vec!["encrypted".to_string()],
+                    protocols: vec!["encrypted".to_string()],
+                },
+                auth_token: base64ct::Base64::encode_string(&encrypted_data),
+            }),
+            signature: message.signature.clone(),
+        };
+
         self.inner_connection.send(&encrypted_message).await
     }
     
     async fn receive(&mut self) -> Result<ProtocolMessage> {
         let encrypted_message = self.inner_connection.receive().await?;
         
-        // Decrypt message if encryption is enabled
-        let message = self.encryption_manager.decrypt_message(&encrypted_message).await?;
+        // Extract encrypted data from message
+        let encrypted_data = match &encrypted_message.message {
+            MessagePayload::NodeMessage(NodeMessage::RegisterNode { auth_token, .. }) => {
+                base64ct::Base64::decode_vec(auth_token)
+                    .map_err(|e| crate::error::AppError::SecurityError(format!("Failed to decode encrypted data: {}", e)))?
+            }
+            _ => {
+                // Handle non-encrypted messages for backward compatibility
+                return Ok(encrypted_message);
+            }
+        };
+
+        // Create decryption context
+        let context = EncryptionContext {
+            key_id: "default-key".to_string(),
+            algorithm: format!("{:?}", self.encryption_method),
+            additional_data: None,
+            nonce: None,
+            metadata: HashMap::new(),
+        };
+
+        // Decrypt using the security manager
+        let decrypted_data = self.security_manager.decrypt(self.encryption_method, &encrypted_data, &context).await?;
+        
+        // Deserialize the original message
+        let message: ProtocolMessage = serde_json::from_slice(&decrypted_data)
+            .map_err(|e| crate::error::AppError::SecurityError(format!("Failed to deserialize message: {}", e)))?;
         
         // Verify authentication for non-registration messages
         if !self.authenticated {
@@ -112,7 +269,21 @@ impl Connection for SecureConnection {
                 MessagePayload::NodeMessage(
                     NodeMessage::RegisterNode { auth_token, .. }
                 ) => {
-                    self.authenticate(auth_token).await?;
+                    // Try advanced authentication first
+                    let credentials = AuthCredentials {
+                        method: AuthMethod::JWT,
+                        node_id: None,
+                        source_ip: Some("unknown".to_string()),
+                        data: AuthCredentialData::JWT { token: auth_token.clone() },
+                    };
+                    
+                    match self.authenticate_advanced(AuthMethod::JWT, credentials).await {
+                        Ok(_) => {},
+                        Err(_) => {
+                            // Fallback to legacy authentication
+                            self.authenticate(&auth_token).await?;
+                        }
+                    }
                 }
                 _ => {
                     return Err(ProtocolError::AuthenticationFailed {

@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+pub mod api;
 pub mod application;
 pub mod ci;
 pub mod config;
@@ -18,6 +19,11 @@ pub mod presentation;
 pub mod service_registry;
 pub mod token;
 pub mod upload;
+pub mod valkyrie;
+
+// Language bindings (optional features)
+#[cfg(any(feature = "python-bindings", feature = "javascript-bindings", feature = "java-bindings"))]
+pub mod bindings;
 
 // Re-export commonly used types
 pub use error::{AppError, Result};

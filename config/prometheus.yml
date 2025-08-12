@@ -46,3 +46,44 @@ scrape_configs:
       - targets: ["load-balancer:8404"]
     metrics_path: "/stats/prometheus"
     scrape_interval: 15s
+
+  # Valkyrie Protocol Metrics
+  - job_name: "valkyrie-protocol"
+    static_configs:
+      - targets: ["localhost:8081"]
+    metrics_path: "/valkyrie/metrics"
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    honor_labels: true
+
+  # Valkyrie Health Metrics
+  - job_name: "valkyrie-health"
+    static_configs:
+      - targets: ["localhost:8081"]
+    metrics_path: "/valkyrie/health"
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Valkyrie Internal Observability
+  - job_name: "valkyrie-internal"
+    static_configs:
+      - targets: ["localhost:8081"]
+    metrics_path: "/valkyrie/internal/metrics"
+    scrape_interval: 5s
+    scrape_timeout: 3s
+    honor_labels: true
+
+  # Valkyrie Correlation Tracking
+  - job_name: "valkyrie-tracing"
+    static_configs:
+      - targets: ["localhost:8081"]
+    metrics_path: "/valkyrie/tracing/metrics"
+    scrape_interval: 15s
+    scrape_timeout: 5s
+
+  # Pushgateway for Valkyrie batch jobs
+  - job_name: "valkyrie-pushgateway"
+    static_configs:
+      - targets: ["localhost:9091"]
+    honor_labels: true
+    metrics_path: "/metrics"

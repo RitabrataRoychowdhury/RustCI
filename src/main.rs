@@ -21,9 +21,10 @@ mod error;
 #[cfg(test)]
 mod integration_tests;
 mod service_registry;
-mod test_event_driven;
+
 mod token;
 mod upload;
+mod valkyrie;
 
 // Clean Architecture Layers
 mod application;

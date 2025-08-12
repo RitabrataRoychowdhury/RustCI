@@ -1,0 +1,25 @@
+# Compatibility Benchmark Configuration
+# Tests across different environments and configurations
+
+benchmark_suite:
+  name: "Valkyrie Compatibility Validation"
+  version: "2.0"
+
+environments:
+  - name: "docker"
+    container_runtime: "docker"
+  - name: "kubernetes"
+    orchestrator: "k8s"
+  - name: "native"
+    runtime: "native"
+
+compatibility_matrix:
+  rust_versions: ["1.70", "1.75", "1.80"]
+  os_platforms: ["linux", "macos", "windows"]
+  architectures: ["x86_64", "aarch64"]
+
+transport_compatibility:
+  tcp: ["ipv4", "ipv6"]
+  quic: ["h3", "h3-29"]
+  websocket: ["ws", "wss"]
+  unix_socket: ["stream", "dgram"]

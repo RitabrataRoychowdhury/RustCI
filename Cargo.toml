@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 default-run = "RustAutoDevOps"
 
+# Build optimization settings
+[build]
+rustflags = ["-C", "target-cpu=native"]  # Optimize for current CPU
+
 [dependencies]
 # Web framework
 axum = { version = "0.7", features = ["http1", "http2", "macros", "multipart"] }
@@ -25,25 +29,32 @@ serde_yaml = "0.9"
 dotenv = "0.15"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 url = "2.5"
-urlencoding = "2.1"
 
 # Date/time
 chrono = { version = "0.4", features = ["serde"] }
-time = { version = "0.3", features = ["macros", "serde"] }
 
 # Auth
 jsonwebtoken = "9.2"
 argon2 = "0.5"
 base64ct = "1.7"
 
-# Encryption
+# Encryption and cryptography
 aes-gcm = "0.10"
+chacha20poly1305 = "0.10"
 rand = "0.8"
+rand_chacha = "0.3"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.21"
 
 # Docker integration
 bollard = "0.16"
 tempfile = "3.20"
+
+# Configuration and validation
+regex = "1.11"
 tar = "0.4"
+num_cpus = "1.17"  # Used in lockfree implementations
 
 # Kubernetes integration
 kube = { version = "0.87", features = ["runtime", "derive"] }
@@ -67,6 +78,8 @@ dashmap = "5.5"
 
 # Health checks and monitoring
 sysinfo = "0.29"
+urlencoding = "2.1"
+time = "0.3"
 
 # System utilities
 hostname = "0.3"
@@ -83,24 +96,41 @@ futures = "0.3"
 futures-util = "0.3"
 axum-extra = { version = "0.9", features = ["cookie"] }
 
-# Validation
-regex = "1.11"
+
 
 # OpenAPI/Swagger documentation
 utoipa = { version = "4.2", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "4.0", features = ["axum"] }
 
-# Random number generation
+# Performance optimizations
+bytes = "1.5"
+
+# Random number generation (used in lockfree implementations)
 fastrand = "2.3"
 
-# CPU information
-num_cpus = "1.17"
+# SIMD and zero-copy optimizations (used in valkyrie)
+wide = "0.7"
+bytemuck = { version = "1.14", features = ["derive"] }
+memmap2 = "0.9"
+simd-json = "0.13"  # Used in SIMD processor
 
 # File watching for hot-reload
 notify = "6.1"
 
 # WebSocket support for node communication
 tokio-tungstenite = { version = "0.20", features = ["native-tls"] }
+
+# Compression support
+flate2 = "1.0"
+
+# Language bindings dependencies (optional)
+pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
+napi = { version = "2.0", optional = true }
+napi-derive = { version = "2.0", optional = true }
+jni = { version = "0.21", optional = true }
+
+# CLI argument parsing (used in valkyrie-codegen binary)
+clap = { version = "4.0", features = ["derive"] }
 
 [dev-dependencies]
 # Testing framework
@@ -121,9 +151,35 @@ httpmock = "0.6"
 md5 = "0.7"
 tempdir = "0.3"
 
+# Optional features for language bindings
+[features]
+default = ["core-features"]
+core-features = []
+python-bindings = ["pyo3"]
+javascript-bindings = ["napi", "napi-derive"]
+java-bindings = ["jni"]
+go-bindings = []
+all-bindings = ["python-bindings", "javascript-bindings", "java-bindings", "go-bindings"]
+# Performance features
+simd-optimizations = []
+zero-copy = []
+
 [profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
+opt-level = 3          # Optimize for speed instead of size
+lto = "thin"           # Use thin LTO for faster builds
+codegen-units = 16     # Increase parallelism for faster builds
 panic = "abort"
 strip = true
+
+# Development profile optimizations for faster builds
+[profile.dev]
+opt-level = 0
+debug = true
+split-debuginfo = "unpacked"  # Faster linking on macOS
+incremental = true
+
+# Test profile optimizations
+[profile.test]
+opt-level = 0
+debug = true
+incremental = true

@@ -56,6 +56,11 @@ pub struct ValidationResult {
 }
 
 impl ValidationResult {
+    /// Create a successful validation result
+    /// 
+    /// # Arguments
+    /// * `build_logs` - Logs from the build process
+    /// * `run_logs` - Logs from the runtime validation
     pub fn success(build_logs: Vec<String>, run_logs: Vec<String>) -> Self {
         Self {
             success: true,
@@ -67,6 +72,10 @@ impl ValidationResult {
     }
 
     #[allow(dead_code)]
+    /// Create a failed validation result
+    /// 
+    /// # Arguments
+    /// * `errors` - List of validation errors encountered
     pub fn failure(errors: Vec<String>) -> Self {
         Self {
             success: false,

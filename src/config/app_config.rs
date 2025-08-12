@@ -16,6 +16,7 @@ pub struct AppConfiguration {
     pub ci: CIConfig,
     pub external_services: ExternalServicesConfig,
     pub features: FeatureFlags,
+    pub valkyrie: Option<ValkyrieIntegrationConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -239,7 +240,40 @@ pub struct FeatureFlags {
     pub enable_distributed_tracing: bool,
     pub enable_hot_reload: bool,
     pub enable_experimental_features: bool,
+    pub enable_valkyrie_protocol: bool,
     pub custom_flags: HashMap<String, bool>,
+}
+
+/// Valkyrie Protocol integration configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValkyrieIntegrationConfig {
+    /// Enable Valkyrie Protocol
+    pub enabled: bool,
+    /// Configuration source (file path or "environment")
+    pub config_source: String,
+    /// Fallback to legacy communication if Valkyrie fails
+    pub fallback_to_legacy: bool,
+    /// Enable Valkyrie for specific node types
+    pub enabled_for_node_types: Vec<String>,
+    /// Valkyrie-specific feature flags
+    pub features: ValkyrieFeatureFlags,
+}
+
+/// Valkyrie-specific feature flags
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValkyrieFeatureFlags {
+    /// Enable advanced routing
+    pub advanced_routing: bool,
+    /// Enable stream multiplexing
+    pub stream_multiplexing: bool,
+    /// Enable post-quantum cryptography
+    pub post_quantum_crypto: bool,
+    /// Enable machine learning optimizations
+    pub ml_optimizations: bool,
+    /// Enable zero-copy optimizations
+    pub zero_copy: bool,
+    /// Enable SIMD optimizations
+    pub simd: bool,
 }
 
 impl Default for AppConfiguration {
@@ -417,8 +451,23 @@ impl Default for AppConfiguration {
                 enable_distributed_tracing: false,
                 enable_hot_reload: true,
                 enable_experimental_features: false,
+                enable_valkyrie_protocol: false,
                 custom_flags: HashMap::new(),
             },
+            valkyrie: Some(ValkyrieIntegrationConfig {
+                enabled: false,
+                config_source: "environment".to_string(),
+                fallback_to_legacy: true,
+                enabled_for_node_types: vec!["worker".to_string(), "hybrid".to_string()],
+                features: ValkyrieFeatureFlags {
+                    advanced_routing: true,
+                    stream_multiplexing: true,
+                    post_quantum_crypto: false,
+                    ml_optimizations: false,
+                    zero_copy: true,
+                    simd: true,
+                },
+            }),
         }
     }
 }
@@ -525,6 +574,48 @@ impl ConfigManager {
         }
         if let Ok(enable_hot_reload) = std::env::var("ENABLE_HOT_RELOAD") {
             config.features.enable_hot_reload = enable_hot_reload.parse().unwrap_or(true);
+        }
+        if let Ok(enable_valkyrie) = std::env::var("ENABLE_VALKYRIE_PROTOCOL") {
+            config.features.enable_valkyrie_protocol = enable_valkyrie.parse().unwrap_or(false);
+        }
+
+        // Valkyrie Protocol configuration
+        if let Some(valkyrie_config) = &mut config.valkyrie {
+            if let Ok(valkyrie_enabled) = std::env::var("VALKYRIE_ENABLED") {
+                valkyrie_config.enabled = valkyrie_enabled.parse().unwrap_or(false);
+            }
+            if let Ok(config_source) = std::env::var("VALKYRIE_CONFIG_SOURCE") {
+                valkyrie_config.config_source = config_source;
+            }
+            if let Ok(fallback) = std::env::var("VALKYRIE_FALLBACK_TO_LEGACY") {
+                valkyrie_config.fallback_to_legacy = fallback.parse().unwrap_or(true);
+            }
+            if let Ok(node_types) = std::env::var("VALKYRIE_ENABLED_NODE_TYPES") {
+                valkyrie_config.enabled_for_node_types = node_types
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect();
+            }
+            
+            // Valkyrie feature flags
+            if let Ok(advanced_routing) = std::env::var("VALKYRIE_ADVANCED_ROUTING") {
+                valkyrie_config.features.advanced_routing = advanced_routing.parse().unwrap_or(true);
+            }
+            if let Ok(stream_multiplexing) = std::env::var("VALKYRIE_STREAM_MULTIPLEXING") {
+                valkyrie_config.features.stream_multiplexing = stream_multiplexing.parse().unwrap_or(true);
+            }
+            if let Ok(post_quantum) = std::env::var("VALKYRIE_POST_QUANTUM_CRYPTO") {
+                valkyrie_config.features.post_quantum_crypto = post_quantum.parse().unwrap_or(false);
+            }
+            if let Ok(ml_optimizations) = std::env::var("VALKYRIE_ML_OPTIMIZATIONS") {
+                valkyrie_config.features.ml_optimizations = ml_optimizations.parse().unwrap_or(false);
+            }
+            if let Ok(zero_copy) = std::env::var("VALKYRIE_ZERO_COPY") {
+                valkyrie_config.features.zero_copy = zero_copy.parse().unwrap_or(true);
+            }
+            if let Ok(simd) = std::env::var("VALKYRIE_SIMD") {
+                valkyrie_config.features.simd = simd.parse().unwrap_or(true);
+            }
         }
 
         debug!("🔧 Configuration loaded from environment variables");

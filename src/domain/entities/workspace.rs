@@ -21,6 +21,13 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    /// Create a new workspace entity
+    /// 
+    /// # Arguments
+    /// * `user_id` - The UUID of the workspace owner
+    /// * `github_user_id` - The GitHub user ID for integration
+    /// * `name` - The workspace name
+    /// * `description` - Optional workspace description
     pub fn new(
         user_id: Uuid,
         github_user_id: i64,
@@ -81,6 +88,10 @@ impl Default for WorkspaceUpdate {
 
 impl WorkspaceUpdate {
     #[allow(dead_code)]
+    /// Create a new empty workspace update
+    /// 
+    /// This creates a workspace update with all fields set to None,
+    /// allowing for selective updates of workspace properties.
     pub fn new() -> Self {
         Self {
             organization: None,

@@ -1,0 +1,22 @@
+[package]
+name = "valkyrie-benchmarks"
+version = "2.0.0"
+edition = "2021"
+
+[[bin]]
+name = "valkyrie-benchmark"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Reference to main rustci crate
+rustci = { path = ".." }

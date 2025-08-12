@@ -375,6 +375,12 @@ impl ErrorManager {
             AppError::NotImplemented(_) => "not_implemented".to_string(),
             AppError::RateLimitExceededSimple(_) => "rate_limit_exceeded".to_string(),
             AppError::InvalidPipelineType(_) => "invalid_pipeline_type".to_string(),
+            AppError::SerializationError(_) => "serialization_error".to_string(),
+            AppError::CompressionError(_) => "compression_error".to_string(),
+            AppError::SecurityError(_) => "security_error".to_string(),
+            AppError::StreamError { .. } => "stream_error".to_string(),
+            AppError::FlowControlViolation { .. } => "flow_control_violation".to_string(),
+            AppError::InternalError { .. } => "internal_error".to_string(),
         }
     }
 
@@ -420,6 +426,12 @@ impl ErrorManager {
             AppError::NotImplemented(_) => "NOT_IMPLEMENTED".to_string(),
             AppError::RateLimitExceededSimple(_) => "RATE_LIMIT_EXCEEDED".to_string(),
             AppError::InvalidPipelineType(_) => "INVALID_PIPELINE_TYPE".to_string(),
+            AppError::SerializationError(_) => "SERIALIZATION_ERROR".to_string(),
+            AppError::CompressionError(_) => "COMPRESSION_ERROR".to_string(),
+            AppError::SecurityError(_) => "SECURITY_ERROR".to_string(),
+            AppError::StreamError { .. } => "STREAM_ERROR".to_string(),
+            AppError::FlowControlViolation { .. } => "FLOW_CONTROL_VIOLATION".to_string(),
+            AppError::InternalError { .. } => "INTERNAL_ERROR".to_string(),
         }
     }
 

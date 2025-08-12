@@ -49,6 +49,102 @@ impl Default for RateLimitConfig {
     }
 }
 
+/// Builder for RateLimitConfig using the Builder pattern
+pub struct RateLimitConfigBuilder {
+    max_requests: u32,
+    window_duration: Duration,
+    enabled: bool,
+    per_ip_limit: Option<u32>,
+    per_user_limit: Option<u32>,
+    per_api_key_limit: Option<u32>,
+}
+
+impl RateLimitConfigBuilder {
+    /// Create a new rate limit configuration builder
+    pub fn new() -> Self {
+        Self {
+            max_requests: 1000,
+            window_duration: Duration::from_secs(3600),
+            enabled: true,
+            per_ip_limit: Some(100),
+            per_user_limit: Some(500),
+            per_api_key_limit: Some(1000),
+        }
+    }
+    
+    /// Set maximum requests per window
+    pub fn max_requests(mut self, max_requests: u32) -> Self {
+        self.max_requests = max_requests;
+        self
+    }
+    
+    /// Set window duration
+    pub fn window_duration(mut self, duration: Duration) -> Self {
+        self.window_duration = duration;
+        self
+    }
+    
+    /// Enable or disable rate limiting
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+    
+    /// Set per-IP rate limit
+    pub fn per_ip_limit(mut self, limit: Option<u32>) -> Self {
+        self.per_ip_limit = limit;
+        self
+    }
+    
+    /// Set per-user rate limit
+    pub fn per_user_limit(mut self, limit: Option<u32>) -> Self {
+        self.per_user_limit = limit;
+        self
+    }
+    
+    /// Set per-API-key rate limit
+    pub fn per_api_key_limit(mut self, limit: Option<u32>) -> Self {
+        self.per_api_key_limit = limit;
+        self
+    }
+    
+    /// Configure for development environment (more permissive)
+    pub fn for_development(mut self) -> Self {
+        self.max_requests = 10000;
+        self.per_ip_limit = Some(1000);
+        self.per_user_limit = Some(5000);
+        self.per_api_key_limit = Some(10000);
+        self
+    }
+    
+    /// Configure for production environment (more restrictive)
+    pub fn for_production(mut self) -> Self {
+        self.max_requests = 500;
+        self.per_ip_limit = Some(50);
+        self.per_user_limit = Some(200);
+        self.per_api_key_limit = Some(500);
+        self
+    }
+    
+    /// Build the final configuration
+    pub fn build(self) -> RateLimitConfig {
+        RateLimitConfig {
+            max_requests: self.max_requests,
+            window_duration: self.window_duration,
+            enabled: self.enabled,
+            per_ip_limit: self.per_ip_limit,
+            per_user_limit: self.per_user_limit,
+            per_api_key_limit: self.per_api_key_limit,
+        }
+    }
+}
+
+impl Default for RateLimitConfigBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Rate limit bucket for tracking requests
 #[derive(Debug, Clone)]
 struct RateLimitBucket {

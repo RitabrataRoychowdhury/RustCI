@@ -139,6 +139,24 @@ pub enum AppError {
 
     #[error("Invalid pipeline type: {0}")]
     InvalidPipelineType(String),
+
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
+
+    #[error("Compression error: {0}")]
+    CompressionError(String),
+
+    #[error("Security error: {0}")]
+    SecurityError(String),
+
+    #[error("Stream error: {stream_id}: {error_type}")]
+    StreamError { stream_id: uuid::Uuid, error_type: String },
+
+    #[error("Flow control violation: {stream_id}: {details}")]
+    FlowControlViolation { stream_id: uuid::Uuid, details: String },
+
+    #[error("Internal error: {component}: {message}")]
+    InternalError { component: String, message: String },
 }
 
 // Add From implementations for common error types
@@ -243,6 +261,21 @@ impl IntoResponse for AppError {
             AppError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
             AppError::TimeoutError(msg) => (StatusCode::REQUEST_TIMEOUT, msg),
             AppError::InvalidPipelineType(msg) => (StatusCode::BAD_REQUEST, msg),
+            AppError::SerializationError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            AppError::CompressionError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            AppError::SecurityError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            AppError::StreamError { stream_id, error_type } => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Stream error: {}: {}", stream_id, error_type),
+            ),
+            AppError::FlowControlViolation { stream_id, details } => (
+                StatusCode::TOO_MANY_REQUESTS,
+                format!("Flow control violation: {}: {}", stream_id, details),
+            ),
+            AppError::InternalError { component, message } => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Internal error: {}: {}", component, message),
+            ),
         };
 
         let body = Json(json!({

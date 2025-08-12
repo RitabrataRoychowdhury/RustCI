@@ -1,0 +1,64 @@
+# Default Valkyrie Protocol Benchmark Configuration
+
+benchmark_suite:
+  name: "Valkyrie Protocol Comprehensive Benchmark"
+  version: "2.0"
+  
+http_bridge:
+  concurrent_requests: 1000
+  total_requests: 100000
+  payload_size: 1024
+  target_response_time_us: 500
+  warmup_requests: 1000
+  test_duration_seconds: 60
+
+protocol_core:
+  message_processing:
+    message_sizes: [64, 256, 1024, 4096, 16384]
+    target_throughput_msgs_per_sec: 1000000
+  stream_multiplexing:
+    concurrent_streams: [100, 1000, 10000, 100000]
+    target_latency_us: 100
+  qos_handling:
+    priority_levels: [1, 50, 100, 200, 255]
+    bandwidth_limits: [1000000, 10000000, 100000000]
+
+transport:
+  tcp:
+    connection_counts: [100, 1000, 10000, 100000]
+    target_latency_us: 1000
+    target_throughput_mbps: 10000
+  quic:
+    connection_counts: [100, 1000, 10000, 200000]
+    target_latency_us: 500
+    target_throughput_mbps: 15000
+  websocket:
+    connection_counts: [100, 1000, 10000, 50000]
+    target_latency_us: 2000
+    target_throughput_mbps: 5000
+  unix_socket:
+    connection_counts: [100, 1000, 10000]
+    target_latency_us: 100
+    target_throughput_mbps: 20000
+
+security:
+  authentication:
+    key_sizes: [256, 384, 521]
+    target_handshake_time_us: 2000
+  encryption:
+    cipher_suites: ["ChaCha20Poly1305", "AES256GCM"]
+    target_handshake_time_us: 1000
+
+end_to_end:
+  full_pipeline:
+    target_end_to_end_latency_ms: 100
+  multi_node:
+    node_counts: [3, 5, 7, 10]
+  load_balancing:
+    backend_counts: [2, 5, 10, 20]
+
+reporting:
+  export_json: true
+  export_csv: true
+  export_markdown: true
+  export_prometheus: true

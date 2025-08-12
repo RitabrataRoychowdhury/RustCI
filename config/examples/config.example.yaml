@@ -1,0 +1,316 @@
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: null  # null means auto-detect
+  max_connections: 1000
+  request_timeout_seconds: 30
+  graceful_shutdown_timeout_seconds: 30
+  tls: null  # Optional TLS configuration
+
+database:
+  mongodb_uri: "mongodb://localhost:27017"
+  database_name: "rustci"
+  connection_pool_size: 10
+  connection_timeout_seconds: 10
+  query_timeout_seconds: 30
+  retry_attempts: 3
+  enable_ssl: false
+
+security:
+  jwt:
+    secret: "your-super-secure-jwt-secret-key-here"
+    expires_in_seconds: 3600
+    refresh_expires_in_seconds: 86400
+    issuer: "rustci"
+    audience: "rustci-api"
+    algorithm: "HS256"
+  
+  oauth:
+    github:
+      client_id: "your-github-oauth-client-id"
+      client_secret: "your-github-oauth-client-secret"
+      redirect_url: "http://localhost:8000/api/sessions/oauth/github/callback"
+      scopes:
+        - "user:email"
+        - "repo"
+  
+  encryption:
+    key: "base64-encoded-32-byte-encryption-key-here"
+    algorithm: "AES-256-GCM"
+  
+  rate_limiting:
+    requests_per_minute: 60
+    burst_size: 10
+    enable_per_user_limits: true
+    whitelist_ips:
+      - "127.0.0.1"
+      - "::1"
+  
+  cors:
+    allowed_origins:
+      - "http://localhost:3000"
+      - "http://localhost:8080"
+    allowed_methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    allowed_headers:
+      - "Content-Type"
+      - "Authorization"
+      - "X-Requested-With"
+    allow_credentials: true
+    max_age_seconds: 3600
+
+observability:
+  logging:
+    level: "info"
+    format: "json"  # "json" or "pretty"
+    output: "stdout"  # "stdout", "stderr", or file path
+    enable_file_rotation: false
+    max_file_size_mb: 100
+    max_files: 10
+  
+  metrics:
+    enabled: true
+    endpoint: "/metrics"
+    collection_interval_seconds: 60
+    export_timeout_seconds: 10
+    custom_metrics: {}
+  
+  tracing:
+    enabled: false
+    endpoint: null
+    service_name: "rustci"
+    service_version: "0.1.0"
+    sample_rate: 0.1
+    export_timeout_seconds: 10
+
+ci:
+  max_concurrent_pipelines: 10
+  pipeline_timeout_seconds: 3600
+  workspace_cleanup_interval_seconds: 300
+  default_executor: "docker"
+  executors:
+    docker:
+      enabled: true
+      max_concurrent_jobs: 5
+      resource_limits:
+        cpu_cores: 2.0
+        memory_mb: 2048
+        disk_mb: 10240
+        network_bandwidth_mbps: null
+      timeout_seconds: 1800
+      retry_attempts: 2
+      config: {}
+    
+    kubernetes:
+      enabled: false
+      max_concurrent_jobs: 10
+      resource_limits:
+        cpu_cores: 4.0
+        memory_mb: 4096
+        disk_mb: 20480
+        network_bandwidth_mbps: null
+      timeout_seconds: 3600
+      retry_attempts: 3
+      config:
+        namespace: "rustci"
+        service_account: "rustci-executor"
+
+external_services:
+  github:
+    api_url: "https://api.github.com"
+    timeout_seconds: 30
+    retry_attempts: 3
+    rate_limit_per_hour: 5000
+  
+  docker_registry:
+    url: "https://registry-1.docker.io"
+    username: null
+    password: null
+    timeout_seconds: 60
+    insecure: false
+  
+  notification:
+    enabled: false
+    channels: []
+
+# Valkyrie Protocol Configuration
+valkyrie:
+  enabled: true
+  protocol:
+    version: "2.0"
+    bind_address: "0.0.0.0:8080"
+    max_message_size: 67108864  # 64MB
+    heartbeat_interval_seconds: 30
+    connection_timeout_seconds: 60
+    
+  transport:
+    primary: "tcp"
+    fallbacks:
+      - "websocket"
+      - "unix"
+    tcp:
+      nodelay: true
+      keepalive: true
+      keepalive_idle_seconds: 600
+      keepalive_interval_seconds: 60
+      keepalive_probes: 3
+    quic:
+      enabled: false
+      max_streams: 1000
+      max_data: 1073741824  # 1GB
+    websocket:
+      enabled: true
+      path: "/valkyrie/ws"
+      compression: true
+    unix:
+      enabled: true
+      socket_path: "/tmp/valkyrie.sock"
+      
+  security:
+    mode: "token"  # "plaintext", "token", "noise", "mtls", "post_quantum", "zero_trust"
+    token:
+      secret: "${VALKYRIE_TOKEN_SECRET}"
+      algorithm: "HS256"
+      expires_in_seconds: 3600
+    mtls:
+      cert_file: "/etc/valkyrie/certs/server.crt"
+      key_file: "/etc/valkyrie/certs/server.key"
+      ca_file: "/etc/valkyrie/certs/ca.crt"
+      verify_client: true
+    post_quantum:
+      enabled: false
+      key_bundle: "${VALKYRIE_PQ_KEY_BUNDLE}"
+    intrusion_detection:
+      enabled: true
+      max_failed_attempts: 5
+      ban_duration_seconds: 300
+      whitelist_ips:
+        - "127.0.0.1"
+        - "::1"
+    audit:
+      enabled: true
+      log_file: "/var/log/valkyrie/audit.log"
+      max_file_size_mb: 100
+      max_files: 10
+      
+  streaming:
+    max_streams_per_connection: 1000
+    default_window_size: 65536
+    max_window_size: 16777216  # 16MB
+    flow_control_strategy: "adaptive"
+    priority_levels: 8
+    congestion_algorithm: "cubic"
+    
+  performance:
+    max_connections: 100000
+    worker_threads: null  # null means auto-detect
+    message_buffer_size: 65536
+    connection_pool_size: 100
+    enable_zero_copy: true
+    enable_simd: true
+    memory_pool_size: 1073741824  # 1GB
+    
+  bridge:
+    enabled: true
+    http_port: 8081
+    https_port: 8443
+    auto_upgrade: true
+    cors:
+      enabled: true
+      allowed_origins:
+        - "http://localhost:3000"
+        - "https://localhost:3000"
+      allowed_methods:
+        - "GET"
+        - "POST"
+        - "PUT"
+        - "DELETE"
+        - "OPTIONS"
+      allowed_headers:
+        - "Content-Type"
+        - "Authorization"
+        - "X-Requested-With"
+      allow_credentials: true
+      max_age_seconds: 3600
+    rate_limiting:
+      enabled: true
+      requests_per_minute: 1000
+      burst_size: 100
+    tls:
+      cert_file: "/etc/valkyrie/certs/bridge.crt"
+      key_file: "/etc/valkyrie/certs/bridge.key"
+      
+  observability:
+    metrics:
+      enabled: true
+      endpoint: "/metrics"
+      collection_interval_seconds: 15
+      prometheus_format: true
+      custom_metrics: {}
+    tracing:
+      enabled: true
+      service_name: "valkyrie-protocol"
+      service_version: "2.0.0"
+      sample_rate: 0.1
+      jaeger_endpoint: "http://localhost:14268/api/traces"
+      otlp_endpoint: "http://localhost:4317"
+    logging:
+      level: "info"
+      format: "json"
+      correlation_ids: true
+      structured_fields: true
+    health:
+      enabled: true
+      endpoint: "/health"
+      check_interval_seconds: 30
+      
+  cluster:
+    enabled: false
+    node_id: "${VALKYRIE_NODE_ID}"
+    discovery:
+      method: "static"  # "static", "dns", "kubernetes", "consul"
+      static_nodes:
+        - "valkyrie-node-1:8080"
+        - "valkyrie-node-2:8080"
+        - "valkyrie-node-3:8080"
+      dns:
+        service_name: "_valkyrie._tcp.example.com"
+        refresh_interval_seconds: 60
+      kubernetes:
+        namespace: "valkyrie-system"
+        label_selector: "app=valkyrie"
+        port: 8080
+    consensus:
+      algorithm: "raft"
+      election_timeout_ms: 5000
+      heartbeat_interval_ms: 1000
+      
+  features:
+    enable_http_bridge: true
+    enable_websocket_upgrade: true
+    enable_protocol_negotiation: true
+    enable_compression: true
+    enable_multiplexing: true
+    enable_flow_control: true
+    enable_priority_queuing: true
+    enable_load_balancing: true
+    enable_circuit_breaker: true
+    enable_retry_logic: true
+    experimental_features:
+      enable_quic_transport: false
+      enable_rdma_transport: false
+      enable_shared_memory: false
+      enable_ml_routing: false
+
+features:
+  enable_audit_logging: true
+  enable_metrics_collection: true
+  enable_distributed_tracing: false
+  enable_hot_reload: true
+  enable_experimental_features: false
+  enable_valkyrie_protocol: true
+  custom_flags: {}
