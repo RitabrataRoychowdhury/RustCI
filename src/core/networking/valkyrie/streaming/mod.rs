@@ -10,13 +10,33 @@ use crate::core::networking::valkyrie::types::ValkyrieMessage;
 pub mod multiplexer;
 pub mod flow_control;
 pub mod priority;
+pub mod router;
+pub mod classifier;
+pub mod bandwidth;
 
 pub use multiplexer::*;
-pub use flow_control::*;
+pub use flow_control::{FlowControlManager, FlowControlConfig};
 pub use priority::*;
+
+// Re-export QoS-aware streaming components
+pub use router::{QoSStreamRouter, QueuedMessage, RoutingResult};
+pub use classifier::{MessageClassifier, ClassificationResult};
+pub use bandwidth::{BandwidthAllocator, BandwidthAllocation};
+
+// Congestion control components are defined in this module and automatically available
 
 /// Stream identifier type
 pub type StreamId = Uuid;
+
+/// QoS classes for message prioritization
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum QoSClass {
+    Critical = 0,    // System-critical messages (heartbeats, health checks)
+    System = 1,      // System management messages
+    JobExecution = 2, // Job execution commands and responses
+    DataTransfer = 3, // Large data transfers
+    LogsMetrics = 4,  // Logs and metrics (lowest priority)
+}
 
 /// Stream priority levels for QoS
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -171,7 +191,7 @@ impl FlowWindow {
 }
 
 /// Congestion control state
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CongestionState {
     /// Current congestion window size
     pub cwnd: u32,

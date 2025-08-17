@@ -1,14 +1,9 @@
-use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 // Import canonical types from central types module
 use super::types::{
-    ValkyrieMessage, MessageHeader, MessagePriority, MessageType, MessagePayload,
-    MessageFlags, RoutingInfo, MessageSignature, TraceContext, ProtocolInfo,
-    CompressionPreference, CompressionAlgorithm, CompressionInfo,
-    StreamId, EndpointId, CorrelationId, Duration
+    ValkyrieMessage, MessagePriority, TraceContext,
+    CompressionPreference, StreamId, CorrelationId, Duration
 };
 
 /// Message validation errors

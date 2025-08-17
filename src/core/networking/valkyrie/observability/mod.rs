@@ -9,6 +9,8 @@ pub mod correlation;
 pub mod compatibility;
 pub mod external;
 pub mod adapters;
+pub mod adapter_system;
+pub mod opentelemetry_adapter;
 
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -17,13 +19,12 @@ use serde::{Serialize, Deserialize};
 // uuid::Uuid import removed as unused
 
 pub use metrics::{MetricsCollector, MetricValue, MetricType};
-pub use logging::{StructuredLogger, LogLevel, LogEntry};
+pub use logging::{StructuredLogger, LogLevel};
 pub use health::{HealthMonitor, HealthStatus, HealthCheck};
 pub use dashboard::{MetricsDashboard, DashboardConfig};
 pub use correlation::{CorrelationId, CorrelationTracker};
 pub use compatibility::{
-    LegacyObservabilityAdapter, CompatibilityConfig, LegacyMetricType, LegacyLogLevel,
-    LegacyHealthStatus, LegacyDashboardData, CompatibilityInfo,
+    LegacyObservabilityAdapter, CompatibilityConfig,
     ProtocolVersionNegotiator, FeatureDetector
 };
 pub use external::{
@@ -31,6 +32,16 @@ pub use external::{
     PrometheusIntegration, OpenTelemetryIntegration, JaegerIntegration, GrafanaIntegration,
     IntegrationStatus, TraceSpan, SpanLog
 };
+
+// Re-export adapter system types for external use
+pub use adapter_system::{
+    ObservabilityManager as PluggableObservabilityManager, MetricsAdapter, TracingAdapter, 
+    HealthAdapter, LoggingAdapter, SpanId, SpanStatus, HealthStatus as AdapterHealthStatus,
+    LogLevel as AdapterLogLevel, AdapterHealth, DependencyHealth, ObservabilityConfig as AdapterConfig
+};
+
+// Re-export OpenTelemetry adapter types for external use
+pub use opentelemetry_adapter::{OpenTelemetryConfig, OpenTelemetryAdapterFactory};
 
 /// Main observability manager for the Valkyrie Protocol
 pub struct ObservabilityManager {

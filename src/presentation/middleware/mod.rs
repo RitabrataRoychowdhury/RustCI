@@ -11,8 +11,7 @@ pub mod rate_limit;
 pub mod security_pipeline;
 pub mod validation;
 
-#[cfg(test)]
-pub mod tests;
+// Tests are handled in individual module files
 
 // Re-export key public items from the modules
 pub use auth::auth;

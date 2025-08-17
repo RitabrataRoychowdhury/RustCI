@@ -13,9 +13,7 @@ use crate::core::networking::transport::{
     Transport, Connection, Listener, TransportType, TransportConfig, 
     TransportEndpoint, TransportMetrics, NetworkConditions, ConnectionMetadata
 };
-use crate::core::networking::valkyrie::types::{
-    TransportCapabilities, CompressionAlgorithm, EncryptionCipher
-};
+use crate::core::networking::valkyrie::types::TransportCapabilities;
 use crate::core::networking::valkyrie::transport::ConnectionPool;
 use crate::core::networking::node_communication::{ProtocolMessage, ProtocolError};
 use crate::error::Result;

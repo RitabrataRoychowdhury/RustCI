@@ -14,6 +14,7 @@ pub mod audit;
 pub mod rbac;
 pub mod ids;
 pub mod cert_manager;
+pub mod zero_trust;
 
 pub use auth::*;
 pub use crypto::*;

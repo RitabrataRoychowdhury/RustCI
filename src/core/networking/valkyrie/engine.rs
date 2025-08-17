@@ -9,16 +9,16 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
-use uuid::Uuid;
+// use uuid::Uuid; // Unused
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 
 // Import canonical types from central types module and message module
 use super::types::{
-    ValkyrieMessage, MessageHeader, MessagePriority,
-    ConnectionId, StreamId, EndpointId, Duration, TransportCapabilities
+    ValkyrieMessage,
+    ConnectionId, StreamId, Duration
 };
-use super::types::{MessageType, MessagePayload};
+use super::types::MessageType;
 
 // Removed unused imports
 use crate::core::networking::transport::{Connection, TransportConfig};
@@ -698,18 +698,8 @@ pub struct RoutingConfig {
     pub route_cache_ttl: Duration,
 }
 
-/// Load balancing strategies
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum LoadBalancingStrategy {
-    /// Round-robin
-    RoundRobin,
-    /// Least connections
-    LeastConnections,
-    /// Weighted round-robin
-    WeightedRoundRobin,
-    /// Consistent hashing
-    ConsistentHashing,
-}
+// Use the canonical LoadBalancingStrategy from types
+pub use crate::core::networking::valkyrie::types::LoadBalancingStrategy;
 
 /// Performance configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1042,11 +1032,11 @@ impl TransportManager {
     }
 
     pub async fn connect(&self, _endpoint: &Endpoint) -> Result<Box<dyn Connection>> {
-        todo!("Implement transport connection")
+        Err(crate::error::AppError::NotImplemented("Transport connection not implemented".to_string()).into())
     }
 
     pub async fn listen(&self, _address: std::net::SocketAddr) -> Result<Box<dyn crate::core::networking::transport::Listener>> {
-        todo!("Implement transport listener")
+        Err(crate::error::AppError::NotImplemented("Transport listener not implemented".to_string()).into())
     }
 
     pub async fn get_stats(&self) -> TransportStats {

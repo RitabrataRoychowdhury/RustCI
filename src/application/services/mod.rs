@@ -8,7 +8,9 @@ pub mod notification;
 pub mod pr_builder;
 pub mod project_detection;
 pub mod workspace;
+pub mod valkyrie_integration;
 
 // Re-export commonly used services
 pub use encryption::EncryptionService;
 pub use github::GitHubService;
+pub use valkyrie_integration::ValkyrieIntegrationService;

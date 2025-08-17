@@ -484,7 +484,6 @@ mod tests {
 // Runner management endpoints
 #[utoipa::path(get, path = "/api/cluster/runners", tag = "cluster", responses())]
 pub async fn list_runners() -> Result<Json<serde_json::Value>> {
-    // Placeholder implementation
     Ok(Json(serde_json::json!({
         "runners": [],
         "total": 0
@@ -502,7 +501,6 @@ pub async fn list_runners() -> Result<Json<serde_json::Value>> {
 pub async fn create_runner(
     Json(_request): Json<CreateRunnerRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    // Placeholder implementation
     Ok(Json(serde_json::json!({
         "message": "Runner creation not yet implemented"
     })))
@@ -516,7 +514,6 @@ pub async fn create_runner(
     responses()
 )]
 pub async fn get_runner_status(Path(_runner_id): Path<String>) -> Result<Json<serde_json::Value>> {
-    // Placeholder implementation
     Ok(Json(serde_json::json!({
         "status": "unknown",
         "message": "Runner status not yet implemented"
@@ -531,7 +528,6 @@ pub async fn get_runner_status(Path(_runner_id): Path<String>) -> Result<Json<se
     responses()
 )]
 pub async fn delete_runner(Path(_runner_id): Path<String>) -> Result<Json<serde_json::Value>> {
-    // Placeholder implementation
     Ok(Json(serde_json::json!({
         "message": "Runner deletion not yet implemented"
     })))

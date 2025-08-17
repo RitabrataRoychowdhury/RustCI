@@ -1,0 +1,47 @@
+[package]
+name = "valkyrie-tools"
+version = "0.1.0"
+edition = "2021"
+description = "Command-line tools for Valkyrie Protocol"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rustci/valkyrie-protocol"
+keywords = ["tools", "cli", "protocol", "networking", "debugging"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "valkyrie"
+path = "src/main.rs"
+
+[dependencies]
+# Core components
+valkyrie-protocol = { path = "../valkyrie-protocol", version = "0.1.0" }
+valkyrie-sdk = { path = "../valkyrie-sdk", version = "0.1.0" }
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# CLI
+clap = { version = "4.0", features = ["derive"] }
+dialoguer = "0.11"
+indicatif = "0.17"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Utilities
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1.0"
+colored = "2.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Performance testing
+hdrhistogram = "7.5"
+
+[features]
+default = []

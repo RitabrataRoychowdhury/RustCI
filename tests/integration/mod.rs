@@ -13,3 +13,8 @@ pub mod node_communication_tests;
 pub mod pipeline_type_execution_tests;
 pub mod runner_lifecycle_tests;
 pub mod runner_pool_integration_tests;
+pub mod unified_runner_system_tests;
+pub mod unified_runner_basic_test;
+pub mod valkyrie_control_plane_tests;
+pub mod valkyrie_runner_adapter_tests;
+pub mod valkyrie_rustci_integration_tests;

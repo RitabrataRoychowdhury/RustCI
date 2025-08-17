@@ -8,7 +8,7 @@ use crate::core::networking::transport::{
 use crate::error::Result;
 
 // Import canonical types from central types module
-use super::types::{TransportCapabilities, Duration, CompressionAlgorithm, EncryptionCipher};
+use super::types::{Duration, CompressionAlgorithm};
 
 // Transport implementations
 pub mod tcp;
@@ -109,22 +109,8 @@ pub struct HealthCheckConfig {
     pub success_threshold: u32,
 }
 
-/// Load balancing strategy
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum LoadBalancingStrategy {
-    /// Round-robin load balancing
-    RoundRobin,
-    /// Least connections
-    LeastConnections,
-    /// Weighted round-robin
-    WeightedRoundRobin(HashMap<String, f64>),
-    /// Random selection
-    Random,
-    /// Consistent hashing
-    ConsistentHashing,
-    /// Latency-based selection
-    LatencyBased,
-}
+// Use the canonical LoadBalancingStrategy from types
+pub use crate::core::networking::valkyrie::types::LoadBalancingStrategy;
 
 /// Compression configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

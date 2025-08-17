@@ -1,0 +1,671 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Valkyrie Protocol Configuration Schema",
+  "description": "JSON Schema for validating Valkyrie Protocol configuration files",
+  "type": "object",
+  "properties": {
+    "global": {
+      "type": "object",
+      "properties": {
+        "environment": {
+          "type": "string",
+          "enum": ["development", "staging", "production"],
+          "description": "Deployment environment"
+        },
+        "log_level": {
+          "type": "string",
+          "enum": ["trace", "debug", "info", "warn", "error"],
+          "description": "Logging level"
+        },
+        "enable_metrics": {
+          "type": "boolean",
+          "description": "Enable metrics collection"
+        },
+        "metrics_endpoint": {
+          "type": "string",
+          "format": "uri",
+          "description": "Metrics endpoint URL"
+        },
+        "config_reload_interval": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600,
+          "description": "Configuration reload interval in seconds"
+        }
+      },
+      "required": ["environment", "log_level"],
+      "additionalProperties": false
+    },
+    "server": {
+      "type": "object",
+      "properties": {
+        "bind_address": {
+          "type": "string",
+          "description": "Server bind address"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Server port number"
+        },
+        "max_connections": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum concurrent connections"
+        },
+        "connection_timeout_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "description": "Connection timeout in milliseconds"
+        },
+        "enable_tls": {
+          "type": "boolean",
+          "description": "Enable TLS encryption"
+        },
+        "tls_cert_path": {
+          "type": "string",
+          "description": "TLS certificate file path"
+        },
+        "tls_key_path": {
+          "type": "string",
+          "description": "TLS private key file path"
+        },
+        "enable_graceful_shutdown": {
+          "type": "boolean",
+          "description": "Enable graceful shutdown"
+        },
+        "graceful_shutdown_timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Graceful shutdown timeout in seconds"
+        }
+      },
+      "required": ["bind_address", "port"],
+      "additionalProperties": false
+    },
+    "client": {
+      "type": "object",
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "description": "Default server endpoint"
+        },
+        "connect_timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "description": "Connection timeout in milliseconds"
+        },
+        "request_timeout_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "description": "Request timeout in milliseconds"
+        },
+        "max_connections": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum connections in pool"
+        },
+        "enable_pooling": {
+          "type": "boolean",
+          "description": "Enable connection pooling"
+        },
+        "auto_reconnect": {
+          "type": "boolean",
+          "description": "Enable automatic reconnection"
+        },
+        "reconnect_interval_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "description": "Reconnection interval in milliseconds"
+        },
+        "retry_policy": {
+          "type": "object",
+          "properties": {
+            "max_attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "description": "Maximum retry attempts"
+            },
+            "initial_delay_ms": {
+              "type": "integer",
+              "minimum": 10,
+              "description": "Initial delay between retries"
+            },
+            "max_delay_ms": {
+              "type": "integer",
+              "minimum": 100,
+              "description": "Maximum delay between retries"
+            },
+            "backoff_multiplier": {
+              "type": "number",
+              "minimum": 1.0,
+              "maximum": 10.0,
+              "description": "Backoff multiplier"
+            },
+            "enable_jitter": {
+              "type": "boolean",
+              "description": "Enable jitter"
+            }
+          },
+          "required": ["max_attempts"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["endpoint"],
+      "additionalProperties": false
+    },
+    "transport": {
+      "type": "object",
+      "properties": {
+        "enabled_transports": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["tcp", "quic", "unix", "websocket"]
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "List of enabled transports"
+        },
+        "default_transport": {
+          "type": "string",
+          "enum": ["tcp", "quic", "unix", "websocket"],
+          "description": "Default transport protocol"
+        },
+        "tcp": {
+          "type": "object",
+          "properties": {
+            "keep_alive": {
+              "type": "boolean",
+              "description": "Enable TCP keep-alive"
+            },
+            "keep_alive_interval": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Keep-alive interval in seconds"
+            },
+            "no_delay": {
+              "type": "boolean",
+              "description": "Disable Nagle's algorithm"
+            },
+            "send_buffer_size": {
+              "type": "integer",
+              "minimum": 1024,
+              "description": "Send buffer size in bytes"
+            },
+            "recv_buffer_size": {
+              "type": "integer",
+              "minimum": 1024,
+              "description": "Receive buffer size in bytes"
+            }
+          },
+          "additionalProperties": false
+        },
+        "quic": {
+          "type": "object",
+          "properties": {
+            "max_concurrent_streams": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Maximum concurrent streams"
+            },
+            "idle_timeout": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Connection idle timeout in seconds"
+            },
+            "enable_0rtt": {
+              "type": "boolean",
+              "description": "Enable 0-RTT"
+            }
+          },
+          "additionalProperties": false
+        },
+        "unix": {
+          "type": "object",
+          "properties": {
+            "socket_path": {
+              "type": "string",
+              "description": "Unix socket file path"
+            },
+            "socket_permissions": {
+              "type": "integer",
+              "description": "Socket file permissions (octal)"
+            }
+          },
+          "required": ["socket_path"],
+          "additionalProperties": false
+        },
+        "websocket": {
+          "type": "object",
+          "properties": {
+            "max_message_size": {
+              "type": "integer",
+              "minimum": 1024,
+              "description": "Maximum message size in bytes"
+            },
+            "enable_compression": {
+              "type": "boolean",
+              "description": "Enable WebSocket compression"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["enabled_transports", "default_transport"],
+      "additionalProperties": false
+    },
+    "security": {
+      "type": "object",
+      "properties": {
+        "enable_encryption": {
+          "type": "boolean",
+          "description": "Enable encryption"
+        },
+        "encryption_algorithm": {
+          "type": "string",
+          "enum": ["chacha20poly1305", "aes256gcm"],
+          "description": "Encryption algorithm"
+        },
+        "enable_authentication": {
+          "type": "boolean",
+          "description": "Enable authentication"
+        },
+        "authentication_method": {
+          "type": "string",
+          "enum": ["jwt", "mtls", "apikey"],
+          "description": "Authentication method"
+        },
+        "jwt": {
+          "type": "object",
+          "properties": {
+            "secret_key": {
+              "type": "string",
+              "minLength": 32,
+              "description": "JWT secret key"
+            },
+            "expiration_time": {
+              "type": "integer",
+              "minimum": 300,
+              "description": "Token expiration time in seconds"
+            },
+            "issuer": {
+              "type": "string",
+              "description": "JWT issuer"
+            },
+            "audience": {
+              "type": "string",
+              "description": "JWT audience"
+            }
+          },
+          "required": ["secret_key"],
+          "additionalProperties": false
+        },
+        "api_key": {
+          "type": "object",
+          "properties": {
+            "header_name": {
+              "type": "string",
+              "description": "API key header name"
+            },
+            "valid_keys": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 16
+              },
+              "minItems": 1,
+              "description": "List of valid API keys"
+            }
+          },
+          "required": ["header_name", "valid_keys"],
+          "additionalProperties": false
+        },
+        "mtls": {
+          "type": "object",
+          "properties": {
+            "ca_cert_path": {
+              "type": "string",
+              "description": "CA certificate path"
+            },
+            "verify_client_cert": {
+              "type": "boolean",
+              "description": "Verify client certificates"
+            }
+          },
+          "required": ["ca_cert_path"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "plugins": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable plugin system"
+        },
+        "plugin_dir": {
+          "type": "string",
+          "description": "Plugin directory path"
+        },
+        "enable_hot_reload": {
+          "type": "boolean",
+          "description": "Enable hot reloading"
+        },
+        "health_check_interval": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Health check interval in seconds"
+        },
+        "max_startup_time": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum plugin startup time in seconds"
+        },
+        "auto_restart": {
+          "type": "boolean",
+          "description": "Auto-restart failed plugins"
+        },
+        "max_restart_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum restart attempts"
+        },
+        "valkyrie": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable Valkyrie plugin"
+            },
+            "endpoint": {
+              "type": "string",
+              "description": "Valkyrie server endpoint"
+            },
+            "connection_timeout_ms": {
+              "type": "integer",
+              "minimum": 100,
+              "description": "Connection timeout in milliseconds"
+            },
+            "request_timeout_ms": {
+              "type": "integer",
+              "minimum": 1000,
+              "description": "Request timeout in milliseconds"
+            },
+            "max_connections": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Maximum connections"
+            },
+            "enable_pooling": {
+              "type": "boolean",
+              "description": "Enable connection pooling"
+            },
+            "health_check_interval": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Health check interval in seconds"
+            },
+            "enable_metrics": {
+              "type": "boolean",
+              "description": "Enable metrics collection"
+            },
+            "enable_http_fallback": {
+              "type": "boolean",
+              "description": "Enable HTTP fallback"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "fallback": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable fallback system"
+        },
+        "detection_timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "description": "Fallback detection timeout in milliseconds"
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum fallback attempts"
+        },
+        "retry_interval_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "description": "Retry interval in milliseconds"
+        },
+        "http": {
+          "type": "object",
+          "properties": {
+            "base_url": {
+              "type": "string",
+              "format": "uri",
+              "description": "Base URL for HTTP API"
+            },
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1000,
+              "description": "Request timeout in milliseconds"
+            },
+            "max_retries": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Maximum retries"
+            },
+            "enable_compression": {
+              "type": "boolean",
+              "description": "Enable compression"
+            }
+          },
+          "required": ["base_url"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "observability": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable observability"
+        },
+        "metrics": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable metrics collection"
+            },
+            "collection_interval": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Metrics collection interval in seconds"
+            },
+            "prometheus_endpoint": {
+              "type": "string",
+              "description": "Prometheus metrics endpoint path"
+            },
+            "enable_custom_metrics": {
+              "type": "boolean",
+              "description": "Enable custom metrics"
+            }
+          },
+          "additionalProperties": false
+        },
+        "tracing": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable distributed tracing"
+            },
+            "backend": {
+              "type": "string",
+              "enum": ["jaeger", "zipkin", "otlp"],
+              "description": "Tracing backend"
+            },
+            "jaeger": {
+              "type": "object",
+              "properties": {
+                "agent_endpoint": {
+                  "type": "string",
+                  "description": "Jaeger agent endpoint"
+                },
+                "service_name": {
+                  "type": "string",
+                  "description": "Service name for tracing"
+                }
+              },
+              "additionalProperties": false
+            },
+            "sampling_rate": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0,
+              "description": "Tracing sampling rate"
+            }
+          },
+          "additionalProperties": false
+        },
+        "logging": {
+          "type": "object",
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": ["json", "text"],
+              "description": "Log format"
+            },
+            "structured": {
+              "type": "boolean",
+              "description": "Enable structured logging"
+            },
+            "file_path": {
+              "type": "string",
+              "description": "Log file path"
+            },
+            "rotation": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Enable log rotation"
+                },
+                "max_size_mb": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Maximum file size in MB"
+                },
+                "max_files": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Maximum number of files to keep"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "performance": {
+      "type": "object",
+      "properties": {
+        "thread_pool": {
+          "type": "object",
+          "properties": {
+            "core_threads": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Core thread count (0 = auto-detect)"
+            },
+            "max_threads": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Maximum thread count"
+            },
+            "keep_alive_time": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Thread keep-alive time in seconds"
+            }
+          },
+          "additionalProperties": false
+        },
+        "memory": {
+          "type": "object",
+          "properties": {
+            "enable_pooling": {
+              "type": "boolean",
+              "description": "Enable memory pooling"
+            },
+            "buffer_pool_size": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Buffer pool size"
+            },
+            "max_buffer_size": {
+              "type": "integer",
+              "minimum": 1024,
+              "description": "Maximum buffer size in bytes"
+            }
+          },
+          "additionalProperties": false
+        },
+        "network": {
+          "type": "object",
+          "properties": {
+            "tcp_fast_open": {
+              "type": "boolean",
+              "description": "Enable TCP fast open"
+            },
+            "reuse_address": {
+              "type": "boolean",
+              "description": "Enable address reuse"
+            },
+            "reuse_port": {
+              "type": "boolean",
+              "description": "Enable port reuse"
+            },
+            "send_buffer_size": {
+              "type": "integer",
+              "minimum": 1024,
+              "description": "Send buffer size in bytes"
+            },
+            "recv_buffer_size": {
+              "type": "integer",
+              "minimum": 1024,
+              "description": "Receive buffer size in bytes"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "overrides": {
+      "type": "object",
+      "description": "Environment-specific configuration overrides",
+      "additionalProperties": {
+        "type": "object",
+        "description": "Configuration overrides for specific environment"
+      }
+    }
+  },
+  "required": ["global"],
+  "additionalProperties": false
+}

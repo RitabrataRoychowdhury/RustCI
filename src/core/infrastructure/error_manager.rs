@@ -381,6 +381,9 @@ impl ErrorManager {
             AppError::StreamError { .. } => "stream_error".to_string(),
             AppError::FlowControlViolation { .. } => "flow_control_violation".to_string(),
             AppError::InternalError { .. } => "internal_error".to_string(),
+            AppError::SecurityContextNotFound(_) => "security_context_not_found".to_string(),
+            AppError::SecurityContextExpired(_) => "security_context_expired".to_string(),
+            AppError::CongestionControl(_) => "congestion_control".to_string(),
         }
     }
 
@@ -432,6 +435,9 @@ impl ErrorManager {
             AppError::StreamError { .. } => "STREAM_ERROR".to_string(),
             AppError::FlowControlViolation { .. } => "FLOW_CONTROL_VIOLATION".to_string(),
             AppError::InternalError { .. } => "INTERNAL_ERROR".to_string(),
+            AppError::SecurityContextNotFound(_) => "SECURITY_CONTEXT_NOT_FOUND".to_string(),
+            AppError::SecurityContextExpired(_) => "SECURITY_CONTEXT_EXPIRED".to_string(),
+            AppError::CongestionControl(_) => "CONGESTION_CONTROL".to_string(),
         }
     }
 

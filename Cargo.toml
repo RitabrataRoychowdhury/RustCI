@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 default-run = "RustAutoDevOps"
 
-# Build optimization settings
-[build]
-rustflags = ["-C", "target-cpu=native"]  # Optimize for current CPU
+[[bin]]
+name = "valkyrie-config"
+path = "src/bin/valkyrie-config.rs"
 
 [dependencies]
 # Web framework
@@ -131,6 +131,7 @@ jni = { version = "0.21", optional = true }
 
 # CLI argument parsing (used in valkyrie-codegen binary)
 clap = { version = "4.0", features = ["derive"] }
+colored = "2.0"
 
 [dev-dependencies]
 # Testing framework

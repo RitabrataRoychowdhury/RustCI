@@ -1,0 +1,391 @@
+# Valkyrie Protocol Configuration
+# This is the main configuration file for Valkyrie Protocol components
+
+# Global settings
+global:
+  # Environment (development, staging, production)
+  environment: development
+  
+  # Log level (trace, debug, info, warn, error)
+  log_level: info
+  
+  # Enable metrics collection
+  enable_metrics: true
+  
+  # Metrics endpoint for external systems
+  metrics_endpoint: "http://localhost:9090/metrics"
+  
+  # Configuration hot-reload interval in seconds
+  config_reload_interval: 30
+
+# Server configuration
+server:
+  # Bind address
+  bind_address: "0.0.0.0"
+  
+  # Port number
+  port: 8080
+  
+  # Maximum concurrent connections
+  max_connections: 10000
+  
+  # Connection timeout in milliseconds
+  connection_timeout_ms: 30000
+  
+  # Enable TLS
+  enable_tls: false
+  
+  # TLS certificate path (when TLS is enabled)
+  tls_cert_path: "certs/server.crt"
+  
+  # TLS private key path (when TLS is enabled)
+  tls_key_path: "certs/server.key"
+  
+  # Enable graceful shutdown
+  enable_graceful_shutdown: true
+  
+  # Graceful shutdown timeout in seconds
+  graceful_shutdown_timeout: 30
+
+# Client configuration
+client:
+  # Default server endpoint
+  endpoint: "tcp://localhost:8080"
+  
+  # Connection timeout in milliseconds
+  connect_timeout_ms: 5000
+  
+  # Request timeout in milliseconds
+  request_timeout_ms: 30000
+  
+  # Maximum connections in pool
+  max_connections: 10
+  
+  # Enable connection pooling
+  enable_pooling: true
+  
+  # Enable automatic reconnection
+  auto_reconnect: true
+  
+  # Reconnection interval in milliseconds
+  reconnect_interval_ms: 1000
+  
+  # Retry policy
+  retry_policy:
+    # Maximum retry attempts
+    max_attempts: 3
+    
+    # Initial delay between retries in milliseconds
+    initial_delay_ms: 100
+    
+    # Maximum delay between retries in milliseconds
+    max_delay_ms: 5000
+    
+    # Backoff multiplier
+    backoff_multiplier: 2.0
+    
+    # Enable jitter to avoid thundering herd
+    enable_jitter: true
+
+# Transport configuration
+transport:
+  # Available transports: tcp, quic, unix, websocket
+  enabled_transports:
+    - tcp
+    - quic
+    - unix
+    - websocket
+  
+  # Default transport
+  default_transport: tcp
+  
+  # TCP transport settings
+  tcp:
+    # TCP keep-alive settings
+    keep_alive: true
+    keep_alive_interval: 30
+    
+    # TCP no-delay (Nagle's algorithm)
+    no_delay: true
+    
+    # Socket buffer sizes
+    send_buffer_size: 65536
+    recv_buffer_size: 65536
+  
+  # QUIC transport settings
+  quic:
+    # Maximum concurrent streams
+    max_concurrent_streams: 1000
+    
+    # Connection idle timeout in seconds
+    idle_timeout: 300
+    
+    # Enable 0-RTT
+    enable_0rtt: true
+  
+  # Unix socket settings
+  unix:
+    # Socket file path
+    socket_path: "/tmp/valkyrie.sock"
+    
+    # Socket permissions
+    socket_permissions: 0o600
+  
+  # WebSocket settings
+  websocket:
+    # Maximum message size in bytes
+    max_message_size: 16777216  # 16MB
+    
+    # Enable compression
+    enable_compression: true
+
+# Security configuration
+security:
+  # Enable encryption
+  enable_encryption: true
+  
+  # Encryption algorithm: chacha20poly1305, aes256gcm
+  encryption_algorithm: chacha20poly1305
+  
+  # Enable authentication
+  enable_authentication: true
+  
+  # Authentication method: jwt, mtls, apikey
+  authentication_method: jwt
+  
+  # JWT settings (when using JWT authentication)
+  jwt:
+    # JWT secret key (use environment variable in production)
+    secret_key: "${JWT_SECRET_KEY}"
+    
+    # Token expiration time in seconds
+    expiration_time: 3600
+    
+    # Issuer
+    issuer: "valkyrie-protocol"
+    
+    # Audience
+    audience: "valkyrie-clients"
+  
+  # API Key settings (when using API key authentication)
+  api_key:
+    # API key header name
+    header_name: "X-API-Key"
+    
+    # Valid API keys (use environment variables in production)
+    valid_keys:
+      - "${API_KEY_1}"
+      - "${API_KEY_2}"
+  
+  # mTLS settings (when using mutual TLS)
+  mtls:
+    # CA certificate path
+    ca_cert_path: "certs/ca.crt"
+    
+    # Client certificate verification
+    verify_client_cert: true
+
+# Plugin system configuration
+plugins:
+  # Enable plugin system
+  enabled: true
+  
+  # Plugin directory
+  plugin_dir: "plugins"
+  
+  # Enable hot reloading
+  enable_hot_reload: true
+  
+  # Health check interval in seconds
+  health_check_interval: 30
+  
+  # Maximum plugin startup time in seconds
+  max_startup_time: 60
+  
+  # Auto-restart failed plugins
+  auto_restart: true
+  
+  # Maximum restart attempts
+  max_restart_attempts: 3
+  
+  # Valkyrie plugin configuration
+  valkyrie:
+    # Enable Valkyrie plugin
+    enabled: true
+    
+    # Valkyrie server endpoint
+    endpoint: "${VALKYRIE_ENDPOINT:tcp://localhost:8080}"
+    
+    # Connection settings
+    connection_timeout_ms: 5000
+    request_timeout_ms: 30000
+    max_connections: 100
+    enable_pooling: true
+    
+    # Health monitoring
+    health_check_interval: 30
+    enable_metrics: true
+    
+    # Fallback settings
+    enable_http_fallback: true
+
+# Fallback system configuration
+fallback:
+  # Enable fallback system
+  enabled: true
+  
+  # Fallback detection timeout in milliseconds
+  detection_timeout_ms: 5000
+  
+  # Maximum fallback attempts
+  max_attempts: 3
+  
+  # Retry interval in milliseconds
+  retry_interval_ms: 1000
+  
+  # HTTP fallback configuration
+  http:
+    # Base URL for HTTP API
+    base_url: "${HTTP_FALLBACK_URL:http://localhost:3000}"
+    
+    # Request timeout in milliseconds
+    timeout_ms: 30000
+    
+    # Maximum retries
+    max_retries: 3
+    
+    # Enable compression
+    enable_compression: true
+
+# Observability configuration
+observability:
+  # Enable observability
+  enabled: true
+  
+  # Metrics configuration
+  metrics:
+    # Enable metrics collection
+    enabled: true
+    
+    # Metrics collection interval in seconds
+    collection_interval: 10
+    
+    # Prometheus endpoint
+    prometheus_endpoint: "/metrics"
+    
+    # Enable custom metrics
+    enable_custom_metrics: true
+  
+  # Tracing configuration
+  tracing:
+    # Enable distributed tracing
+    enabled: true
+    
+    # Tracing backend: jaeger, zipkin, otlp
+    backend: jaeger
+    
+    # Jaeger settings
+    jaeger:
+      # Jaeger agent endpoint
+      agent_endpoint: "localhost:6831"
+      
+      # Service name
+      service_name: "valkyrie-protocol"
+    
+    # Sampling rate (0.0 to 1.0)
+    sampling_rate: 0.1
+  
+  # Logging configuration
+  logging:
+    # Log format: json, text
+    format: json
+    
+    # Enable structured logging
+    structured: true
+    
+    # Log file path (optional)
+    file_path: "logs/valkyrie.log"
+    
+    # Log rotation
+    rotation:
+      # Enable log rotation
+      enabled: true
+      
+      # Maximum file size in MB
+      max_size_mb: 100
+      
+      # Maximum number of files to keep
+      max_files: 10
+
+# Performance tuning
+performance:
+  # Thread pool configuration
+  thread_pool:
+    # Core thread count (0 = auto-detect)
+    core_threads: 0
+    
+    # Maximum thread count
+    max_threads: 1000
+    
+    # Thread keep-alive time in seconds
+    keep_alive_time: 60
+  
+  # Memory configuration
+  memory:
+    # Enable memory pooling
+    enable_pooling: true
+    
+    # Buffer pool size
+    buffer_pool_size: 1000
+    
+    # Maximum buffer size in bytes
+    max_buffer_size: 1048576  # 1MB
+  
+  # Network tuning
+  network:
+    # Enable TCP fast open
+    tcp_fast_open: true
+    
+    # Socket reuse settings
+    reuse_address: true
+    reuse_port: true
+    
+    # Network buffer sizes
+    send_buffer_size: 262144    # 256KB
+    recv_buffer_size: 262144    # 256KB
+
+# Environment-specific overrides
+# These can be overridden by environment variables or separate config files
+overrides:
+  # Development environment overrides
+  development:
+    global:
+      log_level: debug
+    server:
+      port: 8080
+    security:
+      enable_encryption: false
+      enable_authentication: false
+  
+  # Staging environment overrides
+  staging:
+    global:
+      log_level: info
+    server:
+      port: 8080
+    security:
+      enable_encryption: true
+      enable_authentication: true
+  
+  # Production environment overrides
+  production:
+    global:
+      log_level: warn
+      enable_metrics: true
+    server:
+      port: 443
+      enable_tls: true
+    security:
+      enable_encryption: true
+      enable_authentication: true
+      encryption_algorithm: aes256gcm

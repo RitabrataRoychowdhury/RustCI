@@ -18,6 +18,9 @@ pub mod simd_processor;
 pub mod performance_bench;
 pub mod lockfree;
 pub mod observability;
+pub mod adapters;
+pub mod registry;
+pub mod routing;
 
 // Re-export central types (canonical definitions)
 pub use types::{
@@ -70,7 +73,7 @@ pub use transport::{
     TransportSelectionStrategy, ConnectionPool as TransportConnectionPool,
     FailoverConfig, CompressionConfig,
     BackoffStrategy as TransportBackoffStrategy,
-    HealthCheckConfig, TransportManager,
+    TransportManager,
     TcpTransport, QuicTransport, WebSocketTransport, UnixSocketTransport,
     TransportSelector, TransportHealth, SelectionState
 };
@@ -104,9 +107,7 @@ pub use streaming::{
     Stream, StreamConfig, StreamMetrics, StreamState, StreamType, StreamPriority,
     StreamEvent, StreamEventHandler, DefaultStreamEventHandler,
     FlowWindow, FlowControlEvent, CongestionState, CongestionAlgorithm,
-    FlowControlManager, FlowControlConfig, FlowControlMetrics,
-    CongestionDetector, CongestionDetectionAlgorithm, WindowAdapter, WindowAdaptationAlgorithm,
-    PerformanceSample, AdaptationState, AdaptationDirection,
+    FlowControlManager, FlowControlConfig,
     PriorityScheduler, SchedulingAlgorithm, SchedulerConfig, SchedulerMetrics,
     ScheduledMessage, QosRequirements, SchedulingTask, TaskState,
     BandwidthAllocator, BandwidthAllocationAlgorithm, QosManager, QosPolicy, QosMetrics,
@@ -141,14 +142,15 @@ pub use lockfree::{
     LockFreeRingBuffer, RingBufferStats, RingBufferError, SpscRingBuffer, MpmcRingBuffer,
     AtomicCounter, CounterStats, CounterError, RelaxedCounter, SeqCstCounter, AcqRelCounter,
     LockFreePool, PoolStats as LockFreePoolStats, PoolError, PoolNode, ObjectPool, BufferPool, ConnectionPool as LockFreeConnectionPool,
-    LockFreeRegistry, RegistryStats, RegistryError, NodeRegistry, ServiceRegistry, ConnectionRegistry
+    LockFreeRegistry, RegistryStats, RegistryError, NodeRegistry, 
+    ServiceRegistry as LockFreeServiceRegistry, ConnectionRegistry
 };
 
 // Re-export observability components
 pub use observability::{
     ObservabilityManager, ObservabilityConfig, ObservabilityStatus, ObservabilityError,
     MetricsCollector, MetricValue, MetricType,
-    StructuredLogger, LogLevel, LogEntry,
+    StructuredLogger, LogLevel,
     HealthMonitor, HealthStatus, HealthCheck,
     MetricsDashboard, DashboardConfig,
     CorrelationTracker as ObservabilityCorrelationTracker, CorrelationId as ObservabilityCorrelationId,
@@ -157,4 +159,62 @@ pub use observability::{
     PrometheusIntegration, OpenTelemetryIntegration, JaegerIntegration, GrafanaIntegration,
     IntegrationStatus, LegacyObservabilityAdapter, CompatibilityConfig,
     ProtocolVersionNegotiator, FeatureDetector
+};
+
+// Re-export adapter components
+pub use adapters::{
+    UniversalAdapterFactory, AdapterBuilder, AdapterRequirements, AdapterConfig,
+    AdapterCapabilities, AdapterInfo, AdapterMetrics,
+    AdapterSelectionStrategy, PerformanceBasedStrategy, ReliabilityBasedStrategy,
+    LatencyOptimizedStrategy, ThroughputOptimizedStrategy,
+    HttpAdapterBuilder, DockerAdapterBuilder, KubernetesAdapterBuilder,
+    RedisAdapterBuilder, QuicTcpAdapterBuilder
+};
+
+// Re-export registry components
+pub use registry::{
+    ServiceRegistry, ServiceEntry, ServiceMetadata, ServiceEndpoint, ServiceCapabilities,
+    ServiceType, ServiceDependency, DependencyType,
+    ServiceDiscovery, DiscoveryQuery, QueryType,
+    HealthMonitor as RegistryHealthMonitor, HealthStatus as RegistryHealthStatus, 
+    HealthCheckConfig, HealthCheckType, CircuitBreaker, CircuitBreakerState,
+    LoadBalancer, EndpointState, ResourceUtilization,
+    ConsensusManager, ConsensusProtocol, NodeInfo, NodeRole, NodeStatus,
+    ClusterConfig, ClusterState, LogEntry, LogEntryType
+};
+
+// Re-export routing components
+pub use routing::{
+    // Core routing types
+    RoutingContext, Route, Hop, NetworkTopology, NetworkNode, NetworkLink,
+    RoutingAlgorithm, RoutingStrategy, AlgorithmManager, RoutingError,
+    
+    // Load balancing
+    LoadBalancingStrategy as RoutingLoadBalancingStrategy, LoadBalancingAlgorithm, LoadBalancerManager,
+    ServiceEndpoint as RoutingServiceEndpoint, RequestContext, LoadBalancingError,
+    RoundRobinStrategy, WeightedRoundRobinStrategy, ConsistentHashingStrategy,
+    
+    // Topology management
+    TopologyManager, DiscoveryAgent, MetricCollector, TopologyError,
+    GeographicManager, RegionManager, DistanceCalculator,
+    
+    // QoS routing
+    QoSRouter, PriorityManager, SLAEnforcer, TrafficShaper, BandwidthManager,
+    QoSScheduler, QoSError, QoSMetricsSnapshot,
+    
+    // Adaptive routing
+    AdaptiveRoutingEngine, ModelManager, 
+    adaptive::FeatureExtractor as RoutingFeatureExtractor, PredictionEngine,
+    PatternRecognizer, AdaptiveError, RouteQualityPrediction,
+    
+    // Configuration
+    ConfigurationManager, PolicyEngine, RoutingPolicy, RoutingRule,
+    ConfigError, PolicyEvaluationResult,
+    
+    // Caching
+    RouteCache, CacheConfig, CacheStats, RouteCacheKey,
+    
+    // Metrics
+    RoutingMetricsCollector, RoutingMetricsSnapshot, 
+    SecurityEventType as RoutingSecurityEventType,
 };

@@ -15,6 +15,7 @@ pub mod core;
 pub mod domain;
 pub mod error;
 pub mod infrastructure;
+pub mod plugins;
 pub mod presentation;
 pub mod service_registry;
 pub mod token;
@@ -40,4 +41,7 @@ pub struct AppState {
     pub config_manager: Arc<tokio::sync::RwLock<config::HotReloadConfigManager>>,
     pub observability: Arc<core::observability::observability::ObservabilityService>,
     pub ci_engine: Arc<ci::engine::CIEngineOrchestrator>,
+    pub plugin_manager: Arc<plugins::manager::PluginManager>,
+    pub fallback_manager: Arc<plugins::fallback::FallbackManager>,
+    pub health_monitor: Arc<plugins::health::PluginHealthMonitor>,
 }

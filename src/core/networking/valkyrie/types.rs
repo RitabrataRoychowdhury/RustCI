@@ -83,6 +83,9 @@ pub enum MessageType {
     Error = 0x04,
     Close = 0x05,
     
+    // Job execution messages
+    JobExecution = 0x20,
+    
     // Basic message types for compatibility
     Heartbeat = 0x06,
     Data = 0x07,
@@ -431,20 +434,30 @@ pub enum ReliabilityLevel {
 }
 
 /// Load balancing strategies
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum LoadBalancingStrategy {
     /// Round robin
     RoundRobin,
     /// Least connections
     LeastConnections,
     /// Weighted round robin
-    WeightedRoundRobin(HashMap<EndpointId, u32>),
+    WeightedRoundRobin,
+    /// Weighted least connections
+    WeightedLeastConnections,
+    /// Random selection
+    Random,
+    /// Weighted random
+    WeightedRandom,
     /// Consistent hashing
     ConsistentHashing,
     /// Latency-based
     LatencyBased,
     /// Resource-based
     ResourceBased,
+    /// Response time based
+    ResponseTime,
+    /// Adaptive (ML-based)
+    Adaptive,
     /// Custom strategy
     Custom(String),
 }
@@ -546,6 +559,18 @@ pub struct TraceContext {
     pub flags: u8,
     /// Baggage items
     pub baggage: HashMap<String, String>,
+}
+
+impl Default for TraceContext {
+    fn default() -> Self {
+        Self {
+            trace_id: uuid::Uuid::new_v4().to_string(),
+            span_id: uuid::Uuid::new_v4().to_string(),
+            parent_span_id: None,
+            flags: 0,
+            baggage: HashMap::new(),
+        }
+    }
 }
 
 // ============================================================================

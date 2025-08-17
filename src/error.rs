@@ -98,6 +98,22 @@ pub enum AppError {
     #[error("Command execution failed: {command}")]
     CommandExecutionError { command: String },
 
+    // Missing variants that are used in the codebase
+    #[error("Operation timeout: {0}")]
+    Timeout(String),
+
+    #[error("IO error: {0}")]
+    IoError(String),
+
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
+    #[error("Invalid state: {0}")]
+    InvalidState(String),
+
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
+
     #[error("Query execution failed: {query}")]
     QueryExecutionError { query: String },
 
@@ -157,7 +173,70 @@ pub enum AppError {
 
     #[error("Internal error: {component}: {message}")]
     InternalError { component: String, message: String },
+
+    // Zero-trust security errors
+    #[error("Security context not found: {0}")]
+    SecurityContextNotFound(String),
+
+    #[error("Security context expired: {0}")]
+    SecurityContextExpired(String),
+
+    #[error("Congestion control error: {0}")]
+    CongestionControl(String),
+
+    // Valkyrie routing errors
+    #[error("Invalid capabilities: {0}")]
+    InvalidCapabilities(String),
+
+    #[error("Consensus timeout: {0}")]
+    ConsensusTimeout(String),
+
+    #[error("Consensus rejected: {0}")]
+    ConsensusRejected(String),
+
+    #[error("Health check error: {0}")]
+    HealthCheckError(String),
+
+    #[error("Service not found: {0}")]
+    ServiceNotFound(String),
+
+    #[error("No healthy endpoints: {0}")]
+    NoHealthyEndpoints(String),
+
+    #[error("Load balancing error: {0}")]
+    LoadBalancingError(String),
+
+    // Additional Valkyrie errors
+    #[error("Invalid QoS class: {0}")]
+    InvalidQoSClass(String),
+
+    #[error("Unsupported adapter: {0}")]
+    UnsupportedAdapter(String),
+
+    #[error("Metrics not available: {0}")]
+    MetricsNotAvailable(String),
+
+    #[error("Message conversion failed: {0}")]
+    MessageConversionFailed(String),
+
+    #[error("Registry full: {0}")]
+    RegistryFull(String),
+
+    #[error("Invalid service name: {0}")]
+    InvalidServiceName(String),
+
+    #[error("Invalid endpoints: {0}")]
+    InvalidEndpoints(String),
+
+    #[error("Invalid condition: {0}")]
+    InvalidCondition(String),
+
+    #[error("Queue full: {0}")]
+    QueueFull(String),
 }
+
+// Valkyrie-specific error type
+pub type ValkyrieError = AppError;
 
 // Add From implementations for common error types
 impl From<std::io::Error> for AppError {
@@ -276,6 +355,10 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Internal error: {}: {}", component, message),
             ),
+            // Zero-trust security errors
+            AppError::SecurityContextNotFound(msg) => (StatusCode::NOT_FOUND, msg),
+            AppError::SecurityContextExpired(msg) => (StatusCode::UNAUTHORIZED, msg),
+            AppError::CongestionControl(msg) => (StatusCode::TOO_MANY_REQUESTS, msg),
         };
 
         let body = Json(json!({

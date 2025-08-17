@@ -9,6 +9,7 @@ pub mod repository;
 pub mod schedulers;
 pub mod template_engine;
 pub mod workspace;
+pub mod yaml_parser;
 
 #[cfg(test)]
 pub mod workspace_integration_test;

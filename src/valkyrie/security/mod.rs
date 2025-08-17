@@ -34,7 +34,7 @@ impl SecurityManager {
         _endpoint: &crate::valkyrie::transport::Endpoint
     ) -> Result<Box<dyn crate::valkyrie::transport::Connection>> {
         // Placeholder implementation
-        todo!("Implement connection authentication")
+        Err(crate::valkyrie::ValkyrieError::InternalServerError("Connection authentication not implemented".to_string()))
     }
     
     /// Get security statistics

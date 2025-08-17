@@ -429,7 +429,8 @@ impl MessageBatchProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::networking::valkyrie::message::{MessagePayload, StructuredPayload};
+    use crate::core::networking::valkyrie::message::MessagePayload;
+    use crate::core::networking::valkyrie::StructuredPayload;
 
     #[tokio::test]
     async fn test_message_processing_with_compression() {
