@@ -470,7 +470,11 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Copyright (c) 2025 [Your Name or Organization].  
+All rights reserved.  
+
+This project is proprietary and may not be copied, modified, or distributed without explicit permission.
+
 
 ## 🙏 Acknowledgments
 
