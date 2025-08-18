@@ -1,7 +1,7 @@
 # RustCI - High-Performance CI/CD Platform
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com)
 
 RustCI is a high-performance, scalable CI/CD platform built in Rust that serves as a modern alternative to Jenkins. The platform focuses on speed, reliability, and ease of configuration with support for multi-node clusters and various deployment strategies.
