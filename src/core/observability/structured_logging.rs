@@ -125,7 +125,7 @@ impl CorrelationTracker {
         parent_correlation_id: Option<Uuid>,
     ) -> Uuid {
         let correlation_id = Uuid::new_v4();
-        
+
         let context = CorrelationContext {
             correlation_id,
             operation: operation.clone(),
@@ -182,7 +182,7 @@ impl CorrelationTracker {
         let mut correlations = self.active_correlations.write().await;
         if let Some(context) = correlations.get_mut(&correlation_id) {
             context.breadcrumbs.push(breadcrumb);
-            
+
             // Keep only last 50 breadcrumbs to prevent memory issues
             if context.breadcrumbs.len() > 50 {
                 context.breadcrumbs.remove(0);
@@ -233,10 +233,10 @@ impl StructuredLogging {
     /// Initialize structured logging
     pub fn new(config: LoggingConfig) -> Result<Self> {
         let correlation_tracker = Arc::new(CorrelationTracker::new());
-        
+
         // Initialize tracing subscriber
-        let env_filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new(&config.log_level));
+        let env_filter =
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.log_level));
 
         let mut layers = Vec::new();
 
@@ -272,7 +272,9 @@ impl StructuredLogging {
                     .create(true)
                     .append(true)
                     .open(file_path)
-                    .map_err(|e| AppError::InternalServerError(format!("Failed to open log file: {}", e)))?;
+                    .map_err(|e| {
+                        AppError::InternalServerError(format!("Failed to open log file: {}", e))
+                    })?;
 
                 let file_layer = tracing_subscriber::fmt::layer()
                     .json()
@@ -330,10 +332,13 @@ impl StructuredLogging {
             .as_secs();
 
         let (correlation_context, duration_ms) = if let Some(correlation_id) = correlation_id {
-            let context = self.correlation_tracker.get_correlation(correlation_id).await;
-            let duration = context.as_ref().map(|c| 
-                c.start_time.elapsed().unwrap_or_default().as_millis() as u64
-            );
+            let context = self
+                .correlation_tracker
+                .get_correlation(correlation_id)
+                .await;
+            let duration = context
+                .as_ref()
+                .map(|c| c.start_time.elapsed().unwrap_or_default().as_millis() as u64);
             (context, duration)
         } else {
             (None, None)
@@ -346,11 +351,17 @@ impl StructuredLogging {
             service: self.config.service_name.clone(),
             environment: self.config.environment.clone(),
             correlation_id: correlation_id.map(|id| id.to_string()),
-            operation: operation.or_else(|| correlation_context.as_ref().map(|c| c.operation.clone())),
-            component: component.or_else(|| correlation_context.as_ref().map(|c| c.component.clone())),
+            operation: operation
+                .or_else(|| correlation_context.as_ref().map(|c| c.operation.clone())),
+            component: component
+                .or_else(|| correlation_context.as_ref().map(|c| c.component.clone())),
             user_id: correlation_context.as_ref().and_then(|c| c.user_id.clone()),
-            session_id: correlation_context.as_ref().and_then(|c| c.session_id.clone()),
-            request_id: correlation_context.as_ref().and_then(|c| c.request_id.clone()),
+            session_id: correlation_context
+                .as_ref()
+                .and_then(|c| c.session_id.clone()),
+            request_id: correlation_context
+                .as_ref()
+                .and_then(|c| c.request_id.clone()),
             duration_ms,
             attributes,
             error,
@@ -422,14 +433,23 @@ impl StructuredLogging {
         error: Option<String>,
     ) {
         let mut attributes = HashMap::new();
-        attributes.insert("job_id".to_string(), serde_json::Value::String(job_id.to_string()));
-        attributes.insert("event_type".to_string(), serde_json::Value::String(event_type.to_string()));
+        attributes.insert(
+            "job_id".to_string(),
+            serde_json::Value::String(job_id.to_string()),
+        );
+        attributes.insert(
+            "event_type".to_string(),
+            serde_json::Value::String(event_type.to_string()),
+        );
 
         if let Some(node_id) = node_id {
             attributes.insert("node_id".to_string(), serde_json::Value::String(node_id));
         }
         if let Some(pipeline_id) = pipeline_id {
-            attributes.insert("pipeline_id".to_string(), serde_json::Value::String(pipeline_id));
+            attributes.insert(
+                "pipeline_id".to_string(),
+                serde_json::Value::String(pipeline_id),
+            );
         }
         if let Some(stage) = stage {
             attributes.insert("stage".to_string(), serde_json::Value::String(stage));
@@ -452,7 +472,11 @@ impl StructuredLogging {
             cache_misses: None,
         });
 
-        let level = if error_info.is_some() { "error" } else { "info" };
+        let level = if error_info.is_some() {
+            "error"
+        } else {
+            "info"
+        };
 
         self.log_with_correlation(
             level,
@@ -463,7 +487,8 @@ impl StructuredLogging {
             attributes,
             error_info,
             performance_info,
-        ).await;
+        )
+        .await;
     }
 
     /// Log node event
@@ -478,17 +503,26 @@ impl StructuredLogging {
     ) {
         let mut attributes = HashMap::new();
         attributes.insert("node_id".to_string(), serde_json::Value::String(node_id));
-        attributes.insert("event_type".to_string(), serde_json::Value::String(event_type.to_string()));
+        attributes.insert(
+            "event_type".to_string(),
+            serde_json::Value::String(event_type.to_string()),
+        );
 
         if let Some(health_status) = health_status {
-            attributes.insert("health_status".to_string(), serde_json::Value::String(health_status));
+            attributes.insert(
+                "health_status".to_string(),
+                serde_json::Value::String(health_status),
+            );
         }
 
         if let Some(resource_usage) = resource_usage {
             for (key, value) in resource_usage {
                 attributes.insert(
                     format!("resource_{}", key),
-                    serde_json::Value::Number(serde_json::Number::from_f64(value).unwrap_or_else(|| serde_json::Number::from(0))),
+                    serde_json::Value::Number(
+                        serde_json::Number::from_f64(value)
+                            .unwrap_or_else(|| serde_json::Number::from(0)),
+                    ),
                 );
             }
         }
@@ -502,7 +536,8 @@ impl StructuredLogging {
             attributes,
             None,
             None,
-        ).await;
+        )
+        .await;
     }
 
     /// Get recent log entries
@@ -522,7 +557,9 @@ impl StructuredLogging {
         buffer
             .iter()
             .filter(|entry| {
-                entry.correlation_id.as_ref()
+                entry
+                    .correlation_id
+                    .as_ref()
                     .map(|id| id == &correlation_id.to_string())
                     .unwrap_or(false)
             })
@@ -594,23 +631,35 @@ where
         event: &Event<'_>,
     ) -> std::fmt::Result {
         let metadata = event.metadata();
-        
+
         let mut json_event = serde_json::Map::new();
-        json_event.insert("timestamp".to_string(), 
-            serde_json::Value::String(chrono::Utc::now().to_rfc3339()));
-        json_event.insert("level".to_string(), 
-            serde_json::Value::String(metadata.level().to_string()));
-        json_event.insert("service".to_string(), 
-            serde_json::Value::String(self.service_name.clone()));
-        json_event.insert("environment".to_string(), 
-            serde_json::Value::String(self.environment.clone()));
-        json_event.insert("target".to_string(), 
-            serde_json::Value::String(metadata.target().to_string()));
+        json_event.insert(
+            "timestamp".to_string(),
+            serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+        );
+        json_event.insert(
+            "level".to_string(),
+            serde_json::Value::String(metadata.level().to_string()),
+        );
+        json_event.insert(
+            "service".to_string(),
+            serde_json::Value::String(self.service_name.clone()),
+        );
+        json_event.insert(
+            "environment".to_string(),
+            serde_json::Value::String(self.environment.clone()),
+        );
+        json_event.insert(
+            "target".to_string(),
+            serde_json::Value::String(metadata.target().to_string()),
+        );
 
         // Add span information
         if let Some(span) = ctx.lookup_current() {
-            json_event.insert("span_name".to_string(), 
-                serde_json::Value::String(span.name().to_string()));
+            json_event.insert(
+                "span_name".to_string(),
+                serde_json::Value::String(span.name().to_string()),
+            );
         }
 
         let json_value = serde_json::Value::Object(json_event);
@@ -634,29 +683,33 @@ pub struct LoggingStatistics {
 #[macro_export]
 macro_rules! log_with_correlation {
     ($logger:expr, $level:expr, $correlation_id:expr, $message:expr) => {
-        $logger.log_with_correlation(
-            $level,
-            $message,
-            Some($correlation_id),
-            None,
-            None,
-            std::collections::HashMap::new(),
-            None,
-            None,
-        ).await;
+        $logger
+            .log_with_correlation(
+                $level,
+                $message,
+                Some($correlation_id),
+                None,
+                None,
+                std::collections::HashMap::new(),
+                None,
+                None,
+            )
+            .await;
     };
-    
+
     ($logger:expr, $level:expr, $correlation_id:expr, $message:expr, $attributes:expr) => {
-        $logger.log_with_correlation(
-            $level,
-            $message,
-            Some($correlation_id),
-            None,
-            None,
-            $attributes,
-            None,
-            None,
-        ).await;
+        $logger
+            .log_with_correlation(
+                $level,
+                $message,
+                Some($correlation_id),
+                None,
+                None,
+                $attributes,
+                None,
+                None,
+            )
+            .await;
     };
 }
 
@@ -667,15 +720,21 @@ mod tests {
     #[tokio::test]
     async fn test_correlation_tracker() {
         let tracker = CorrelationTracker::new();
-        
-        let correlation_id = tracker.start_correlation(
-            "test_operation".to_string(),
-            "test_component".to_string(),
-            None,
-        ).await;
 
-        tracker.add_breadcrumb(correlation_id, "Step 1 completed".to_string()).await;
-        tracker.add_breadcrumb(correlation_id, "Step 2 completed".to_string()).await;
+        let correlation_id = tracker
+            .start_correlation(
+                "test_operation".to_string(),
+                "test_component".to_string(),
+                None,
+            )
+            .await;
+
+        tracker
+            .add_breadcrumb(correlation_id, "Step 1 completed".to_string())
+            .await;
+        tracker
+            .add_breadcrumb(correlation_id, "Step 2 completed".to_string())
+            .await;
 
         let context = tracker.get_correlation(correlation_id).await;
         assert!(context.is_some());
@@ -691,22 +750,29 @@ mod tests {
         let config = LoggingConfig::default();
         let logger = StructuredLogging::new(config).unwrap();
 
-        let correlation_id = logger.correlation_tracker()
-            .start_correlation("test".to_string(), "test".to_string(), None).await;
+        let correlation_id = logger
+            .correlation_tracker()
+            .start_correlation("test".to_string(), "test".to_string(), None)
+            .await;
 
         let mut attributes = HashMap::new();
-        attributes.insert("test_key".to_string(), serde_json::Value::String("test_value".to_string()));
+        attributes.insert(
+            "test_key".to_string(),
+            serde_json::Value::String("test_value".to_string()),
+        );
 
-        logger.log_with_correlation(
-            "info",
-            "Test message",
-            Some(correlation_id),
-            None,
-            None,
-            attributes,
-            None,
-            None,
-        ).await;
+        logger
+            .log_with_correlation(
+                "info",
+                "Test message",
+                Some(correlation_id),
+                None,
+                None,
+                attributes,
+                None,
+                None,
+            )
+            .await;
 
         let logs = logger.search_logs_by_correlation(correlation_id).await;
         assert_eq!(logs.len(), 1);
@@ -719,27 +785,31 @@ mod tests {
         let logger = StructuredLogging::new(config).unwrap();
 
         let job_id = Uuid::new_v4();
-        let correlation_id = logger.correlation_tracker()
-            .start_correlation("job_execution".to_string(), "scheduler".to_string(), None).await;
+        let correlation_id = logger
+            .correlation_tracker()
+            .start_correlation("job_execution".to_string(), "scheduler".to_string(), None)
+            .await;
 
-        logger.log_job_event(
-            job_id,
-            "job_started",
-            "Job execution started",
-            Some(correlation_id),
-            Some("node-1".to_string()),
-            Some("pipeline-1".to_string()),
-            Some("build".to_string()),
-            None,
-            None,
-        ).await;
+        logger
+            .log_job_event(
+                job_id,
+                "job_started",
+                "Job execution started",
+                Some(correlation_id),
+                Some("node-1".to_string()),
+                Some("pipeline-1".to_string()),
+                Some("build".to_string()),
+                None,
+                None,
+            )
+            .await;
 
         let logs = logger.get_recent_logs(10).await;
         assert!(!logs.is_empty());
-        
-        let job_log = logs.iter().find(|log| 
+
+        let job_log = logs.iter().find(|log| {
             log.attributes.get("job_id").map(|v| v.as_str()) == Some(Some(&job_id.to_string()))
-        );
+        });
         assert!(job_log.is_some());
     }
 }

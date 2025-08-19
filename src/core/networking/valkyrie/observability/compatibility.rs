@@ -1,10 +1,10 @@
 // Backward compatibility layer for Valkyrie observability
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde::{Serialize, Deserialize};
 
-use super::{ObservabilityManager, ObservabilityError, LogLevel};
+use super::{LogLevel, ObservabilityError, ObservabilityManager};
 
 /// Legacy observability interface for backward compatibility
 pub struct LegacyObservabilityAdapter {
@@ -77,27 +77,42 @@ impl LegacyObservabilityAdapter {
     }
 
     // Legacy Metrics API
-    
+
     /// Record a legacy counter metric
-    pub async fn record_counter(&self, name: &str, value: u64, tags: Option<HashMap<String, String>>) -> Result<(), ObservabilityError> {
+    pub async fn record_counter(
+        &self,
+        name: &str,
+        value: u64,
+        tags: Option<HashMap<String, String>>,
+    ) -> Result<(), ObservabilityError> {
         if self.config.deprecation_warnings {
-            self.log_deprecation_warning("record_counter", "Use metrics().increment_counter() instead").await;
+            self.log_deprecation_warning(
+                "record_counter",
+                "Use metrics().increment_counter() instead",
+            )
+            .await;
         }
 
         let labels = tags.unwrap_or_default();
         let metrics = self.valkyrie_manager.metrics();
-        
+
         for _ in 0..value {
             metrics.increment_counter(name, labels.clone()).await?;
         }
-        
+
         Ok(())
     }
 
     /// Record a legacy gauge metric
-    pub async fn record_gauge(&self, name: &str, value: f64, tags: Option<HashMap<String, String>>) -> Result<(), ObservabilityError> {
+    pub async fn record_gauge(
+        &self,
+        name: &str,
+        value: f64,
+        tags: Option<HashMap<String, String>>,
+    ) -> Result<(), ObservabilityError> {
         if self.config.deprecation_warnings {
-            self.log_deprecation_warning("record_gauge", "Use metrics().set_gauge() instead").await;
+            self.log_deprecation_warning("record_gauge", "Use metrics().set_gauge() instead")
+                .await;
         }
 
         let labels = tags.unwrap_or_default();
@@ -106,9 +121,18 @@ impl LegacyObservabilityAdapter {
     }
 
     /// Record a legacy histogram metric
-    pub async fn record_histogram(&self, name: &str, value: f64, tags: Option<HashMap<String, String>>) -> Result<(), ObservabilityError> {
+    pub async fn record_histogram(
+        &self,
+        name: &str,
+        value: f64,
+        tags: Option<HashMap<String, String>>,
+    ) -> Result<(), ObservabilityError> {
         if self.config.deprecation_warnings {
-            self.log_deprecation_warning("record_histogram", "Use metrics().record_histogram() instead").await;
+            self.log_deprecation_warning(
+                "record_histogram",
+                "Use metrics().record_histogram() instead",
+            )
+            .await;
         }
 
         let labels = tags.unwrap_or_default();
@@ -117,20 +141,40 @@ impl LegacyObservabilityAdapter {
     }
 
     /// Record a legacy timer metric
-    pub async fn record_timer(&self, name: &str, duration_ms: f64, tags: Option<HashMap<String, String>>) -> Result<(), ObservabilityError> {
+    pub async fn record_timer(
+        &self,
+        name: &str,
+        duration_ms: f64,
+        tags: Option<HashMap<String, String>>,
+    ) -> Result<(), ObservabilityError> {
         if self.config.deprecation_warnings {
-            self.log_deprecation_warning("record_timer", "Use metrics().record_histogram() with duration values instead").await;
+            self.log_deprecation_warning(
+                "record_timer",
+                "Use metrics().record_histogram() with duration values instead",
+            )
+            .await;
         }
 
         let labels = tags.unwrap_or_default();
         let metrics = self.valkyrie_manager.metrics();
-        metrics.record_histogram(name, vec![duration_ms], labels).await
+        metrics
+            .record_histogram(name, vec![duration_ms], labels)
+            .await
     }
 
     /// Record a legacy meter metric
-    pub async fn record_meter(&self, name: &str, rate: f64, tags: Option<HashMap<String, String>>) -> Result<(), ObservabilityError> {
+    pub async fn record_meter(
+        &self,
+        name: &str,
+        rate: f64,
+        tags: Option<HashMap<String, String>>,
+    ) -> Result<(), ObservabilityError> {
         if self.config.deprecation_warnings {
-            self.log_deprecation_warning("record_meter", "Use metrics().set_gauge() for rate metrics instead").await;
+            self.log_deprecation_warning(
+                "record_meter",
+                "Use metrics().set_gauge() for rate metrics instead",
+            )
+            .await;
         }
 
         let labels = tags.unwrap_or_default();
@@ -141,16 +185,26 @@ impl LegacyObservabilityAdapter {
     // Legacy Logging API
 
     /// Log with legacy format
-    pub async fn log(&self, level: LegacyLogLevel, message: &str, fields: Option<HashMap<String, String>>) -> Result<(), ObservabilityError> {
+    pub async fn log(
+        &self,
+        level: LegacyLogLevel,
+        message: &str,
+        fields: Option<HashMap<String, String>>,
+    ) -> Result<(), ObservabilityError> {
         if self.config.deprecation_warnings {
-            self.log_deprecation_warning("log", "Use logger().log() with structured context instead").await;
+            self.log_deprecation_warning(
+                "log",
+                "Use logger().log() with structured context instead",
+            )
+            .await;
         }
 
         let valkyrie_level = self.convert_log_level(level);
         let logger = self.valkyrie_manager.logger();
-        
+
         let context = if let Some(fields) = fields {
-            fields.into_iter()
+            fields
+                .into_iter()
                 .map(|(k, v)| (k, serde_json::Value::String(v)))
                 .collect()
         } else {
@@ -188,9 +242,17 @@ impl LegacyObservabilityAdapter {
     // Legacy Health Check API
 
     /// Register a legacy health check
-    pub async fn register_health_check(&self, name: &str, _check_fn: Box<dyn Fn() -> bool + Send + Sync>) -> Result<(), ObservabilityError> {
+    pub async fn register_health_check(
+        &self,
+        name: &str,
+        _check_fn: Box<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<(), ObservabilityError> {
         if self.config.deprecation_warnings {
-            self.log_deprecation_warning("register_health_check", "Use health().register_check() with HealthCheck struct instead").await;
+            self.log_deprecation_warning(
+                "register_health_check",
+                "Use health().register_check() with HealthCheck struct instead",
+            )
+            .await;
         }
 
         // Convert legacy health check to Valkyrie format
@@ -224,12 +286,13 @@ impl LegacyObservabilityAdapter {
     /// Get legacy health status
     pub async fn get_health_status(&self) -> Result<LegacyHealthStatus, ObservabilityError> {
         if self.config.deprecation_warnings {
-            self.log_deprecation_warning("get_health_status", "Use health().summary() instead").await;
+            self.log_deprecation_warning("get_health_status", "Use health().summary() instead")
+                .await;
         }
 
         let health = self.valkyrie_manager.health();
         let summary = health.summary().await;
-        
+
         Ok(LegacyHealthStatus {
             overall_status: match summary.overall_status {
                 super::health::HealthStatus::Healthy => "healthy".to_string(),
@@ -248,12 +311,16 @@ impl LegacyObservabilityAdapter {
     /// Get legacy dashboard data
     pub async fn get_dashboard_data(&self) -> Result<LegacyDashboardData, ObservabilityError> {
         if self.config.deprecation_warnings {
-            self.log_deprecation_warning("get_dashboard_data", "Use dashboard().get_data() instead").await;
+            self.log_deprecation_warning(
+                "get_dashboard_data",
+                "Use dashboard().get_data() instead",
+            )
+            .await;
         }
 
         let dashboard = self.valkyrie_manager.dashboard();
         let data = dashboard.get_data().await;
-        
+
         Ok(LegacyDashboardData {
             title: data.metadata.title,
             uptime: data.metadata.uptime_seconds,
@@ -286,15 +353,26 @@ impl LegacyObservabilityAdapter {
     async fn log_deprecation_warning(&self, method: &str, suggestion: &str) {
         let logger = self.valkyrie_manager.logger();
         let mut context = HashMap::new();
-        context.insert("deprecated_method".to_string(), serde_json::Value::String(method.to_string()));
-        context.insert("suggestion".to_string(), serde_json::Value::String(suggestion.to_string()));
-        context.insert("compatibility_version".to_string(), serde_json::Value::String(self.config.compatibility_version.clone()));
-        
-        let _ = logger.log(
-            LogLevel::Warn,
-            &format!("DEPRECATED: {} is deprecated. {}", method, suggestion),
-            context,
-        ).await;
+        context.insert(
+            "deprecated_method".to_string(),
+            serde_json::Value::String(method.to_string()),
+        );
+        context.insert(
+            "suggestion".to_string(),
+            serde_json::Value::String(suggestion.to_string()),
+        );
+        context.insert(
+            "compatibility_version".to_string(),
+            serde_json::Value::String(self.config.compatibility_version.clone()),
+        );
+
+        let _ = logger
+            .log(
+                LogLevel::Warn,
+                &format!("DEPRECATED: {} is deprecated. {}", method, suggestion),
+                context,
+            )
+            .await;
     }
 
     /// Check if feature is supported in compatibility mode
@@ -302,7 +380,7 @@ impl LegacyObservabilityAdapter {
         match feature {
             "legacy_metrics" => self.config.auto_metric_conversion,
             "legacy_logging" => self.config.legacy_log_format,
-            "legacy_health" => true, // Always supported
+            "legacy_health" => true,    // Always supported
             "legacy_dashboard" => true, // Always supported
             _ => false,
         }
@@ -416,34 +494,35 @@ impl FeatureDetector {
     /// Create a new feature detector
     pub fn new() -> Self {
         let mut available_features = HashMap::new();
-        
+
         // Core observability features
         available_features.insert("metrics".to_string(), true);
         available_features.insert("logging".to_string(), true);
         available_features.insert("health".to_string(), true);
         available_features.insert("dashboard".to_string(), true);
         available_features.insert("correlation".to_string(), true);
-        
+
         // Advanced features
         available_features.insert("distributed_tracing".to_string(), true);
         available_features.insert("custom_metrics".to_string(), true);
         available_features.insert("structured_logging".to_string(), true);
         available_features.insert("health_checks".to_string(), true);
         available_features.insert("html_dashboard".to_string(), true);
-        
+
         // Legacy compatibility features
         available_features.insert("legacy_metrics_api".to_string(), true);
         available_features.insert("legacy_logging_api".to_string(), true);
         available_features.insert("legacy_health_api".to_string(), true);
-        
-        Self {
-            available_features,
-        }
+
+        Self { available_features }
     }
 
     /// Check if feature is available
     pub fn is_feature_available(&self, feature: &str) -> bool {
-        self.available_features.get(feature).copied().unwrap_or(false)
+        self.available_features
+            .get(feature)
+            .copied()
+            .unwrap_or(false)
     }
 
     /// Get all available features
@@ -462,7 +541,8 @@ impl FeatureDetector {
 
     /// Enable or disable a feature
     pub fn set_feature_availability(&mut self, feature: &str, available: bool) {
-        self.available_features.insert(feature.to_string(), available);
+        self.available_features
+            .insert(feature.to_string(), available);
     }
 }
 

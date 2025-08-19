@@ -1,21 +1,26 @@
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Key, Nonce,
+};
+use async_trait::async_trait;
+use chacha20poly1305::{
+    aead::{Aead as ChaChaAead, KeyInit as ChaChaKeyInit},
+    ChaCha20Poly1305,
+};
+use rand::{RngCore, SeedableRng};
+use rand_chacha::ChaCha20Rng;
+use serde::{Deserialize, Serialize};
 /// Post-quantum cryptography and encryption engines for the Valkyrie Protocol
-/// 
+///
 /// This module provides:
 /// - Post-quantum key exchange (Kyber)
 /// - Post-quantum digital signatures (Dilithium)
 /// - Modern symmetric encryption (AES-256-GCM, ChaCha20-Poly1305)
 /// - Quantum-safe random number generation
 /// - Cryptographic agility for future algorithm transitions
-
 use std::collections::HashMap;
 use std::sync::Arc;
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use rand::{RngCore, SeedableRng};
-use rand_chacha::ChaCha20Rng;
-use aes_gcm::{Aes256Gcm, Key, Nonce, aead::{Aead, KeyInit}};
-use chacha20poly1305::{ChaCha20Poly1305, aead::{Aead as ChaChaAead, KeyInit as ChaChaKeyInit}};
 
 use crate::error::Result;
 // EncryptionMethod import removed as unused
@@ -25,16 +30,16 @@ use crate::error::Result;
 pub trait EncryptionEngine: Send + Sync {
     /// Encrypt data with the given context
     async fn encrypt(&self, data: &[u8], context: &EncryptionContext) -> Result<Vec<u8>>;
-    
+
     /// Decrypt data with the given context
     async fn decrypt(&self, data: &[u8], context: &EncryptionContext) -> Result<Vec<u8>>;
-    
+
     /// Generate a new encryption key
     async fn generate_key(&self) -> Result<Vec<u8>>;
-    
+
     /// Get encryption capabilities
     fn capabilities(&self) -> EncryptionCapabilities;
-    
+
     /// Get encryption metrics
     async fn metrics(&self) -> EncryptionMetrics;
 }
@@ -63,7 +68,7 @@ pub struct EncryptionCapabilities {
 /// Performance tier classification
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PerformanceTier {
-    High,    // Optimized for speed
+    High,     // Optimized for speed
     Balanced, // Balance of speed and security
     Secure,   // Optimized for security
 }
@@ -152,7 +157,7 @@ impl PostQuantumCrypto {
         let kyber = KyberKeyExchange::new(config.kyber_variant.clone())?;
         let dilithium = DilithiumSignature::new(config.dilithium_variant.clone())?;
         let rng = Arc::new(RwLock::new(ChaCha20Rng::from_entropy()));
-        
+
         Ok(Self {
             config,
             kyber,
@@ -174,28 +179,31 @@ impl PostQuantumCrypto {
     /// Generate a post-quantum key pair
     pub async fn generate_keypair(&self) -> Result<(Vec<u8>, Vec<u8>)> {
         let start_time = std::time::Instant::now();
-        
+
         let (public_key, secret_key) = self.kyber.generate_keypair().await?;
-        
+
         let duration = start_time.elapsed();
         let mut metrics = self.metrics.write().await;
         metrics.quantum_safe_operations += 1;
-        metrics.average_keygen_time_ms = (metrics.average_keygen_time_ms * (metrics.quantum_safe_operations - 1) as f64 + duration.as_millis() as f64) / metrics.quantum_safe_operations as f64;
-        
+        metrics.average_keygen_time_ms = (metrics.average_keygen_time_ms
+            * (metrics.quantum_safe_operations - 1) as f64
+            + duration.as_millis() as f64)
+            / metrics.quantum_safe_operations as f64;
+
         Ok((public_key, secret_key))
     }
 
     /// Perform key exchange
     pub async fn key_exchange(&self, public_key: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
         let start_time = std::time::Instant::now();
-        
+
         let (ciphertext, shared_secret) = self.kyber.encapsulate(public_key).await?;
-        
+
         let _duration = start_time.elapsed();
         let mut metrics = self.metrics.write().await;
         metrics.key_exchanges += 1;
         metrics.quantum_safe_operations += 1;
-        
+
         Ok((ciphertext, shared_secret))
     }
 
@@ -207,30 +215,36 @@ impl PostQuantumCrypto {
     /// Sign data with post-quantum signature
     pub async fn sign(&self, data: &[u8], secret_key: &[u8]) -> Result<Vec<u8>> {
         let start_time = std::time::Instant::now();
-        
+
         let signature = self.dilithium.sign(data, secret_key).await?;
-        
+
         let duration = start_time.elapsed();
         let mut metrics = self.metrics.write().await;
         metrics.signatures_generated += 1;
         metrics.quantum_safe_operations += 1;
-        metrics.average_sign_time_ms = (metrics.average_sign_time_ms * (metrics.signatures_generated - 1) as f64 + duration.as_millis() as f64) / metrics.signatures_generated as f64;
-        
+        metrics.average_sign_time_ms = (metrics.average_sign_time_ms
+            * (metrics.signatures_generated - 1) as f64
+            + duration.as_millis() as f64)
+            / metrics.signatures_generated as f64;
+
         Ok(signature)
     }
 
     /// Verify post-quantum signature
     pub async fn verify(&self, data: &[u8], signature: &[u8], public_key: &[u8]) -> Result<bool> {
         let start_time = std::time::Instant::now();
-        
+
         let valid = self.dilithium.verify(data, signature, public_key).await?;
-        
+
         let duration = start_time.elapsed();
         let mut metrics = self.metrics.write().await;
         metrics.signatures_verified += 1;
         metrics.quantum_safe_operations += 1;
-        metrics.average_verify_time_ms = (metrics.average_verify_time_ms * (metrics.signatures_verified - 1) as f64 + duration.as_millis() as f64) / metrics.signatures_verified as f64;
-        
+        metrics.average_verify_time_ms = (metrics.average_verify_time_ms
+            * (metrics.signatures_verified - 1) as f64
+            + duration.as_millis() as f64)
+            / metrics.signatures_verified as f64;
+
         Ok(valid)
     }
 
@@ -254,7 +268,7 @@ impl KyberKeyExchange {
         // In a real implementation, this would use the actual Kyber algorithm
         // For now, we'll simulate with placeholder values
         let mut rng = ChaCha20Rng::from_entropy();
-        
+
         let (public_key_size, secret_key_size) = match self.variant {
             KyberVariant::Kyber512 => (800, 1632),
             KyberVariant::Kyber768 => (1184, 2400),
@@ -263,7 +277,7 @@ impl KyberKeyExchange {
 
         let mut public_key = vec![0u8; public_key_size];
         let mut secret_key = vec![0u8; secret_key_size];
-        
+
         rng.fill_bytes(&mut public_key);
         rng.fill_bytes(&mut secret_key);
 
@@ -273,7 +287,7 @@ impl KyberKeyExchange {
     pub async fn encapsulate(&self, _public_key: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
         // Placeholder implementation
         let mut rng = ChaCha20Rng::from_entropy();
-        
+
         let (ciphertext_size, shared_secret_size) = match self.variant {
             KyberVariant::Kyber512 => (768, 32),
             KyberVariant::Kyber768 => (1088, 32),
@@ -282,7 +296,7 @@ impl KyberKeyExchange {
 
         let mut ciphertext = vec![0u8; ciphertext_size];
         let mut shared_secret = vec![0u8; shared_secret_size];
-        
+
         rng.fill_bytes(&mut ciphertext);
         rng.fill_bytes(&mut shared_secret);
 
@@ -310,7 +324,7 @@ impl DilithiumSignature {
 
     pub async fn generate_keypair(&self) -> Result<(Vec<u8>, Vec<u8>)> {
         let mut rng = ChaCha20Rng::from_entropy();
-        
+
         let (public_key_size, secret_key_size) = match self.variant {
             DilithiumVariant::Dilithium2 => (1312, 2528),
             DilithiumVariant::Dilithium3 => (1952, 4000),
@@ -319,7 +333,7 @@ impl DilithiumSignature {
 
         let mut public_key = vec![0u8; public_key_size];
         let mut secret_key = vec![0u8; secret_key_size];
-        
+
         rng.fill_bytes(&mut public_key);
         rng.fill_bytes(&mut secret_key);
 
@@ -329,7 +343,7 @@ impl DilithiumSignature {
     pub async fn sign(&self, _data: &[u8], _secret_key: &[u8]) -> Result<Vec<u8>> {
         // Placeholder implementation
         let mut rng = ChaCha20Rng::from_entropy();
-        
+
         let signature_size = match self.variant {
             DilithiumVariant::Dilithium2 => 2420,
             DilithiumVariant::Dilithium3 => 3293,
@@ -341,7 +355,12 @@ impl DilithiumSignature {
         Ok(signature)
     }
 
-    pub async fn verify(&self, _data: &[u8], _signature: &[u8], _public_key: &[u8]) -> Result<bool> {
+    pub async fn verify(
+        &self,
+        _data: &[u8],
+        _signature: &[u8],
+        _public_key: &[u8],
+    ) -> Result<bool> {
         // Placeholder implementation - in reality, this would verify the signature
         Ok(true)
     }
@@ -372,13 +391,16 @@ impl Aes256GcmEngine {
 impl EncryptionEngine for Aes256GcmEngine {
     async fn encrypt(&self, data: &[u8], context: &EncryptionContext) -> Result<Vec<u8>> {
         let start_time = std::time::Instant::now();
-        
+
         // Parse key from context
         let key_bytes = hex::decode(&context.key_id)
             .map_err(|_| crate::error::AppError::SecurityError("Invalid key format".to_string()))?;
-        
+
         if key_bytes.len() != 32 {
-            return Err(crate::error::AppError::SecurityError("Invalid key length for AES-256".to_string()).into());
+            return Err(crate::error::AppError::SecurityError(
+                "Invalid key length for AES-256".to_string(),
+            )
+            .into());
         }
 
         let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
@@ -387,7 +409,10 @@ impl EncryptionEngine for Aes256GcmEngine {
         // Generate or use provided nonce
         let nonce_bytes = if let Some(ref nonce) = context.nonce {
             if nonce.len() != 12 {
-                return Err(crate::error::AppError::SecurityError("Invalid nonce length for AES-GCM".to_string()).into());
+                return Err(crate::error::AppError::SecurityError(
+                    "Invalid nonce length for AES-GCM".to_string(),
+                )
+                .into());
             }
             nonce.clone()
         } else {
@@ -398,9 +423,10 @@ impl EncryptionEngine for Aes256GcmEngine {
         };
 
         let nonce = Nonce::from_slice(&nonce_bytes);
-        
-        let ciphertext = cipher.encrypt(nonce, data)
-            .map_err(|e| crate::error::AppError::SecurityError(format!("AES encryption failed: {}", e)))?;
+
+        let ciphertext = cipher.encrypt(nonce, data).map_err(|e| {
+            crate::error::AppError::SecurityError(format!("AES encryption failed: {}", e))
+        })?;
 
         // Prepend nonce to ciphertext
         let mut result = nonce_bytes;
@@ -410,24 +436,33 @@ impl EncryptionEngine for Aes256GcmEngine {
         let mut metrics = self.metrics.write().await;
         metrics.total_encryptions += 1;
         metrics.total_bytes_encrypted += data.len() as u64;
-        metrics.average_encrypt_time_ms = (metrics.average_encrypt_time_ms * (metrics.total_encryptions - 1) as f64 + duration.as_millis() as f64) / metrics.total_encryptions as f64;
+        metrics.average_encrypt_time_ms = (metrics.average_encrypt_time_ms
+            * (metrics.total_encryptions - 1) as f64
+            + duration.as_millis() as f64)
+            / metrics.total_encryptions as f64;
 
         Ok(result)
     }
 
     async fn decrypt(&self, data: &[u8], context: &EncryptionContext) -> Result<Vec<u8>> {
         let start_time = std::time::Instant::now();
-        
+
         if data.len() < 12 {
-            return Err(crate::error::AppError::SecurityError("Invalid ciphertext length".to_string()).into());
+            return Err(crate::error::AppError::SecurityError(
+                "Invalid ciphertext length".to_string(),
+            )
+            .into());
         }
 
         // Parse key from context
         let key_bytes = hex::decode(&context.key_id)
             .map_err(|_| crate::error::AppError::SecurityError("Invalid key format".to_string()))?;
-        
+
         if key_bytes.len() != 32 {
-            return Err(crate::error::AppError::SecurityError("Invalid key length for AES-256".to_string()).into());
+            return Err(crate::error::AppError::SecurityError(
+                "Invalid key length for AES-256".to_string(),
+            )
+            .into());
         }
 
         let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
@@ -437,14 +472,18 @@ impl EncryptionEngine for Aes256GcmEngine {
         let (nonce_bytes, ciphertext) = data.split_at(12);
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        let plaintext = cipher.decrypt(nonce, ciphertext)
-            .map_err(|e| crate::error::AppError::SecurityError(format!("AES decryption failed: {}", e)))?;
+        let plaintext = cipher.decrypt(nonce, ciphertext).map_err(|e| {
+            crate::error::AppError::SecurityError(format!("AES decryption failed: {}", e))
+        })?;
 
         let duration = start_time.elapsed();
         let mut metrics = self.metrics.write().await;
         metrics.total_decryptions += 1;
         metrics.total_bytes_decrypted += plaintext.len() as u64;
-        metrics.average_decrypt_time_ms = (metrics.average_decrypt_time_ms * (metrics.total_decryptions - 1) as f64 + duration.as_millis() as f64) / metrics.total_decryptions as f64;
+        metrics.average_decrypt_time_ms = (metrics.average_decrypt_time_ms
+            * (metrics.total_decryptions - 1) as f64
+            + duration.as_millis() as f64)
+            / metrics.total_decryptions as f64;
 
         Ok(plaintext)
     }
@@ -497,13 +536,16 @@ impl ChaCha20Poly1305Engine {
 impl EncryptionEngine for ChaCha20Poly1305Engine {
     async fn encrypt(&self, data: &[u8], context: &EncryptionContext) -> Result<Vec<u8>> {
         let start_time = std::time::Instant::now();
-        
+
         // Parse key from context
         let key_bytes = hex::decode(&context.key_id)
             .map_err(|_| crate::error::AppError::SecurityError("Invalid key format".to_string()))?;
-        
+
         if key_bytes.len() != 32 {
-            return Err(crate::error::AppError::SecurityError("Invalid key length for ChaCha20".to_string()).into());
+            return Err(crate::error::AppError::SecurityError(
+                "Invalid key length for ChaCha20".to_string(),
+            )
+            .into());
         }
 
         let key = chacha20poly1305::Key::from_slice(&key_bytes);
@@ -512,7 +554,10 @@ impl EncryptionEngine for ChaCha20Poly1305Engine {
         // Generate or use provided nonce
         let nonce_bytes = if let Some(ref nonce) = context.nonce {
             if nonce.len() != 12 {
-                return Err(crate::error::AppError::SecurityError("Invalid nonce length for ChaCha20-Poly1305".to_string()).into());
+                return Err(crate::error::AppError::SecurityError(
+                    "Invalid nonce length for ChaCha20-Poly1305".to_string(),
+                )
+                .into());
             }
             nonce.clone()
         } else {
@@ -523,9 +568,10 @@ impl EncryptionEngine for ChaCha20Poly1305Engine {
         };
 
         let nonce = chacha20poly1305::Nonce::from_slice(&nonce_bytes);
-        
-        let ciphertext = cipher.encrypt(nonce, data)
-            .map_err(|e| crate::error::AppError::SecurityError(format!("ChaCha20 encryption failed: {}", e)))?;
+
+        let ciphertext = cipher.encrypt(nonce, data).map_err(|e| {
+            crate::error::AppError::SecurityError(format!("ChaCha20 encryption failed: {}", e))
+        })?;
 
         // Prepend nonce to ciphertext
         let mut result = nonce_bytes;
@@ -535,24 +581,33 @@ impl EncryptionEngine for ChaCha20Poly1305Engine {
         let mut metrics = self.metrics.write().await;
         metrics.total_encryptions += 1;
         metrics.total_bytes_encrypted += data.len() as u64;
-        metrics.average_encrypt_time_ms = (metrics.average_encrypt_time_ms * (metrics.total_encryptions - 1) as f64 + duration.as_millis() as f64) / metrics.total_encryptions as f64;
+        metrics.average_encrypt_time_ms = (metrics.average_encrypt_time_ms
+            * (metrics.total_encryptions - 1) as f64
+            + duration.as_millis() as f64)
+            / metrics.total_encryptions as f64;
 
         Ok(result)
     }
 
     async fn decrypt(&self, data: &[u8], context: &EncryptionContext) -> Result<Vec<u8>> {
         let start_time = std::time::Instant::now();
-        
+
         if data.len() < 12 {
-            return Err(crate::error::AppError::SecurityError("Invalid ciphertext length".to_string()).into());
+            return Err(crate::error::AppError::SecurityError(
+                "Invalid ciphertext length".to_string(),
+            )
+            .into());
         }
 
         // Parse key from context
         let key_bytes = hex::decode(&context.key_id)
             .map_err(|_| crate::error::AppError::SecurityError("Invalid key format".to_string()))?;
-        
+
         if key_bytes.len() != 32 {
-            return Err(crate::error::AppError::SecurityError("Invalid key length for ChaCha20".to_string()).into());
+            return Err(crate::error::AppError::SecurityError(
+                "Invalid key length for ChaCha20".to_string(),
+            )
+            .into());
         }
 
         let key = chacha20poly1305::Key::from_slice(&key_bytes);
@@ -562,14 +617,18 @@ impl EncryptionEngine for ChaCha20Poly1305Engine {
         let (nonce_bytes, ciphertext) = data.split_at(12);
         let nonce = chacha20poly1305::Nonce::from_slice(nonce_bytes);
 
-        let plaintext = cipher.decrypt(nonce, ciphertext)
-            .map_err(|e| crate::error::AppError::SecurityError(format!("ChaCha20 decryption failed: {}", e)))?;
+        let plaintext = cipher.decrypt(nonce, ciphertext).map_err(|e| {
+            crate::error::AppError::SecurityError(format!("ChaCha20 decryption failed: {}", e))
+        })?;
 
         let duration = start_time.elapsed();
         let mut metrics = self.metrics.write().await;
         metrics.total_decryptions += 1;
         metrics.total_bytes_decrypted += plaintext.len() as u64;
-        metrics.average_decrypt_time_ms = (metrics.average_decrypt_time_ms * (metrics.total_decryptions - 1) as f64 + duration.as_millis() as f64) / metrics.total_decryptions as f64;
+        metrics.average_decrypt_time_ms = (metrics.average_decrypt_time_ms
+            * (metrics.total_decryptions - 1) as f64
+            + duration.as_millis() as f64)
+            / metrics.total_decryptions as f64;
 
         Ok(plaintext)
     }
@@ -624,19 +683,21 @@ impl PostQuantumEngine {
 impl EncryptionEngine for PostQuantumEngine {
     async fn encrypt(&self, data: &[u8], context: &EncryptionContext) -> Result<Vec<u8>> {
         let start_time = std::time::Instant::now();
-        
+
         // For post-quantum encryption, we use hybrid approach:
         // 1. Generate ephemeral key pair
         // 2. Perform key exchange with recipient's public key
         // 3. Use shared secret to encrypt data with ChaCha20-Poly1305
-        
+
         // Parse recipient's public key from context
-        let recipient_public_key = hex::decode(&context.key_id)
-            .map_err(|_| crate::error::AppError::SecurityError("Invalid recipient public key format".to_string()))?;
+        let recipient_public_key = hex::decode(&context.key_id).map_err(|_| {
+            crate::error::AppError::SecurityError("Invalid recipient public key format".to_string())
+        })?;
 
         // Perform key exchange
-        let (ciphertext, shared_secret) = self.pq_crypto.key_exchange(&recipient_public_key).await?;
-        
+        let (ciphertext, shared_secret) =
+            self.pq_crypto.key_exchange(&recipient_public_key).await?;
+
         // Use shared secret as encryption key
         let key = chacha20poly1305::Key::from_slice(&shared_secret[..32]);
         let cipher = ChaCha20Poly1305::new(key);
@@ -646,9 +707,10 @@ impl EncryptionEngine for PostQuantumEngine {
         let mut rng = ChaCha20Rng::from_entropy();
         rng.fill_bytes(&mut nonce_bytes);
         let nonce = chacha20poly1305::Nonce::from_slice(&nonce_bytes);
-        
-        let encrypted_data = cipher.encrypt(nonce, data)
-            .map_err(|e| crate::error::AppError::SecurityError(format!("Post-quantum encryption failed: {}", e)))?;
+
+        let encrypted_data = cipher.encrypt(nonce, data).map_err(|e| {
+            crate::error::AppError::SecurityError(format!("Post-quantum encryption failed: {}", e))
+        })?;
 
         // Combine key exchange ciphertext, nonce, and encrypted data
         let mut result = Vec::new();
@@ -661,22 +723,31 @@ impl EncryptionEngine for PostQuantumEngine {
         let mut metrics = self.metrics.write().await;
         metrics.total_encryptions += 1;
         metrics.total_bytes_encrypted += data.len() as u64;
-        metrics.average_encrypt_time_ms = (metrics.average_encrypt_time_ms * (metrics.total_encryptions - 1) as f64 + duration.as_millis() as f64) / metrics.total_encryptions as f64;
+        metrics.average_encrypt_time_ms = (metrics.average_encrypt_time_ms
+            * (metrics.total_encryptions - 1) as f64
+            + duration.as_millis() as f64)
+            / metrics.total_encryptions as f64;
 
         Ok(result)
     }
 
     async fn decrypt(&self, data: &[u8], context: &EncryptionContext) -> Result<Vec<u8>> {
         let start_time = std::time::Instant::now();
-        
+
         if data.len() < 4 {
-            return Err(crate::error::AppError::SecurityError("Invalid post-quantum ciphertext length".to_string()).into());
+            return Err(crate::error::AppError::SecurityError(
+                "Invalid post-quantum ciphertext length".to_string(),
+            )
+            .into());
         }
 
         // Parse the combined data
         let ciphertext_len = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
         if data.len() < 4 + ciphertext_len + 12 {
-            return Err(crate::error::AppError::SecurityError("Invalid post-quantum ciphertext format".to_string()).into());
+            return Err(crate::error::AppError::SecurityError(
+                "Invalid post-quantum ciphertext format".to_string(),
+            )
+            .into());
         }
 
         let key_exchange_ciphertext = &data[4..4 + ciphertext_len];
@@ -684,25 +755,33 @@ impl EncryptionEngine for PostQuantumEngine {
         let encrypted_data = &data[4 + ciphertext_len + 12..];
 
         // Parse secret key from context
-        let secret_key = hex::decode(&context.key_id)
-            .map_err(|_| crate::error::AppError::SecurityError("Invalid secret key format".to_string()))?;
+        let secret_key = hex::decode(&context.key_id).map_err(|_| {
+            crate::error::AppError::SecurityError("Invalid secret key format".to_string())
+        })?;
 
         // Decapsulate shared secret
-        let shared_secret = self.pq_crypto.decapsulate(key_exchange_ciphertext, &secret_key).await?;
-        
+        let shared_secret = self
+            .pq_crypto
+            .decapsulate(key_exchange_ciphertext, &secret_key)
+            .await?;
+
         // Use shared secret to decrypt data
         let key = chacha20poly1305::Key::from_slice(&shared_secret[..32]);
         let cipher = ChaCha20Poly1305::new(key);
         let nonce = chacha20poly1305::Nonce::from_slice(nonce_bytes);
 
-        let plaintext = cipher.decrypt(nonce, encrypted_data)
-            .map_err(|e| crate::error::AppError::SecurityError(format!("Post-quantum decryption failed: {}", e)))?;
+        let plaintext = cipher.decrypt(nonce, encrypted_data).map_err(|e| {
+            crate::error::AppError::SecurityError(format!("Post-quantum decryption failed: {}", e))
+        })?;
 
         let duration = start_time.elapsed();
         let mut metrics = self.metrics.write().await;
         metrics.total_decryptions += 1;
         metrics.total_bytes_decrypted += plaintext.len() as u64;
-        metrics.average_decrypt_time_ms = (metrics.average_decrypt_time_ms * (metrics.total_decryptions - 1) as f64 + duration.as_millis() as f64) / metrics.total_decryptions as f64;
+        metrics.average_decrypt_time_ms = (metrics.average_decrypt_time_ms
+            * (metrics.total_decryptions - 1) as f64
+            + duration.as_millis() as f64)
+            / metrics.total_decryptions as f64;
 
         Ok(plaintext)
     }

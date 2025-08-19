@@ -1,5 +1,6 @@
+pub mod audit;
 /// Valkyrie Protocol Security Framework
-/// 
+///
 /// This module provides enterprise-grade security features including:
 /// - Post-quantum cryptography
 /// - Multi-provider authentication
@@ -7,26 +8,24 @@
 /// - Intrusion detection system
 /// - Security audit logging
 /// - Certificate management
-
 pub mod auth;
-pub mod crypto;
-pub mod audit;
-pub mod rbac;
-pub mod ids;
 pub mod cert_manager;
+pub mod crypto;
+pub mod ids;
+pub mod rbac;
 pub mod zero_trust;
 
-pub use auth::*;
-pub use crypto::*;
 pub use audit::*;
-pub use rbac::*;
-pub use ids::*;
+pub use auth::*;
 pub use cert_manager::*;
+pub use crypto::*;
+pub use ids::*;
+pub use rbac::*;
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 // NodeId import removed as unused
@@ -131,23 +130,42 @@ impl SecurityManager {
         let pq_crypto = Arc::new(PostQuantumCrypto::new(config.post_quantum.clone())?);
 
         let mut auth_providers: HashMap<AuthMethod, Box<dyn AuthProvider>> = HashMap::new();
-        let mut encryption_engines: HashMap<EncryptionMethod, Box<dyn EncryptionEngine>> = HashMap::new();
+        let mut encryption_engines: HashMap<EncryptionMethod, Box<dyn EncryptionEngine>> =
+            HashMap::new();
 
         // Initialize default authentication providers
         if config.auth.jwt_enabled {
-            auth_providers.insert(AuthMethod::JWT, Box::new(JwtAuthProvider::new(config.auth.jwt.clone())?));
+            auth_providers.insert(
+                AuthMethod::JWT,
+                Box::new(JwtAuthProvider::new(config.auth.jwt.clone())?),
+            );
         }
         if config.auth.mtls_enabled {
-            auth_providers.insert(AuthMethod::MutualTLS, Box::new(MtlsAuthProvider::new(cert_manager.clone())?));
+            auth_providers.insert(
+                AuthMethod::MutualTLS,
+                Box::new(MtlsAuthProvider::new(cert_manager.clone())?),
+            );
         }
         if config.auth.spiffe_enabled {
-            auth_providers.insert(AuthMethod::SPIFFE, Box::new(SpiffeAuthProvider::new(config.auth.spiffe.clone())?));
+            auth_providers.insert(
+                AuthMethod::SPIFFE,
+                Box::new(SpiffeAuthProvider::new(config.auth.spiffe.clone())?),
+            );
         }
 
         // Initialize encryption engines
-        encryption_engines.insert(EncryptionMethod::AES256GCM, Box::new(Aes256GcmEngine::new()?));
-        encryption_engines.insert(EncryptionMethod::ChaCha20Poly1305, Box::new(ChaCha20Poly1305Engine::new()?));
-        encryption_engines.insert(EncryptionMethod::PostQuantum, Box::new(PostQuantumEngine::new(pq_crypto.clone())?));
+        encryption_engines.insert(
+            EncryptionMethod::AES256GCM,
+            Box::new(Aes256GcmEngine::new()?),
+        );
+        encryption_engines.insert(
+            EncryptionMethod::ChaCha20Poly1305,
+            Box::new(ChaCha20Poly1305Engine::new()?),
+        );
+        encryption_engines.insert(
+            EncryptionMethod::PostQuantum,
+            Box::new(PostQuantumEngine::new(pq_crypto.clone())?),
+        );
 
         Ok(Self {
             auth_providers,
@@ -162,9 +180,17 @@ impl SecurityManager {
     }
 
     /// Authenticate a node using the specified method
-    pub async fn authenticate(&self, method: AuthMethod, credentials: AuthCredentials) -> Result<AuthResult> {
-        let provider = self.auth_providers.get(&method)
-            .ok_or_else(|| crate::error::AppError::SecurityError(format!("Authentication method {:?} not supported", method)))?;
+    pub async fn authenticate(
+        &self,
+        method: AuthMethod,
+        credentials: AuthCredentials,
+    ) -> Result<AuthResult> {
+        let provider = self.auth_providers.get(&method).ok_or_else(|| {
+            crate::error::AppError::SecurityError(format!(
+                "Authentication method {:?} not supported",
+                method
+            ))
+        })?;
 
         let start_time = std::time::Instant::now();
         let result = provider.authenticate(credentials.clone()).await;
@@ -190,25 +216,35 @@ impl SecurityManager {
             ("duration_ms".to_string(), duration.as_millis().to_string()),
             ("method".to_string(), format!("{:?}", method)),
         ]);
-        
+
         self.audit_logger.log_event(audit_entry).await?;
 
         // Check for suspicious activity
         if let Err(ref error) = result {
-            self.ids.report_authentication_failure(
-                credentials.node_id(),
-                credentials.source_ip().unwrap_or_default(),
-                method,
-                error.to_string(),
-            ).await?;
+            self.ids
+                .report_authentication_failure(
+                    credentials.node_id(),
+                    credentials.source_ip().unwrap_or_default(),
+                    method,
+                    error.to_string(),
+                )
+                .await?;
         }
 
         result
     }
 
     /// Authorize an operation using RBAC
-    pub async fn authorize(&self, subject: &AuthSubject, resource: &str, action: &str) -> Result<bool> {
-        let authorized = self.rbac_manager.check_permission(subject, resource, action).await?;
+    pub async fn authorize(
+        &self,
+        subject: &AuthSubject,
+        resource: &str,
+        action: &str,
+    ) -> Result<bool> {
+        let authorized = self
+            .rbac_manager
+            .check_permission(subject, resource, action)
+            .await?;
 
         // Log authorization attempt
         let mut audit_entry = SecurityAuditEntry::new(
@@ -230,33 +266,53 @@ impl SecurityManager {
             ("action".to_string(), action.to_string()),
             ("subject".to_string(), subject.identity.clone()),
         ]);
-        
+
         self.audit_logger.log_event(audit_entry).await?;
 
         if !authorized {
-            self.ids.report_authorization_failure(
-                &subject.node_id,
-                subject.source_ip.as_deref().unwrap_or_default(),
-                resource,
-                action,
-            ).await?;
+            self.ids
+                .report_authorization_failure(
+                    &subject.node_id,
+                    subject.source_ip.as_deref().unwrap_or_default(),
+                    resource,
+                    action,
+                )
+                .await?;
         }
 
         Ok(authorized)
     }
 
     /// Encrypt data using the specified method
-    pub async fn encrypt(&self, method: EncryptionMethod, data: &[u8], context: &EncryptionContext) -> Result<Vec<u8>> {
-        let engine = self.encryption_engines.get(&method)
-            .ok_or_else(|| crate::error::AppError::SecurityError(format!("Encryption method {:?} not supported", method)))?;
+    pub async fn encrypt(
+        &self,
+        method: EncryptionMethod,
+        data: &[u8],
+        context: &EncryptionContext,
+    ) -> Result<Vec<u8>> {
+        let engine = self.encryption_engines.get(&method).ok_or_else(|| {
+            crate::error::AppError::SecurityError(format!(
+                "Encryption method {:?} not supported",
+                method
+            ))
+        })?;
 
         engine.encrypt(data, context).await
     }
 
     /// Decrypt data using the specified method
-    pub async fn decrypt(&self, method: EncryptionMethod, data: &[u8], context: &EncryptionContext) -> Result<Vec<u8>> {
-        let engine = self.encryption_engines.get(&method)
-            .ok_or_else(|| crate::error::AppError::SecurityError(format!("Encryption method {:?} not supported", method)))?;
+    pub async fn decrypt(
+        &self,
+        method: EncryptionMethod,
+        data: &[u8],
+        context: &EncryptionContext,
+    ) -> Result<Vec<u8>> {
+        let engine = self.encryption_engines.get(&method).ok_or_else(|| {
+            crate::error::AppError::SecurityError(format!(
+                "Encryption method {:?} not supported",
+                method
+            ))
+        })?;
 
         engine.decrypt(data, context).await
     }
@@ -264,13 +320,28 @@ impl SecurityManager {
     /// Get security metrics
     pub async fn get_metrics(&self) -> SecurityMetrics {
         SecurityMetrics {
-            authentication_attempts: self.audit_logger.count_events_by_type(SecurityEventType::AuthenticationSuccess).await +
-                                   self.audit_logger.count_events_by_type(SecurityEventType::AuthenticationFailure).await,
-            authentication_failures: self.audit_logger.count_events_by_type(SecurityEventType::AuthenticationFailure).await,
-            authorization_failures: self.audit_logger.count_events_by_type(SecurityEventType::AuthorizationFailure).await,
+            authentication_attempts: self
+                .audit_logger
+                .count_events_by_type(SecurityEventType::AuthenticationSuccess)
+                .await
+                + self
+                    .audit_logger
+                    .count_events_by_type(SecurityEventType::AuthenticationFailure)
+                    .await,
+            authentication_failures: self
+                .audit_logger
+                .count_events_by_type(SecurityEventType::AuthenticationFailure)
+                .await,
+            authorization_failures: self
+                .audit_logger
+                .count_events_by_type(SecurityEventType::AuthorizationFailure)
+                .await,
             intrusion_attempts: self.ids.get_threat_count().await,
             active_certificates: self.cert_manager.get_active_certificate_count().await,
-            certificate_expiring_soon: self.cert_manager.get_expiring_certificate_count(Duration::from_secs(30 * 24 * 3600)).await, // 30 days
+            certificate_expiring_soon: self
+                .cert_manager
+                .get_expiring_certificate_count(Duration::from_secs(30 * 24 * 3600))
+                .await, // 30 days
         }
     }
 

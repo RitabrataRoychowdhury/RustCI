@@ -1,7 +1,7 @@
 //! Client statistics for the Valkyrie Protocol API
 
-use serde::{Deserialize, Serialize};
 use crate::valkyrie::core::EngineStats;
+use serde::{Deserialize, Serialize};
 
 /// Client statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,7 +16,11 @@ pub struct ClientStats {
 
 impl ClientStats {
     /// Create new client stats
-    pub fn new(active_connections: usize, handlers_registered: usize, engine_stats: EngineStats) -> Self {
+    pub fn new(
+        active_connections: usize,
+        handlers_registered: usize,
+        engine_stats: EngineStats,
+    ) -> Self {
         Self {
             active_connections,
             handlers_registered,

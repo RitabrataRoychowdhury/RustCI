@@ -16,8 +16,8 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::core::cluster::node_registry::NodeRegistry;
-use crate::core::runners::runner_pool::RunnerPoolManager;
 use crate::core::runners::runner_migration::RunnerMigrationService;
+use crate::core::runners::runner_pool::RunnerPoolManager;
 use crate::domain::entities::{NodeId, RunnerId};
 use crate::error::{AppError, Result};
 
@@ -102,7 +102,10 @@ pub enum ShutdownAction {
     /// Send shutdown notifications
     SendNotifications,
     /// Custom action
-    Custom { name: String, parameters: HashMap<String, String> },
+    Custom {
+        name: String,
+        parameters: HashMap<String, String>,
+    },
 }
 
 /// Cleanup strategies
@@ -303,28 +306,31 @@ pub enum ResourceType {
 pub trait CoordinatedShutdownService: Send + Sync {
     /// Start the shutdown service
     async fn start(&self) -> Result<()>;
-    
+
     /// Stop the shutdown service
     async fn stop(&self) -> Result<()>;
-    
+
     /// Request coordinated shutdown
     async fn request_shutdown(&self, request: ShutdownRequest) -> Result<Uuid>;
-    
+
     /// Get shutdown status
     async fn get_shutdown_status(&self, shutdown_id: Uuid) -> Result<ShutdownStatus>;
-    
+
     /// Cancel ongoing shutdown
     async fn cancel_shutdown(&self, shutdown_id: Uuid) -> Result<()>;
-    
+
     /// Register lifecycle event listener
-    async fn register_event_listener(&self, listener: Box<dyn LifecycleEventListener>) -> Result<()>;
-    
+    async fn register_event_listener(
+        &self,
+        listener: Box<dyn LifecycleEventListener>,
+    ) -> Result<()>;
+
     /// Propagate lifecycle event
     async fn propagate_event(&self, event: LifecycleEvent) -> Result<()>;
-    
+
     /// Register resource for cleanup
     async fn register_cleanup_resource(&self, resource: ResourceCleanup) -> Result<()>;
-    
+
     /// Get active shutdowns
     async fn get_active_shutdowns(&self) -> Result<Vec<ShutdownStatus>>;
 }
@@ -334,7 +340,7 @@ pub trait CoordinatedShutdownService: Send + Sync {
 pub trait LifecycleEventListener: Send + Sync {
     /// Handle lifecycle event
     async fn on_event(&self, event: &LifecycleEvent) -> Result<()>;
-    
+
     /// Get listener name
     fn name(&self) -> &str;
 }
@@ -370,7 +376,7 @@ impl DefaultCoordinatedShutdownService {
         migration_service: Option<Arc<dyn RunnerMigrationService>>,
     ) -> Self {
         let (event_broadcaster, _) = broadcast::channel(1000);
-        
+
         Self {
             config,
             node_registry,
@@ -383,19 +389,19 @@ impl DefaultCoordinatedShutdownService {
             running: Arc::new(Mutex::new(false)),
         }
     }
-    
+
     /// Start shutdown monitoring task
     async fn start_shutdown_monitoring(&self) -> Result<()> {
         let active_shutdowns = self.active_shutdowns.clone();
         let config = self.config.clone();
         let running = self.running.clone();
-        
+
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(10));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Check if still running
                 {
                     let running_guard = running.lock().await;
@@ -403,39 +409,40 @@ impl DefaultCoordinatedShutdownService {
                         break;
                     }
                 }
-                
+
                 // Check for timed out shutdowns
                 let now = Utc::now();
                 let mut shutdowns = active_shutdowns.write().await;
                 let mut timed_out_shutdowns = Vec::new();
-                
+
                 for (shutdown_id, status) in shutdowns.iter_mut() {
                     if matches!(status.status, ShutdownState::InProgress) {
                         // Check if shutdown has timed out (simplified check)
                         let elapsed = now - status.last_updated;
-                        if elapsed > chrono::Duration::seconds(config.job_completion_timeout as i64) {
+                        if elapsed > chrono::Duration::seconds(config.job_completion_timeout as i64)
+                        {
                             status.status = ShutdownState::TimedOut;
                             status.last_updated = now;
                             timed_out_shutdowns.push(*shutdown_id);
                         }
                     }
                 }
-                
+
                 for shutdown_id in timed_out_shutdowns {
                     warn!("Shutdown {} timed out", shutdown_id);
                 }
             }
         });
-        
+
         Ok(())
     }
-    
+
     /// Start event propagation task
     async fn start_event_propagation(&self) -> Result<()> {
         let mut event_receiver = self.event_broadcaster.subscribe();
         let event_listeners = self.event_listeners.clone();
         let running = self.running.clone();
-        
+
         tokio::spawn(async move {
             loop {
                 // Check if still running
@@ -445,12 +452,12 @@ impl DefaultCoordinatedShutdownService {
                         break;
                     }
                 }
-                
+
                 // Wait for events
                 match event_receiver.recv().await {
                     Ok(event) => {
                         let listeners = event_listeners.read().await;
-                        
+
                         // Propagate event to all listeners
                         for listener in listeners.iter() {
                             if let Err(e) = listener.on_event(&event).await {
@@ -468,10 +475,10 @@ impl DefaultCoordinatedShutdownService {
                 }
             }
         });
-        
+
         Ok(())
     }
-    
+
     /// Execute shutdown phases
     async fn execute_shutdown_phases(&self, request: &ShutdownRequest) -> Result<ShutdownStatus> {
         let mut status = ShutdownStatus {
@@ -488,29 +495,33 @@ impl DefaultCoordinatedShutdownService {
             last_updated: Utc::now(),
             errors: Vec::new(),
         };
-        
+
         let total_phases = self.config.shutdown_phases.len();
-        
+
         for (phase_index, phase) in self.config.shutdown_phases.iter().enumerate() {
             status.current_phase = phase.name.clone();
             status.phase_progress = 0.0;
             status.overall_progress = phase_index as f64 / total_phases as f64;
             status.last_updated = Utc::now();
-            
+
             // Update status
             {
                 let mut shutdowns = self.active_shutdowns.write().await;
                 shutdowns.insert(request.shutdown_id, status.clone());
             }
-            
-            info!("Executing shutdown phase: {} for {}", phase.name, request.shutdown_id);
-            
+
+            info!(
+                "Executing shutdown phase: {} for {}",
+                phase.name, request.shutdown_id
+            );
+
             // Execute phase with timeout
             let phase_result = timeout(
                 Duration::from_secs(phase.timeout),
                 self.execute_phase(phase, request, &mut status),
-            ).await;
-            
+            )
+            .await;
+
             match phase_result {
                 Ok(Ok(())) => {
                     status.phase_progress = 1.0;
@@ -518,29 +529,38 @@ impl DefaultCoordinatedShutdownService {
                 }
                 Ok(Err(e)) => {
                     error!("Shutdown phase {} failed: {}", phase.name, e);
-                    status.errors.push(format!("Phase {} failed: {}", phase.name, e));
+                    status
+                        .errors
+                        .push(format!("Phase {} failed: {}", phase.name, e));
                     status.status = ShutdownState::Failed;
                     return Ok(status);
                 }
                 Err(_) => {
                     error!("Shutdown phase {} timed out", phase.name);
-                    status.errors.push(format!("Phase {} timed out", phase.name));
+                    status
+                        .errors
+                        .push(format!("Phase {} timed out", phase.name));
                     status.status = ShutdownState::TimedOut;
                     return Ok(status);
                 }
             }
         }
-        
+
         status.overall_progress = 1.0;
         status.status = ShutdownState::Completed;
         status.last_updated = Utc::now();
-        
+
         info!("Shutdown {} completed successfully", request.shutdown_id);
         Ok(status)
     }
-    
+
     /// Execute a single shutdown phase
-    async fn execute_phase(&self, phase: &ShutdownPhase, request: &ShutdownRequest, status: &mut ShutdownStatus) -> Result<()> {
+    async fn execute_phase(
+        &self,
+        phase: &ShutdownPhase,
+        request: &ShutdownRequest,
+        status: &mut ShutdownStatus,
+    ) -> Result<()> {
         match phase.name.as_str() {
             "prepare" => self.execute_prepare_phase(request, status).await,
             "drain" => self.execute_drain_phase(request, status).await,
@@ -553,24 +573,29 @@ impl DefaultCoordinatedShutdownService {
             }
         }
     }
-    
+
     /// Execute prepare phase
-    async fn execute_prepare_phase(&self, request: &ShutdownRequest, status: &mut ShutdownStatus) -> Result<()> {
+    async fn execute_prepare_phase(
+        &self,
+        request: &ShutdownRequest,
+        status: &mut ShutdownStatus,
+    ) -> Result<()> {
         // Send shutdown notifications
         let event = LifecycleEvent::ShutdownInitiated {
             shutdown_id: request.shutdown_id,
             target: request.target.clone(),
             timestamp: Utc::now(),
         };
-        
+
         if let Err(e) = self.event_broadcaster.send(event) {
             warn!("Failed to send shutdown initiated event: {}", e);
         }
-        
+
         // Count running jobs
         match &request.target {
             ShutdownTarget::Runner { runner_id } => {
-                if let Ok(Some(runner_registration)) = self.runner_pool.get_runner(*runner_id).await {
+                if let Ok(Some(runner_registration)) = self.runner_pool.get_runner(*runner_id).await
+                {
                     status.running_jobs = runner_registration.assigned_jobs.len() as u32;
                 }
             }
@@ -589,59 +614,75 @@ impl DefaultCoordinatedShutdownService {
                 status.running_jobs = pool_stats.busy_runners as u32;
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Execute drain phase
-    async fn execute_drain_phase(&self, request: &ShutdownRequest, status: &mut ShutdownStatus) -> Result<()> {
+    async fn execute_drain_phase(
+        &self,
+        request: &ShutdownRequest,
+        status: &mut ShutdownStatus,
+    ) -> Result<()> {
         // Stop accepting new jobs (implementation would mark runners as draining)
         info!("Draining jobs for shutdown {}", request.shutdown_id);
-        
+
         // Wait for running jobs to complete
         let start_time = std::time::Instant::now();
         let timeout_duration = Duration::from_secs(self.config.job_completion_timeout);
-        
+
         while start_time.elapsed() < timeout_duration {
             // Check remaining running jobs
             let remaining_jobs = self.count_running_jobs(&request.target).await?;
-            
+
             if remaining_jobs == 0 {
                 status.completed_jobs = status.running_jobs;
                 status.running_jobs = 0;
                 break;
             }
-            
+
             status.running_jobs = remaining_jobs;
             status.completed_jobs = status.running_jobs.saturating_sub(remaining_jobs);
-            status.phase_progress = status.completed_jobs as f64 / (status.completed_jobs + status.running_jobs) as f64;
-            
+            status.phase_progress =
+                status.completed_jobs as f64 / (status.completed_jobs + status.running_jobs) as f64;
+
             // Update status
             {
                 let mut shutdowns = self.active_shutdowns.write().await;
                 shutdowns.insert(request.shutdown_id, status.clone());
             }
-            
+
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
-        
+
         Ok(())
     }
-    
+
     /// Execute migrate phase
-    async fn execute_migrate_phase(&self, request: &ShutdownRequest, status: &mut ShutdownStatus) -> Result<()> {
+    async fn execute_migrate_phase(
+        &self,
+        request: &ShutdownRequest,
+        status: &mut ShutdownStatus,
+    ) -> Result<()> {
         if !self.config.enable_job_migration {
             return Ok(());
         }
-        
+
         if let Some(migration_service) = &self.migration_service {
             match &request.target {
                 ShutdownTarget::Runner { runner_id } => {
                     // Migrate jobs from this runner
-                    match migration_service.migrate_jobs_from_failed_runner(*runner_id).await {
+                    match migration_service
+                        .migrate_jobs_from_failed_runner(*runner_id)
+                        .await
+                    {
                         Ok(migrated_jobs) => {
                             status.migrated_jobs = migrated_jobs.len() as u32;
-                            info!("Migrated {} jobs from runner {}", migrated_jobs.len(), runner_id);
+                            info!(
+                                "Migrated {} jobs from runner {}",
+                                migrated_jobs.len(),
+                                runner_id
+                            );
                         }
                         Err(e) => {
                             warn!("Failed to migrate jobs from runner {}: {}", runner_id, e);
@@ -651,23 +692,30 @@ impl DefaultCoordinatedShutdownService {
                 }
                 _ => {
                     // For other targets, migration would be more complex
-                    debug!("Job migration not implemented for target type: {:?}", request.target);
+                    debug!(
+                        "Job migration not implemented for target type: {:?}",
+                        request.target
+                    );
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Execute cleanup phase
-    async fn execute_cleanup_phase(&self, _request: &ShutdownRequest, status: &mut ShutdownStatus) -> Result<()> {
+    async fn execute_cleanup_phase(
+        &self,
+        _request: &ShutdownRequest,
+        status: &mut ShutdownStatus,
+    ) -> Result<()> {
         let cleanup_resources = self.cleanup_resources.read().await;
         let mut cleaned_count = 0;
-        
+
         // Sort resources by priority (highest first)
         let mut sorted_resources: Vec<_> = cleanup_resources.iter().collect();
         sorted_resources.sort_by(|a, b| b.priority.cmp(&a.priority));
-        
+
         for resource in sorted_resources {
             match self.cleanup_resource(resource).await {
                 Ok(()) => {
@@ -676,17 +724,24 @@ impl DefaultCoordinatedShutdownService {
                 }
                 Err(e) => {
                     warn!("Failed to cleanup resource {}: {}", resource.resource_id, e);
-                    status.errors.push(format!("Cleanup failed for {}: {}", resource.resource_id, e));
+                    status.errors.push(format!(
+                        "Cleanup failed for {}: {}",
+                        resource.resource_id, e
+                    ));
                 }
             }
         }
-        
+
         status.resources_cleaned = cleaned_count;
         Ok(())
     }
-    
+
     /// Execute finalize phase
-    async fn execute_finalize_phase(&self, request: &ShutdownRequest, _status: &mut ShutdownStatus) -> Result<()> {
+    async fn execute_finalize_phase(
+        &self,
+        request: &ShutdownRequest,
+        _status: &mut ShutdownStatus,
+    ) -> Result<()> {
         // Send shutdown completed event
         let event = LifecycleEvent::ShutdownCompleted {
             shutdown_id: request.shutdown_id,
@@ -694,21 +749,22 @@ impl DefaultCoordinatedShutdownService {
             duration: Duration::from_secs(0), // Would calculate actual duration
             timestamp: Utc::now(),
         };
-        
+
         if let Err(e) = self.event_broadcaster.send(event) {
             warn!("Failed to send shutdown completed event: {}", e);
         }
-        
+
         // Final cleanup and status update
         info!("Finalized shutdown {}", request.shutdown_id);
         Ok(())
     }
-    
+
     /// Count running jobs for a target
     async fn count_running_jobs(&self, target: &ShutdownTarget) -> Result<u32> {
         match target {
             ShutdownTarget::Runner { runner_id } => {
-                if let Ok(Some(runner_registration)) = self.runner_pool.get_runner(*runner_id).await {
+                if let Ok(Some(runner_registration)) = self.runner_pool.get_runner(*runner_id).await
+                {
                     Ok(runner_registration.assigned_jobs.len() as u32)
                 } else {
                     Ok(0)
@@ -728,7 +784,7 @@ impl DefaultCoordinatedShutdownService {
             }
         }
     }
-    
+
     /// Cleanup a single resource
     async fn cleanup_resource(&self, resource: &ResourceCleanup) -> Result<()> {
         match &resource.resource_type {
@@ -768,7 +824,7 @@ impl DefaultCoordinatedShutdownService {
                 // Implementation would call custom cleanup
             }
         }
-        
+
         // Simulate cleanup time
         tokio::time::sleep(Duration::from_millis(100)).await;
         Ok(())
@@ -780,36 +836,41 @@ impl CoordinatedShutdownService for DefaultCoordinatedShutdownService {
     async fn start(&self) -> Result<()> {
         let mut running = self.running.lock().await;
         if *running {
-            return Err(AppError::BadRequest("Shutdown service is already running".to_string()));
+            return Err(AppError::BadRequest(
+                "Shutdown service is already running".to_string(),
+            ));
         }
-        
+
         *running = true;
-        
+
         // Start monitoring tasks
         self.start_shutdown_monitoring().await?;
         self.start_event_propagation().await?;
-        
+
         info!("Coordinated shutdown service started");
         Ok(())
     }
-    
+
     async fn stop(&self) -> Result<()> {
         let mut running = self.running.lock().await;
         if !*running {
             return Ok(());
         }
-        
+
         *running = false;
-        
+
         info!("Coordinated shutdown service stopped");
         Ok(())
     }
-    
+
     async fn request_shutdown(&self, request: ShutdownRequest) -> Result<Uuid> {
         let shutdown_id = request.shutdown_id;
-        
-        info!("Received shutdown request: {} for {:?}", shutdown_id, request.target);
-        
+
+        info!(
+            "Received shutdown request: {} for {:?}",
+            shutdown_id, request.target
+        );
+
         // Check if we're at the concurrent shutdown limit
         {
             let shutdowns = self.active_shutdowns.read().await;
@@ -817,14 +878,14 @@ impl CoordinatedShutdownService for DefaultCoordinatedShutdownService {
                 .values()
                 .filter(|s| matches!(s.status, ShutdownState::InProgress))
                 .count();
-            
+
             if active_count >= self.config.max_concurrent_shutdowns as usize {
                 return Err(AppError::ResourceExhausted(
-                    "Maximum concurrent shutdowns reached".to_string()
+                    "Maximum concurrent shutdowns reached".to_string(),
                 ));
             }
         }
-        
+
         // Execute shutdown in background
         let service = DefaultCoordinatedShutdownService {
             config: self.config.clone(),
@@ -837,7 +898,7 @@ impl CoordinatedShutdownService for DefaultCoordinatedShutdownService {
             cleanup_resources: self.cleanup_resources.clone(),
             running: self.running.clone(),
         };
-        
+
         tokio::spawn(async move {
             match service.execute_shutdown_phases(&request).await {
                 Ok(final_status) => {
@@ -860,16 +921,16 @@ impl CoordinatedShutdownService for DefaultCoordinatedShutdownService {
                         last_updated: Utc::now(),
                         errors: vec![e.to_string()],
                     };
-                    
+
                     let mut shutdowns = service.active_shutdowns.write().await;
                     shutdowns.insert(shutdown_id, failed_status);
                 }
             }
         });
-        
+
         Ok(shutdown_id)
     }
-    
+
     async fn get_shutdown_status(&self, shutdown_id: Uuid) -> Result<ShutdownStatus> {
         let shutdowns = self.active_shutdowns.read().await;
         shutdowns
@@ -877,10 +938,10 @@ impl CoordinatedShutdownService for DefaultCoordinatedShutdownService {
             .cloned()
             .ok_or_else(|| AppError::NotFound(format!("Shutdown {} not found", shutdown_id)))
     }
-    
+
     async fn cancel_shutdown(&self, shutdown_id: Uuid) -> Result<()> {
         let mut shutdowns = self.active_shutdowns.write().await;
-        
+
         if let Some(status) = shutdowns.get_mut(&shutdown_id) {
             if matches!(status.status, ShutdownState::InProgress) {
                 status.status = ShutdownState::Cancelled;
@@ -894,29 +955,35 @@ impl CoordinatedShutdownService for DefaultCoordinatedShutdownService {
                 )))
             }
         } else {
-            Err(AppError::NotFound(format!("Shutdown {} not found", shutdown_id)))
+            Err(AppError::NotFound(format!(
+                "Shutdown {} not found",
+                shutdown_id
+            )))
         }
     }
-    
-    async fn register_event_listener(&self, listener: Box<dyn LifecycleEventListener>) -> Result<()> {
+
+    async fn register_event_listener(
+        &self,
+        listener: Box<dyn LifecycleEventListener>,
+    ) -> Result<()> {
         let mut listeners = self.event_listeners.write().await;
         listeners.push(listener);
         Ok(())
     }
-    
+
     async fn propagate_event(&self, event: LifecycleEvent) -> Result<()> {
         if let Err(e) = self.event_broadcaster.send(event) {
             warn!("Failed to propagate event: {}", e);
         }
         Ok(())
     }
-    
+
     async fn register_cleanup_resource(&self, resource: ResourceCleanup) -> Result<()> {
         let mut resources = self.cleanup_resources.write().await;
         resources.push(resource);
         Ok(())
     }
-    
+
     async fn get_active_shutdowns(&self) -> Result<Vec<ShutdownStatus>> {
         let shutdowns = self.active_shutdowns.read().await;
         Ok(shutdowns
@@ -932,26 +999,28 @@ mod tests {
     use super::*;
     use crate::core::cluster::node_registry::tests::create_test_registry;
     use crate::core::DefaultRunnerPoolManager;
-    
+
     fn create_test_shutdown_service() -> DefaultCoordinatedShutdownService {
         let config = CoordinatedShutdownConfig::default();
         let node_registry = Arc::new(create_test_registry());
         let runner_pool = Arc::new(DefaultRunnerPoolManager::with_default_config());
-        
+
         DefaultCoordinatedShutdownService::new(config, node_registry, runner_pool, None)
     }
-    
+
     #[tokio::test]
     async fn test_shutdown_service_creation() {
         let service = create_test_shutdown_service();
         assert!(!*service.running.lock().await);
     }
-    
+
     #[tokio::test]
     async fn test_shutdown_request() {
         let request = ShutdownRequest {
             shutdown_id: Uuid::new_v4(),
-            target: ShutdownTarget::Runner { runner_id: Uuid::new_v4() },
+            target: ShutdownTarget::Runner {
+                runner_id: Uuid::new_v4(),
+            },
             shutdown_type: ShutdownType::Graceful,
             reason: "Test shutdown".to_string(),
             requested_by: "test".to_string(),
@@ -959,61 +1028,70 @@ mod tests {
             timeout: Duration::from_secs(300),
             force_on_timeout: false,
         };
-        
+
         assert!(matches!(request.shutdown_type, ShutdownType::Graceful));
         assert_eq!(request.reason, "Test shutdown");
         assert!(!request.force_on_timeout);
     }
-    
+
     #[tokio::test]
     async fn test_shutdown_phases() {
         let config = CoordinatedShutdownConfig::default();
         assert_eq!(config.shutdown_phases.len(), 5);
-        
+
         let prepare_phase = &config.shutdown_phases[0];
         assert_eq!(prepare_phase.name, "prepare");
         assert_eq!(prepare_phase.timeout, 30);
-        
+
         let drain_phase = &config.shutdown_phases[1];
         assert_eq!(drain_phase.name, "drain");
         assert_eq!(drain_phase.timeout, 180);
     }
-    
+
     #[tokio::test]
     async fn test_lifecycle_events() {
         let runner_id = Uuid::new_v4();
         let node_id = Uuid::new_v4();
-        
+
         let event = LifecycleEvent::RunnerStarted {
             runner_id,
             node_id,
             timestamp: Utc::now(),
         };
-        
+
         match event {
-            LifecycleEvent::RunnerStarted { runner_id: r_id, node_id: n_id, .. } => {
+            LifecycleEvent::RunnerStarted {
+                runner_id: r_id,
+                node_id: n_id,
+                ..
+            } => {
                 assert_eq!(r_id, runner_id);
                 assert_eq!(n_id, node_id);
             }
             _ => panic!("Unexpected event type"),
         }
     }
-    
+
     #[tokio::test]
     async fn test_resource_cleanup() {
         let resource = ResourceCleanup {
-            resource_type: ResourceType::TempFiles { path: "/tmp/test".to_string() },
+            resource_type: ResourceType::TempFiles {
+                path: "/tmp/test".to_string(),
+            },
             resource_id: "temp-files-1".to_string(),
             strategy: CleanupStrategy::DeleteTempFiles,
             priority: 100,
             estimated_time: Duration::from_secs(5),
         };
-        
+
         assert_eq!(resource.resource_id, "temp-files-1");
         assert_eq!(resource.priority, 100);
-        assert!(matches!(resource.strategy, CleanupStrategy::DeleteTempFiles));
+        assert!(matches!(
+            resource.strategy,
+            CleanupStrategy::DeleteTempFiles
+        ));
     }
-    
+
     #[tokio::test]
     async fn test_shutdown_status() {
         let shutdown_id = Uuid::new_v4();
@@ -1031,7 +1109,7 @@ mod tests {
             last_updated: Utc::now(),
             errors: Vec::new(),
         };
-        
+
         assert_eq!(status.shutdown_id, shutdown_id);
         assert_eq!(status.current_phase, "drain");
         assert_eq!(status.phase_progress, 0.5);

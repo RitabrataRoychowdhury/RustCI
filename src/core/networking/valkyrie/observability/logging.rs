@@ -1,14 +1,14 @@
 // Structured logging with correlation IDs
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio::time::interval;
-use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
-use super::{ObservabilityError, CorrelationId};
+use super::{CorrelationId, ObservabilityError};
 
 /// Structured logger with correlation ID support
 pub struct StructuredLogger {
@@ -139,18 +139,16 @@ impl StructuredLogger {
 
             while *running_flag.read().await {
                 cleanup_interval.tick().await;
-                
+
                 let current_time = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
                     .as_secs();
 
                 let mut logs_guard = logs.write().await;
-                
+
                 // Remove old entries
-                logs_guard.retain(|entry| {
-                    current_time - entry.timestamp < retention_seconds
-                });
+                logs_guard.retain(|entry| current_time - entry.timestamp < retention_seconds);
 
                 // Limit total entries
                 if logs_guard.len() > max_entries {
@@ -197,7 +195,8 @@ impl StructuredLogger {
             timestamp,
             level,
             message: message.to_string(),
-            correlation_id: context.get("correlation_id")
+            correlation_id: context
+                .get("correlation_id")
                 .and_then(|v| v.as_str())
                 .and_then(|s| s.parse().ok()),
             context,
@@ -375,7 +374,8 @@ impl StructuredLogger {
             .unwrap_or_default()
             .format("%Y-%m-%d %H:%M:%S");
 
-        let correlation_part = entry.correlation_id
+        let correlation_part = entry
+            .correlation_id
             .map(|id| format!(" [{}]", id))
             .unwrap_or_default();
 
@@ -386,10 +386,7 @@ impl StructuredLogger {
         } else {
             println!(
                 "{} [{}]{} {}",
-                timestamp,
-                level_str,
-                correlation_part,
-                entry.message
+                timestamp, level_str, correlation_part, entry.message
             );
         }
     }
@@ -403,11 +400,11 @@ impl StructuredLogger {
 
         for entry in logs.iter() {
             *level_counts.entry(entry.level).or_insert(0) += 1;
-            
+
             if let Some(ref component) = entry.component {
                 *component_counts.entry(component.clone()).or_insert(0) += 1;
             }
-            
+
             if let Some(correlation_id) = entry.correlation_id {
                 *correlation_counts.entry(correlation_id).or_insert(0) += 1;
             }

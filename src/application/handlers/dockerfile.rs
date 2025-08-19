@@ -620,19 +620,19 @@ mod tests {
 
     #[test]
     fn test_generate_dockerfile_request_validation() {
-    let request = GenerateDockerfileRequest {
-        repository_id: 123,
-        repository_name: "test-repo".to_string(),
-        project_type: Some("Rust".to_string()), // ✅ convert to String
-        custom_options: None,
-        auto_validate: Some(true),
-    };
+        let request = GenerateDockerfileRequest {
+            repository_id: 123,
+            repository_name: "test-repo".to_string(),
+            project_type: Some("Rust".to_string()), // ✅ convert to String
+            custom_options: None,
+            auto_validate: Some(true),
+        };
 
-    assert!(!request.repository_name.trim().is_empty());
-    assert_eq!(request.repository_id, 123);
-    assert_eq!(request.project_type, Some("Rust".to_string())); // ✅ match String
-    assert_eq!(request.auto_validate, Some(true));
-}
+        assert!(!request.repository_name.trim().is_empty());
+        assert_eq!(request.repository_id, 123);
+        assert_eq!(request.project_type, Some("Rust".to_string())); // ✅ match String
+        assert_eq!(request.auto_validate, Some(true));
+    }
 
     #[test]
     fn test_approve_dockerfile_request() {

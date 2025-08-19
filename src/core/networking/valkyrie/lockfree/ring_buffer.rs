@@ -3,7 +3,7 @@
 //! This module provides lock-free ring buffer implementations optimized for
 //! high-throughput streaming scenarios in the Valkyrie Protocol.
 
-use super::{LockFreeMetrics, LockFreeConfig, CacheLinePadded};
+use super::{CacheLinePadded, LockFreeConfig, LockFreeMetrics};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Errors that can occur during ring buffer operations
@@ -46,31 +46,31 @@ pub struct RingBufferStats {
 pub trait LockFreeRingBuffer<T>: Send + Sync {
     /// Write an item to the buffer
     fn write(&self, item: T) -> Result<(), RingBufferError>;
-    
+
     /// Read an item from the buffer
     fn read(&self) -> Result<T, RingBufferError>;
-    
+
     /// Try to write without blocking
     fn try_write(&self, item: T) -> Result<(), RingBufferError>;
-    
+
     /// Try to read without blocking
     fn try_read(&self) -> Result<T, RingBufferError>;
-    
+
     /// Check if buffer is empty
     fn is_empty(&self) -> bool;
-    
+
     /// Check if buffer is full
     fn is_full(&self) -> bool;
-    
+
     /// Get current size (approximate)
     fn len(&self) -> usize;
-    
+
     /// Get buffer capacity
     fn capacity(&self) -> usize;
-    
+
     /// Get buffer statistics
     fn stats(&self) -> RingBufferStats;
-    
+
     /// Clear all items from the buffer
     fn clear(&self);
 }
@@ -95,7 +95,7 @@ impl<T> SpscRingBuffer<T> {
         if !capacity.is_power_of_two() {
             return Err(RingBufferError::InvalidCapacity { capacity });
         }
-        
+
         Ok(Self {
             buffer: (0..capacity).map(|_| None).collect(),
             write_index: CacheLinePadded::new(AtomicUsize::new(0)),
@@ -110,19 +110,21 @@ impl<T: Send + Sync> LockFreeRingBuffer<T> for SpscRingBuffer<T> {
     fn write(&self, item: T) -> Result<(), RingBufferError> {
         let write_idx = self.write_index.load(Ordering::Relaxed);
         let next_write_idx = (write_idx + 1) & self.mask;
-        
+
         // Check if buffer is full
         if next_write_idx == self.read_index.load(Ordering::Acquire) {
             self.metrics.record_failure();
-            return Err(RingBufferError::Full { capacity: self.mask + 1 });
+            return Err(RingBufferError::Full {
+                capacity: self.mask + 1,
+            });
         }
-        
+
         // Safety: We're the only producer, so this index is safe to write
         unsafe {
             let buffer_ptr = self.buffer.as_ptr() as *mut Option<T>;
             (*buffer_ptr.add(write_idx)) = Some(item);
         }
-        
+
         // Update write index with release ordering to ensure visibility
         self.write_index.store(next_write_idx, Ordering::Release);
         self.metrics.record_success();
@@ -131,22 +133,23 @@ impl<T: Send + Sync> LockFreeRingBuffer<T> for SpscRingBuffer<T> {
 
     fn read(&self) -> Result<T, RingBufferError> {
         let read_idx = self.read_index.load(Ordering::Relaxed);
-        
+
         // Check if buffer is empty
         if read_idx == self.write_index.load(Ordering::Acquire) {
             self.metrics.record_failure();
             return Err(RingBufferError::Empty);
         }
-        
+
         // Safety: We're the only consumer, so this index is safe to read
         let item = unsafe {
             let buffer_ptr = self.buffer.as_ptr() as *mut Option<T>;
             (*buffer_ptr.add(read_idx)).take()
         };
-        
+
         if let Some(item) = item {
             // Update read index with release ordering
-            self.read_index.store((read_idx + 1) & self.mask, Ordering::Release);
+            self.read_index
+                .store((read_idx + 1) & self.mask, Ordering::Release);
             self.metrics.record_success();
             Ok(item)
         } else {
@@ -186,7 +189,7 @@ impl<T: Send + Sync> LockFreeRingBuffer<T> for SpscRingBuffer<T> {
     fn stats(&self) -> RingBufferStats {
         let size = self.len();
         let capacity = self.capacity();
-        
+
         RingBufferStats {
             size,
             capacity,
@@ -248,11 +251,9 @@ impl<T> MpmcRingBuffer<T> {
         if !capacity.is_power_of_two() {
             return Err(RingBufferError::InvalidCapacity { capacity });
         }
-        
-        let buffer = (0..capacity)
-            .map(|i| AtomicSlot::new(i))
-            .collect();
-        
+
+        let buffer = (0..capacity).map(|i| AtomicSlot::new(i)).collect();
+
         Ok(Self {
             buffer,
             write_index: CacheLinePadded::new(AtomicUsize::new(0)),
@@ -294,7 +295,7 @@ impl<T: Send + Sync> LockFreeRingBuffer<T> for MpmcRingBuffer<T> {
                     unsafe {
                         *slot.data.get() = Some(item);
                     }
-                    
+
                     // Update sequence to signal data is ready
                     slot.sequence.store(write_idx + 1, Ordering::Release);
                     self.metrics.record_success();
@@ -303,7 +304,9 @@ impl<T: Send + Sync> LockFreeRingBuffer<T> for MpmcRingBuffer<T> {
             } else if sequence < write_idx {
                 // Buffer is full
                 self.metrics.record_failure();
-                return Err(RingBufferError::Full { capacity: self.mask + 1 });
+                return Err(RingBufferError::Full {
+                    capacity: self.mask + 1,
+                });
             }
 
             retries += 1;
@@ -338,13 +341,12 @@ impl<T: Send + Sync> LockFreeRingBuffer<T> for MpmcRingBuffer<T> {
 
                 if cas_result.is_ok() {
                     // We claimed the slot, now read the data
-                    let item = unsafe {
-                        (*slot.data.get()).take()
-                    };
-                    
+                    let item = unsafe { (*slot.data.get()).take() };
+
                     if let Some(item) = item {
                         // Update sequence to signal slot is available
-                        slot.sequence.store(read_idx + self.mask + 1, Ordering::Release);
+                        slot.sequence
+                            .store(read_idx + self.mask + 1, Ordering::Release);
                         self.metrics.record_success();
                         return Ok(item);
                     }
@@ -382,7 +384,7 @@ impl<T: Send + Sync> LockFreeRingBuffer<T> for MpmcRingBuffer<T> {
                 unsafe {
                     *slot.data.get() = Some(item);
                 }
-                
+
                 // Update sequence to signal data is ready
                 slot.sequence.store(write_idx + 1, Ordering::Release);
                 self.metrics.record_success();
@@ -392,7 +394,9 @@ impl<T: Send + Sync> LockFreeRingBuffer<T> for MpmcRingBuffer<T> {
 
         self.metrics.record_failure();
         if sequence < write_idx {
-            Err(RingBufferError::Full { capacity: self.mask + 1 })
+            Err(RingBufferError::Full {
+                capacity: self.mask + 1,
+            })
         } else {
             Err(RingBufferError::MaxRetriesExceeded { retries: 1 })
         }
@@ -416,13 +420,12 @@ impl<T: Send + Sync> LockFreeRingBuffer<T> for MpmcRingBuffer<T> {
 
             if cas_result.is_ok() {
                 // We claimed the slot, now read the data
-                let item = unsafe {
-                    (*slot.data.get()).take()
-                };
-                
+                let item = unsafe { (*slot.data.get()).take() };
+
                 if let Some(item) = item {
                     // Update sequence to signal slot is available
-                    slot.sequence.store(read_idx + self.mask + 1, Ordering::Release);
+                    slot.sequence
+                        .store(read_idx + self.mask + 1, Ordering::Release);
                     self.metrics.record_success();
                     return Ok(item);
                 }
@@ -462,7 +465,7 @@ impl<T: Send + Sync> LockFreeRingBuffer<T> for MpmcRingBuffer<T> {
     fn stats(&self) -> RingBufferStats {
         let size = self.len();
         let capacity = self.capacity();
-        
+
         RingBufferStats {
             size,
             capacity,
@@ -491,20 +494,20 @@ mod tests {
     #[test]
     fn test_spsc_ring_buffer_basic_operations() {
         let buffer = SpscRingBuffer::new(8).unwrap();
-        
+
         // Test write
         assert!(buffer.write(1).is_ok());
         assert!(buffer.write(2).is_ok());
         assert_eq!(buffer.len(), 2);
         assert!(!buffer.is_empty());
         assert!(!buffer.is_full());
-        
+
         // Test read
         assert_eq!(buffer.read().unwrap(), 1);
         assert_eq!(buffer.read().unwrap(), 2);
         assert_eq!(buffer.len(), 0);
         assert!(buffer.is_empty());
-        
+
         // Test empty read
         assert!(matches!(buffer.read(), Err(RingBufferError::Empty)));
     }
@@ -512,14 +515,17 @@ mod tests {
     #[test]
     fn test_spsc_ring_buffer_capacity() {
         let buffer = SpscRingBuffer::new(4).unwrap();
-        
+
         // Fill to capacity
         for i in 0..3 {
             assert!(buffer.write(i).is_ok());
         }
-        
+
         // Should be full now (capacity - 1 due to ring buffer implementation)
-        assert!(matches!(buffer.write(99), Err(RingBufferError::Full { .. })));
+        assert!(matches!(
+            buffer.write(99),
+            Err(RingBufferError::Full { .. })
+        ));
         assert!(buffer.is_full());
     }
 
@@ -529,9 +535,9 @@ mod tests {
         let num_producers = 4;
         let num_consumers = 2;
         let items_per_producer = 100;
-        
+
         let mut handles = Vec::new();
-        
+
         // Spawn producers
         for producer_id in 0..num_producers {
             let buffer_clone = Arc::clone(&buffer);
@@ -545,53 +551,56 @@ mod tests {
             });
             handles.push(handle);
         }
-        
+
         // Spawn consumers
         let consumed = Arc::new(AtomicUsize::new(0));
         for _ in 0..num_consumers {
             let buffer_clone = Arc::clone(&buffer);
             let consumed_clone = Arc::clone(&consumed);
-            let handle = thread::spawn(move || {
-                loop {
-                    match buffer_clone.read() {
-                        Ok(_) => {
-                            consumed_clone.fetch_add(1, Ordering::Relaxed);
-                        }
-                        Err(RingBufferError::Empty) => {
-                            if consumed_clone.load(Ordering::Relaxed) >= num_producers * items_per_producer {
-                                break;
-                            }
-                            thread::yield_now();
-                        }
-                        Err(_) => thread::yield_now(),
+            let handle = thread::spawn(move || loop {
+                match buffer_clone.read() {
+                    Ok(_) => {
+                        consumed_clone.fetch_add(1, Ordering::Relaxed);
                     }
+                    Err(RingBufferError::Empty) => {
+                        if consumed_clone.load(Ordering::Relaxed)
+                            >= num_producers * items_per_producer
+                        {
+                            break;
+                        }
+                        thread::yield_now();
+                    }
+                    Err(_) => thread::yield_now(),
                 }
             });
             handles.push(handle);
         }
-        
+
         // Wait for all threads
         for handle in handles {
             handle.join().unwrap();
         }
-        
+
         // Verify all items were consumed
-        assert_eq!(consumed.load(Ordering::Relaxed), num_producers * items_per_producer);
+        assert_eq!(
+            consumed.load(Ordering::Relaxed),
+            num_producers * items_per_producer
+        );
         assert!(buffer.is_empty());
     }
 
     #[test]
     fn test_ring_buffer_stats() {
         let buffer = SpscRingBuffer::new(8).unwrap();
-        
+
         let initial_stats = buffer.stats();
         assert_eq!(initial_stats.size, 0);
         assert_eq!(initial_stats.capacity, 8);
         assert_eq!(initial_stats.utilization, 0.0);
-        
+
         buffer.write(1).unwrap();
         buffer.write(2).unwrap();
-        
+
         let stats = buffer.stats();
         assert_eq!(stats.size, 2);
         assert_eq!(stats.utilization, 25.0); // 2/8 * 100
@@ -605,7 +614,7 @@ mod tests {
             SpscRingBuffer::<i32>::new(7),
             Err(RingBufferError::InvalidCapacity { capacity: 7 })
         ));
-        
+
         assert!(matches!(
             MpmcRingBuffer::<i32>::new(15, LockFreeConfig::default()),
             Err(RingBufferError::InvalidCapacity { capacity: 15 })

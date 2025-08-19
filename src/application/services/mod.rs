@@ -7,8 +7,8 @@ pub mod mock_utils;
 pub mod notification;
 pub mod pr_builder;
 pub mod project_detection;
-pub mod workspace;
 pub mod valkyrie_integration;
+pub mod workspace;
 
 // Re-export commonly used services
 pub use encryption::EncryptionService;

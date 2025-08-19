@@ -16,9 +16,7 @@ use uuid::Uuid;
 
 use crate::core::cluster::node_registry::NodeRegistry;
 use crate::core::runners::runner_pool::RunnerPoolManager;
-use crate::domain::entities::{
-    NodeId, RunnerId, RunnerEntity, RunnerStatus, RunnerType,
-};
+use crate::domain::entities::{NodeId, RunnerEntity, RunnerId, RunnerStatus, RunnerType};
 use crate::error::{AppError, Result};
 
 /// Dynamic scaling configuration
@@ -92,8 +90,8 @@ impl Default for ResourceQuotas {
     fn default() -> Self {
         Self {
             max_cpu_cores: 1000,
-            max_memory_mb: 1024000, // 1TB
-            max_disk_mb: 10240000,  // 10TB
+            max_memory_mb: 1024000,  // 1TB
+            max_disk_mb: 10240000,   // 10TB
             max_network_mbps: 10000, // 10Gbps
             per_node_limits: NodeResourceLimits::default(),
         }
@@ -159,7 +157,7 @@ impl ScalingPolicy {
             consecutive_periods: 2,
         }
     }
-    
+
     /// Create default memory-based scaling policy
     pub fn default_memory_policy() -> Self {
         Self {
@@ -174,7 +172,7 @@ impl ScalingPolicy {
             consecutive_periods: 3,
         }
     }
-    
+
     /// Create default queue-based scaling policy
     pub fn default_queue_policy() -> Self {
         Self {
@@ -379,25 +377,25 @@ pub enum RecommendationType {
 pub trait DynamicRunnerScaler: Send + Sync {
     /// Start the scaling service
     async fn start(&self) -> Result<()>;
-    
+
     /// Stop the scaling service
     async fn stop(&self) -> Result<()>;
-    
+
     /// Evaluate current utilization and make scaling decisions
     async fn evaluate_scaling(&self) -> Result<ScalingDecision>;
-    
+
     /// Execute a scaling decision
     async fn execute_scaling(&self, decision: &ScalingDecision) -> Result<()>;
-    
+
     /// Get current resource utilization
     async fn get_resource_utilization(&self) -> Result<ResourceUtilization>;
-    
+
     /// Generate capacity plan
     async fn generate_capacity_plan(&self, horizon_hours: u32) -> Result<CapacityPlan>;
-    
+
     /// Get scaling history
     async fn get_scaling_history(&self, duration: Duration) -> Result<Vec<ScalingDecision>>;
-    
+
     /// Update scaling configuration
     async fn update_config(&self, config: DynamicScalingConfig) -> Result<()>;
 }
@@ -437,7 +435,7 @@ impl DefaultDynamicRunnerScaler {
             utilization_history: Arc::new(RwLock::new(Vec::new())),
         }
     }
-    
+
     /// Start scaling evaluation task
     async fn start_scaling_task(&self) -> Result<()> {
         let config = self.config.clone();
@@ -447,17 +445,17 @@ impl DefaultDynamicRunnerScaler {
         let last_scaling = self.last_scaling.clone();
         let running = self.running.clone();
         let utilization_history = self.utilization_history.clone();
-        
+
         tokio::spawn(async move {
             loop {
                 let evaluation_interval = {
                     let config_guard = config.read().await;
                     config_guard.evaluation_interval
                 };
-                
+
                 let mut interval = interval(Duration::from_secs(evaluation_interval));
                 interval.tick().await;
-                
+
                 // Check if still running
                 {
                     let running_guard = running.lock().await;
@@ -465,7 +463,7 @@ impl DefaultDynamicRunnerScaler {
                         break;
                     }
                 }
-                
+
                 // Evaluate scaling
                 let scaler = DefaultDynamicRunnerScaler {
                     config: config.clone(),
@@ -476,20 +474,20 @@ impl DefaultDynamicRunnerScaler {
                     running: running.clone(),
                     utilization_history: utilization_history.clone(),
                 };
-                
+
                 match scaler.evaluate_scaling().await {
                     Ok(decision) => {
                         // Record decision
                         {
                             let mut history = scaling_history.write().await;
                             history.push(decision.clone());
-                            
+
                             // Keep only last 1000 decisions
                             if history.len() > 1000 {
                                 history.remove(0);
                             }
                         }
-                        
+
                         // Execute scaling if needed
                         if !matches!(decision.decision_type, ScalingDecisionType::NoAction) {
                             if let Err(e) = scaler.execute_scaling(&decision).await {
@@ -503,36 +501,36 @@ impl DefaultDynamicRunnerScaler {
                 }
             }
         });
-        
+
         Ok(())
     }
-    
+
     /// Collect current resource utilization
     async fn collect_resource_utilization(&self) -> Result<ResourceUtilization> {
         // Get runner pool stats
         let pool_stats = self.runner_pool.get_stats().await?;
-        
+
         // Get node information
         let _nodes = self.node_registry.get_active_nodes().await?;
-        
+
         // Calculate utilization (simplified implementation)
         let cpu_utilization = if pool_stats.total_runners > 0 {
             (pool_stats.busy_runners as f64 / pool_stats.total_runners as f64) * 100.0
         } else {
             0.0
         };
-        
+
         let memory_utilization = cpu_utilization * 0.8; // Simplified correlation
         let disk_utilization = 30.0; // Simplified static value
         let network_utilization = 15.0; // Simplified static value
-        
+
         // Calculate queue length (simplified)
         let queue_length = if pool_stats.total_runners > 0 {
             (pool_stats.total_jobs_processed % 20) as u32
         } else {
             0
         };
-        
+
         Ok(ResourceUtilization {
             cpu_utilization,
             memory_utilization,
@@ -541,7 +539,8 @@ impl DefaultDynamicRunnerScaler {
             queue_length,
             avg_response_time: pool_stats.avg_job_execution_time * 1000.0, // Convert to ms
             error_rate: if pool_stats.total_jobs_processed > 0 {
-                (pool_stats.total_jobs_failed as f64 / pool_stats.total_jobs_processed as f64) * 100.0
+                (pool_stats.total_jobs_failed as f64 / pool_stats.total_jobs_processed as f64)
+                    * 100.0
             } else {
                 0.0
             },
@@ -549,42 +548,49 @@ impl DefaultDynamicRunnerScaler {
             timestamp: Utc::now(),
         })
     }
-    
+
     /// Check if scaling is allowed (not in cooldown)
     async fn is_scaling_allowed(&self) -> Result<bool> {
         let config = self.config.read().await;
         let last_scaling_guard = self.last_scaling.lock().await;
-        
+
         if let Some(last_scaling_time) = *last_scaling_guard {
             let cooldown_duration = chrono::Duration::seconds(config.scaling_cooldown as i64);
             let now = Utc::now();
-            
+
             Ok(now - last_scaling_time > cooldown_duration)
         } else {
             Ok(true) // No previous scaling
         }
     }
-    
+
     /// Evaluate scaling policies
-    async fn evaluate_policies(&self, utilization: &ResourceUtilization) -> Result<Option<ScalingAction>> {
+    async fn evaluate_policies(
+        &self,
+        utilization: &ResourceUtilization,
+    ) -> Result<Option<ScalingAction>> {
         let config = self.config.read().await;
         let mut triggered_policies = Vec::new();
-        
+
         for policy in &config.scaling_policies {
             if self.evaluate_policy(policy, utilization).await? {
                 triggered_policies.push(policy.clone());
             }
         }
-        
+
         // Sort by priority (highest first)
         triggered_policies.sort_by(|a, b| b.priority.cmp(&a.priority));
-        
+
         // Return action from highest priority policy
         Ok(triggered_policies.first().map(|p| p.action.clone()))
     }
-    
+
     /// Evaluate a single policy
-    async fn evaluate_policy(&self, policy: &ScalingPolicy, utilization: &ResourceUtilization) -> Result<bool> {
+    async fn evaluate_policy(
+        &self,
+        policy: &ScalingPolicy,
+        utilization: &ResourceUtilization,
+    ) -> Result<bool> {
         let metric_value = match &policy.metric {
             ScalingMetric::CpuUtilization => utilization.cpu_utilization,
             ScalingMetric::MemoryUtilization => utilization.memory_utilization,
@@ -597,7 +603,7 @@ impl DefaultDynamicRunnerScaler {
                 utilization.custom_metrics.get(name).copied().unwrap_or(0.0)
             }
         };
-        
+
         let threshold_met = match policy.comparison {
             ComparisonOperator::GreaterThan => metric_value > policy.threshold,
             ComparisonOperator::GreaterThanOrEqual => metric_value >= policy.threshold,
@@ -605,15 +611,15 @@ impl DefaultDynamicRunnerScaler {
             ComparisonOperator::LessThanOrEqual => metric_value <= policy.threshold,
             ComparisonOperator::Equal => (metric_value - policy.threshold).abs() < 0.001,
         };
-        
+
         Ok(threshold_met)
     }
-    
+
     /// Check resource quotas
     async fn check_resource_quotas(&self, action: &ScalingAction) -> Result<bool> {
         let config = self.config.read().await;
         let pool_stats = self.runner_pool.get_stats().await?;
-        
+
         match action {
             ScalingAction::AddRunners { count } => {
                 let new_total = pool_stats.total_runners + *count as usize;
@@ -627,16 +633,17 @@ impl DefaultDynamicRunnerScaler {
                 Ok(*count >= config.min_runners && *count <= config.max_runners)
             }
             ScalingAction::ScaleByPercentage { percentage } => {
-                let new_count = (pool_stats.total_runners as f64 * (1.0 + percentage / 100.0)) as u32;
+                let new_count =
+                    (pool_stats.total_runners as f64 * (1.0 + percentage / 100.0)) as u32;
                 Ok(new_count >= config.min_runners && new_count <= config.max_runners)
             }
         }
     }
-    
+
     /// Create new runner instances
     async fn create_runners(&self, count: u32) -> Result<Vec<RunnerId>> {
         let mut created_runners = Vec::new();
-        
+
         for _i in 0..count {
             // Create a new runner entity (simplified - would need actual runner implementation)
             let runner_entity = RunnerEntity::new(
@@ -646,32 +653,32 @@ impl DefaultDynamicRunnerScaler {
                     working_directory: "/tmp".to_string(),
                 },
             );
-            
+
             let runner_id = runner_entity.id;
             created_runners.push(runner_id);
-            
+
             info!("Created auto-scaled runner: {}", runner_id);
         }
-        
+
         Ok(created_runners)
     }
-    
+
     /// Remove runner instances
     async fn remove_runners(&self, count: u32) -> Result<Vec<RunnerId>> {
         let runners = self.runner_pool.list_runners().await?;
         let mut removed_runners = Vec::new();
-        
+
         // Select runners to remove (prefer idle runners)
         let mut candidates: Vec<_> = runners
             .into_iter()
             .filter(|r| r.entity.status == RunnerStatus::Idle)
             .collect();
-        
+
         candidates.sort_by_key(|r| r.last_health_check);
-        
+
         for runner_registration in candidates.into_iter().take(count as usize) {
             let runner_id = runner_registration.entity.id;
-            
+
             if let Err(e) = self.runner_pool.deregister_runner(runner_id).await {
                 warn!("Failed to remove runner {}: {}", runner_id, e);
             } else {
@@ -679,7 +686,7 @@ impl DefaultDynamicRunnerScaler {
                 info!("Removed auto-scaled runner: {}", runner_id);
             }
         }
-        
+
         Ok(removed_runners)
     }
 }
@@ -689,45 +696,47 @@ impl DynamicRunnerScaler for DefaultDynamicRunnerScaler {
     async fn start(&self) -> Result<()> {
         let mut running = self.running.lock().await;
         if *running {
-            return Err(AppError::BadRequest("Dynamic scaler is already running".to_string()));
+            return Err(AppError::BadRequest(
+                "Dynamic scaler is already running".to_string(),
+            ));
         }
-        
+
         *running = true;
-        
+
         // Start scaling task
         self.start_scaling_task().await?;
-        
+
         info!("Dynamic runner scaler started");
         Ok(())
     }
-    
+
     async fn stop(&self) -> Result<()> {
         let mut running = self.running.lock().await;
         if !*running {
             return Ok(());
         }
-        
+
         *running = false;
-        
+
         info!("Dynamic runner scaler stopped");
         Ok(())
     }
-    
+
     async fn evaluate_scaling(&self) -> Result<ScalingDecision> {
         // Collect current utilization
         let utilization = self.collect_resource_utilization().await?;
-        
+
         // Store utilization for history
         {
             let mut history = self.utilization_history.write().await;
             history.push(utilization.clone());
-            
+
             // Keep only last 1000 entries
             if history.len() > 1000 {
                 history.remove(0);
             }
         }
-        
+
         // Check if scaling is allowed
         if !self.is_scaling_allowed().await? {
             return Ok(ScalingDecision {
@@ -742,12 +751,12 @@ impl DynamicRunnerScaler for DefaultDynamicRunnerScaler {
                 timestamp: Utc::now(),
             });
         }
-        
+
         // Evaluate scaling policies
         let scaling_action = self.evaluate_policies(&utilization).await?;
-        
+
         let current_runners = self.runner_pool.get_stats().await?.total_runners as u32;
-        
+
         match scaling_action {
             Some(action) => {
                 // Check resource quotas
@@ -764,7 +773,7 @@ impl DynamicRunnerScaler for DefaultDynamicRunnerScaler {
                         timestamp: Utc::now(),
                     });
                 }
-                
+
                 let (decision_type, target_runners, reason) = match &action {
                     ScalingAction::AddRunners { count } => (
                         ScalingDecisionType::ScaleUp,
@@ -792,7 +801,8 @@ impl DynamicRunnerScaler for DefaultDynamicRunnerScaler {
                         }
                     }
                     ScalingAction::ScaleByPercentage { percentage } => {
-                        let new_count = (current_runners as f64 * (1.0 + percentage / 100.0)) as u32;
+                        let new_count =
+                            (current_runners as f64 * (1.0 + percentage / 100.0)) as u32;
                         if new_count > current_runners {
                             (
                                 ScalingDecisionType::ScaleUp,
@@ -808,7 +818,7 @@ impl DynamicRunnerScaler for DefaultDynamicRunnerScaler {
                         }
                     }
                 };
-                
+
                 Ok(ScalingDecision {
                     decision_type,
                     reason,
@@ -830,13 +840,13 @@ impl DynamicRunnerScaler for DefaultDynamicRunnerScaler {
             }),
         }
     }
-    
+
     async fn execute_scaling(&self, decision: &ScalingDecision) -> Result<()> {
         match &decision.decision_type {
             ScalingDecisionType::ScaleUp => {
                 let runners_to_add = decision.target_runners - decision.current_runners;
                 let created_runners = self.create_runners(runners_to_add).await?;
-                
+
                 info!(
                     "Scaled up: added {} runners ({:?})",
                     runners_to_add, created_runners
@@ -845,7 +855,7 @@ impl DynamicRunnerScaler for DefaultDynamicRunnerScaler {
             ScalingDecisionType::ScaleDown => {
                 let runners_to_remove = decision.current_runners - decision.target_runners;
                 let removed_runners = self.remove_runners(runners_to_remove).await?;
-                
+
                 info!(
                     "Scaled down: removed {} runners ({:?})",
                     runners_to_remove, removed_runners
@@ -856,25 +866,25 @@ impl DynamicRunnerScaler for DefaultDynamicRunnerScaler {
                 return Ok(());
             }
         }
-        
+
         // Update last scaling timestamp
         {
             let mut last_scaling = self.last_scaling.lock().await;
             *last_scaling = Some(Utc::now());
         }
-        
+
         Ok(())
     }
-    
+
     async fn get_resource_utilization(&self) -> Result<ResourceUtilization> {
         self.collect_resource_utilization().await
     }
-    
+
     async fn generate_capacity_plan(&self, horizon_hours: u32) -> Result<CapacityPlan> {
         // Get current capacity
         let pool_stats = self.runner_pool.get_stats().await?;
         let nodes = self.node_registry.get_active_nodes().await?;
-        
+
         let current_capacity = ClusterCapacity {
             total_cpu_cores: nodes.len() as u32 * 8, // Simplified: 8 cores per node
             total_memory_mb: nodes.len() as u32 * 16384, // Simplified: 16GB per node
@@ -883,9 +893,10 @@ impl DynamicRunnerScaler for DefaultDynamicRunnerScaler {
             available_cpu_cores: nodes.len() as u32 * 2, // Simplified: 2 cores available
             available_memory_mb: nodes.len() as u32 * 4096, // Simplified: 4GB available
             available_disk_mb: nodes.len() as u32 * 51200, // Simplified: 50GB available
-            available_runner_slots: (pool_stats.total_runners as u32).saturating_sub(pool_stats.busy_runners as u32),
+            available_runner_slots: (pool_stats.total_runners as u32)
+                .saturating_sub(pool_stats.busy_runners as u32),
         };
-        
+
         // Project future capacity needs (simplified prediction)
         let growth_factor = 1.2; // 20% growth expected
         let projected_capacity = ClusterCapacity {
@@ -898,10 +909,10 @@ impl DynamicRunnerScaler for DefaultDynamicRunnerScaler {
             available_disk_mb: current_capacity.available_disk_mb,
             available_runner_slots: current_capacity.available_runner_slots,
         };
-        
+
         // Generate recommendations
         let mut recommendations = Vec::new();
-        
+
         if projected_capacity.total_runners > current_capacity.total_runners {
             recommendations.push(CapacityRecommendation {
                 recommendation_type: RecommendationType::AddNodes {
@@ -913,7 +924,7 @@ impl DynamicRunnerScaler for DefaultDynamicRunnerScaler {
                 timeline: "Next 30 days".to_string(),
             });
         }
-        
+
         Ok(CapacityPlan {
             current_capacity,
             projected_capacity,
@@ -923,23 +934,24 @@ impl DynamicRunnerScaler for DefaultDynamicRunnerScaler {
             generated_at: Utc::now(),
         })
     }
-    
+
     async fn get_scaling_history(&self, duration: Duration) -> Result<Vec<ScalingDecision>> {
         let history = self.scaling_history.read().await;
-        let cutoff = Utc::now() - chrono::Duration::from_std(duration)
-            .map_err(|e| AppError::BadRequest(format!("Invalid duration: {}", e)))?;
-        
+        let cutoff = Utc::now()
+            - chrono::Duration::from_std(duration)
+                .map_err(|e| AppError::BadRequest(format!("Invalid duration: {}", e)))?;
+
         Ok(history
             .iter()
             .filter(|decision| decision.timestamp > cutoff)
             .cloned()
             .collect())
     }
-    
+
     async fn update_config(&self, config: DynamicScalingConfig) -> Result<()> {
         let mut config_guard = self.config.write().await;
         *config_guard = config;
-        
+
         info!("Dynamic scaling configuration updated");
         Ok(())
     }
@@ -950,57 +962,60 @@ mod tests {
     use super::*;
     use crate::core::cluster::node_registry::tests::create_test_registry;
     use crate::core::DefaultRunnerPoolManager;
-    
+
     fn create_test_scaler() -> DefaultDynamicRunnerScaler {
         let config = DynamicScalingConfig::default();
         let node_registry = Arc::new(create_test_registry());
         let runner_pool = Arc::new(DefaultRunnerPoolManager::with_default_config());
-        
+
         DefaultDynamicRunnerScaler::new(config, node_registry, runner_pool)
     }
-    
+
     #[tokio::test]
     async fn test_scaler_creation() {
         let scaler = create_test_scaler();
         assert!(!*scaler.running.lock().await);
     }
-    
+
     #[tokio::test]
     async fn test_resource_utilization() {
         let scaler = create_test_scaler();
         let utilization = scaler.collect_resource_utilization().await.unwrap();
-        
+
         assert!(utilization.cpu_utilization >= 0.0);
         assert!(utilization.memory_utilization >= 0.0);
         assert!(utilization.timestamp <= Utc::now());
     }
-    
+
     #[tokio::test]
     async fn test_scaling_policies() {
         let cpu_policy = ScalingPolicy::default_cpu_policy();
         assert_eq!(cpu_policy.name, "cpu-scale-up");
         assert!(matches!(cpu_policy.metric, ScalingMetric::CpuUtilization));
         assert_eq!(cpu_policy.threshold, 80.0);
-        
+
         let memory_policy = ScalingPolicy::default_memory_policy();
         assert_eq!(memory_policy.name, "memory-scale-up");
-        assert!(matches!(memory_policy.metric, ScalingMetric::MemoryUtilization));
-        
+        assert!(matches!(
+            memory_policy.metric,
+            ScalingMetric::MemoryUtilization
+        ));
+
         let queue_policy = ScalingPolicy::default_queue_policy();
         assert_eq!(queue_policy.name, "queue-scale-up");
         assert!(matches!(queue_policy.metric, ScalingMetric::QueueLength));
     }
-    
+
     #[tokio::test]
     async fn test_capacity_plan_generation() {
         let scaler = create_test_scaler();
         let plan = scaler.generate_capacity_plan(24).await.unwrap();
-        
+
         assert_eq!(plan.planning_horizon_hours, 24);
         assert!(plan.confidence > 0.0 && plan.confidence <= 1.0);
         assert!(plan.projected_capacity.total_runners >= plan.current_capacity.total_runners);
     }
-    
+
     #[tokio::test]
     async fn test_scaling_decision() {
         let utilization = ResourceUtilization {
@@ -1014,7 +1029,7 @@ mod tests {
             custom_metrics: HashMap::new(),
             timestamp: Utc::now(),
         };
-        
+
         let decision = ScalingDecision {
             decision_type: ScalingDecisionType::ScaleUp,
             reason: "High CPU utilization".to_string(),
@@ -1024,8 +1039,11 @@ mod tests {
             utilization,
             timestamp: Utc::now(),
         };
-        
-        assert!(matches!(decision.decision_type, ScalingDecisionType::ScaleUp));
+
+        assert!(matches!(
+            decision.decision_type,
+            ScalingDecisionType::ScaleUp
+        ));
         assert_eq!(decision.current_runners, 5);
         assert_eq!(decision.target_runners, 7);
     }

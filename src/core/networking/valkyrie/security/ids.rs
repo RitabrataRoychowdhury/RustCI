@@ -1,5 +1,6 @@
+use serde::{Deserialize, Serialize};
 /// Intrusion Detection System (IDS) for the Valkyrie Protocol
-/// 
+///
 /// This module provides:
 /// - Real-time threat detection
 /// - Behavioral analysis
@@ -7,16 +8,14 @@
 /// - Anomaly detection using statistical methods
 /// - Automated threat response
 /// - Machine learning-based detection (placeholder for future implementation)
-
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
+use super::{AuthMethod, SecurityEventType, SecuritySeverity};
 use crate::core::networking::node_communication::NodeId;
 use crate::error::Result;
-use super::{AuthMethod, SecurityEventType, SecuritySeverity};
 
 /// Intrusion Detection System
 pub struct IntrusionDetectionSystem {
@@ -111,7 +110,7 @@ impl IntrusionDetectionSystem {
     /// Analyze a security event for potential threats
     pub async fn analyze_event(&self, event: SecurityEvent) -> Result<ThreatAssessment> {
         let start_time = Instant::now();
-        
+
         let mut threat_score = 0.0;
         let mut threat_indicators = Vec::new();
         let mut threat_type = ThreatType::Unknown;
@@ -173,8 +172,10 @@ impl IntrusionDetectionSystem {
 
         // Automated response if enabled and threat is significant
         if self.config.enable_automated_response && threat_score >= self.config.threat_threshold {
-            self.response_engine.execute_response(&assessment, &event).await?;
-            
+            self.response_engine
+                .execute_response(&assessment, &event)
+                .await?;
+
             let mut metrics = self.metrics.write().await;
             metrics.automated_responses += 1;
         }
@@ -186,7 +187,10 @@ impl IntrusionDetectionSystem {
         if threat_score >= self.config.threat_threshold {
             metrics.threats_detected += 1;
         }
-        metrics.average_analysis_time_ms = (metrics.average_analysis_time_ms * (metrics.total_events_analyzed - 1) as f64 + duration.as_millis() as f64) / metrics.total_events_analyzed as f64;
+        metrics.average_analysis_time_ms = (metrics.average_analysis_time_ms
+            * (metrics.total_events_analyzed - 1) as f64
+            + duration.as_millis() as f64)
+            / metrics.total_events_analyzed as f64;
 
         Ok(assessment)
     }
@@ -440,11 +444,13 @@ impl BehavioralAnalyzer {
         // Analyze request frequency
         if let Some(ref ip) = event.source_ip {
             let mut profiles = self.behavior_profiles.write().await;
-            let profile = profiles.entry(ip.clone()).or_insert_with(|| BehaviorProfile {
-                requests_per_minute: VecDeque::new(),
-                error_rate: VecDeque::new(),
-                last_updated: Instant::now(),
-            });
+            let profile = profiles
+                .entry(ip.clone())
+                .or_insert_with(|| BehaviorProfile {
+                    requests_per_minute: VecDeque::new(),
+                    error_rate: VecDeque::new(),
+                    last_updated: Instant::now(),
+                });
 
             // Update profile
             let now = Instant::now();
@@ -463,8 +469,9 @@ impl BehavioralAnalyzer {
             }
 
             // Calculate average request rate
-            let avg_rate: f64 = profile.requests_per_minute.iter().sum::<f64>() / profile.requests_per_minute.len() as f64;
-            
+            let avg_rate: f64 = profile.requests_per_minute.iter().sum::<f64>()
+                / profile.requests_per_minute.len() as f64;
+
             // Check for unusual activity
             if avg_rate > 100.0 {
                 score += 0.6;
@@ -476,7 +483,10 @@ impl BehavioralAnalyzer {
         }
 
         // Analyze error patterns
-        if matches!(event.event_type, SecurityEventType::AuthenticationFailure | SecurityEventType::AuthorizationFailure) {
+        if matches!(
+            event.event_type,
+            SecurityEventType::AuthenticationFailure | SecurityEventType::AuthorizationFailure
+        ) {
             score += 0.2;
             indicators.push("Authentication/authorization failure".to_string());
         }
@@ -484,7 +494,11 @@ impl BehavioralAnalyzer {
         Ok(AnalysisResult {
             score,
             indicators,
-            threat_type: if score > 0.5 { ThreatType::AnomalousBehavior } else { ThreatType::Unknown },
+            threat_type: if score > 0.5 {
+                ThreatType::AnomalousBehavior
+            } else {
+                ThreatType::Unknown
+            },
         })
     }
 
@@ -543,7 +557,10 @@ impl PatternMatcher {
         for (key, value) in &event.details {
             for pattern in &self.patterns {
                 // Simplified pattern matching (in reality, would use regex)
-                if value.to_lowercase().contains(&pattern.pattern.to_lowercase()) {
+                if value
+                    .to_lowercase()
+                    .contains(&pattern.pattern.to_lowercase())
+                {
                     score += pattern.severity;
                     indicators.push(format!("Pattern '{}' detected in {}", pattern.name, key));
                     threat_type = pattern.threat_type.clone();
@@ -622,7 +639,11 @@ impl ResponseEngine {
         })
     }
 
-    pub async fn execute_response(&self, assessment: &ThreatAssessment, event: &SecurityEvent) -> Result<()> {
+    pub async fn execute_response(
+        &self,
+        assessment: &ThreatAssessment,
+        event: &SecurityEvent,
+    ) -> Result<()> {
         match assessment.threat_level {
             ThreatLevel::Critical | ThreatLevel::High => {
                 // Block IP if available

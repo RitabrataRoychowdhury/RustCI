@@ -1,18 +1,17 @@
 // OpenTelemetry Adapter - Direct OTLP connection support
 // Enables OpenTelemetry collectors to connect directly with 100μs performance
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 use super::{
-    ObservabilityAdapter, AdapterProtocol, AdapterCapabilities, AdapterConfig,
-    AdapterConnection, AdapterHealth, AdapterPerformanceMetrics, HealthStatus,
-    MetricData, LogData, TraceData, MetricsQuery, LogsQuery, TracesQuery,
-    DataFormat, ObservabilityError,
+    AdapterCapabilities, AdapterConfig, AdapterConnection, AdapterHealth,
+    AdapterPerformanceMetrics, AdapterProtocol, DataFormat, HealthStatus, LogData, LogsQuery,
+    MetricData, MetricsQuery, ObservabilityAdapter, ObservabilityError, TraceData, TracesQuery,
 };
 // Protocol handler imports would be added when implementing the handler
 
@@ -322,15 +321,21 @@ impl OtlpPerformanceTracker {
     }
 
     /// Record request performance
-    pub fn record_request(&mut self, latency_us: u64, batch_size: usize, bytes_processed: u64, compression_ratio: f64) {
+    pub fn record_request(
+        &mut self,
+        latency_us: u64,
+        batch_size: usize,
+        bytes_processed: u64,
+        compression_ratio: f64,
+    ) {
         self.request_latencies_us[self.sample_index] = latency_us;
         self.sample_index = (self.sample_index + 1) % self.request_latencies_us.len();
         self.total_requests += 1;
         self.bytes_processed += bytes_processed;
-        
+
         // Update batch efficiency (exponential moving average)
         self.batch_efficiency = 0.9 * self.batch_efficiency + 0.1 * batch_size as f64;
-        
+
         // Update compression ratio
         self.compression_ratio = 0.9 * self.compression_ratio + 0.1 * compression_ratio;
     }
@@ -339,7 +344,7 @@ impl OtlpPerformanceTracker {
     pub fn get_metrics(&self) -> AdapterPerformanceMetrics {
         let mut sorted_latencies = self.request_latencies_us.clone();
         sorted_latencies.sort_unstable();
-        
+
         let avg_latency = if !sorted_latencies.is_empty() {
             sorted_latencies.iter().sum::<u64>() as f64 / sorted_latencies.len() as f64
         } else {
@@ -364,7 +369,7 @@ impl OtlpPerformanceTracker {
             p95_latency_us: p95_latency,
             p99_latency_us: p99_latency,
             throughput_ops: throughput,
-            memory_usage_bytes: 0, // Would be calculated separately
+            memory_usage_bytes: 0,  // Would be calculated separately
             cpu_usage_percent: 0.0, // Would be calculated separately
             network_bytes_sent: self.bytes_processed,
             network_bytes_received: 0,
@@ -416,13 +421,11 @@ impl OpenTelemetryAdapter {
                         }],
                     }
                 }
-                super::MetricType::Summary => {
-                    OtlpValue::Summary {
-                        count: 1,
-                        sum: metric.value,
-                        quantiles: vec![],
-                    }
-                }
+                super::MetricType::Summary => OtlpValue::Summary {
+                    count: 1,
+                    sum: metric.value,
+                    quantiles: vec![],
+                },
             };
 
             let data_point = OtlpDataPoint {
@@ -461,7 +464,8 @@ impl OpenTelemetryAdapter {
                 _ => OtlpSeverityLevel::Info,
             };
 
-            let attributes: HashMap<String, String> = log.fields
+            let attributes: HashMap<String, String> = log
+                .fields
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_string()))
                 .collect();
@@ -496,18 +500,29 @@ impl OpenTelemetryAdapter {
                 start_time_ns: trace.start_timestamp_us * 1000,
                 end_time_ns: trace.end_timestamp_us.unwrap_or(trace.start_timestamp_us) * 1000,
                 attributes: trace.tags.clone(),
-                events: trace.logs.iter().map(|log| OtlpSpanEvent {
-                    timestamp_ns: log.timestamp_us * 1000,
-                    name: "log".to_string(),
-                    attributes: log.fields.iter().map(|(k, v)| (k.clone(), v.to_string())).collect(),
-                }).collect(),
+                events: trace
+                    .logs
+                    .iter()
+                    .map(|log| OtlpSpanEvent {
+                        timestamp_ns: log.timestamp_us * 1000,
+                        name: "log".to_string(),
+                        attributes: log
+                            .fields
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.to_string()))
+                            .collect(),
+                    })
+                    .collect(),
                 status: OtlpSpanStatus {
                     code: OtlpStatusCode::Ok, // Default status
                     message: String::new(),
                 },
             };
 
-            trace_map.entry(trace.trace_id.clone()).or_default().push(span);
+            trace_map
+                .entry(trace.trace_id.clone())
+                .or_default()
+                .push(span);
         }
 
         trace_map
@@ -521,7 +536,12 @@ impl OpenTelemetryAdapter {
     }
 
     /// Buffer data for batching
-    pub async fn buffer_data(&self, metrics: &[MetricData], logs: &[LogData], traces: &[TraceData]) -> Result<(), ObservabilityError> {
+    pub async fn buffer_data(
+        &self,
+        metrics: &[MetricData],
+        logs: &[LogData],
+        traces: &[TraceData],
+    ) -> Result<(), ObservabilityError> {
         let mut buffer = self.otlp_buffer.write().await;
 
         if self.config.metrics_export_enabled && !metrics.is_empty() {
@@ -554,7 +574,7 @@ impl OpenTelemetryAdapter {
     /// Flush buffer and export data
     pub async fn flush_buffer(&self) -> Result<Vec<u8>, ObservabilityError> {
         let mut buffer = self.otlp_buffer.write().await;
-        
+
         // Create OTLP export request (simplified)
         let export_request = OtlpExportRequest {
             metrics: buffer.metrics_buffer.clone(),
@@ -641,18 +661,21 @@ impl ObservabilityAdapter for OpenTelemetryAdapter {
     async fn stop(&mut self) -> Result<(), ObservabilityError> {
         let mut running = self.running.write().await;
         *running = false;
-        
+
         // Flush any remaining data
         let _ = self.flush_buffer().await;
-        
+
         // Close all active connections
         let mut connections = self.active_connections.write().await;
         connections.clear();
-        
+
         Ok(())
     }
 
-    async fn handle_connection(&self, connection: AdapterConnection) -> Result<(), ObservabilityError> {
+    async fn handle_connection(
+        &self,
+        connection: AdapterConnection,
+    ) -> Result<(), ObservabilityError> {
         let mut connections = self.active_connections.write().await;
         connections.insert(connection.id, connection);
         Ok(())
@@ -670,7 +693,10 @@ impl ObservabilityAdapter for OpenTelemetryAdapter {
         self.buffer_data(&[], &[], traces).await
     }
 
-    async fn query_metrics(&self, _query: MetricsQuery) -> Result<Vec<MetricData>, ObservabilityError> {
+    async fn query_metrics(
+        &self,
+        _query: MetricsQuery,
+    ) -> Result<Vec<MetricData>, ObservabilityError> {
         // OpenTelemetry is primarily push-based
         Ok(vec![])
     }
@@ -680,7 +706,10 @@ impl ObservabilityAdapter for OpenTelemetryAdapter {
         Ok(vec![])
     }
 
-    async fn query_traces(&self, _query: TracesQuery) -> Result<Vec<TraceData>, ObservabilityError> {
+    async fn query_traces(
+        &self,
+        _query: TracesQuery,
+    ) -> Result<Vec<TraceData>, ObservabilityError> {
         // OpenTelemetry is primarily push-based
         Ok(vec![])
     }
@@ -692,7 +721,8 @@ impl ObservabilityAdapter for OpenTelemetryAdapter {
         let metrics = performance.get_metrics();
 
         let status = if running {
-            if metrics.avg_latency_us < 100.0 { // 100μs target
+            if metrics.avg_latency_us < 100.0 {
+                // 100μs target
                 HealthStatus::Healthy
             } else {
                 HealthStatus::Degraded
@@ -704,7 +734,10 @@ impl ObservabilityAdapter for OpenTelemetryAdapter {
         AdapterHealth {
             status,
             message: format!("OpenTelemetry adapter - {} connections", connections.len()),
-            last_check: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            last_check: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             active_connections: connections.len(),
             error_count: 0, // Would be tracked separately
             performance: metrics,

@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post, put, delete},
+    routing::{delete, get, post, put},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,9 @@ use crate::application::handlers::valkyrie_control_plane::ValkyrieControlPlaneHa
 use crate::application::services::valkyrie_integration::ValkyrieIntegrationService;
 use crate::config::valkyrie_integration::ValkyrieIntegrationConfig;
 use crate::error::{AppError, Result};
-use crate::infrastructure::runners::{ValkyrieJob, JobSubmissionResult, AdapterPerformanceSnapshot};
+use crate::infrastructure::runners::{
+    AdapterPerformanceSnapshot, JobSubmissionResult, ValkyrieJob,
+};
 
 /// Valkyrie-enhanced API routes with backward compatibility
 pub fn create_valkyrie_routes(
@@ -29,35 +31,47 @@ pub fn create_valkyrie_routes(
         .route("/api/v2/jobs/:job_id", get(get_job_status_enhanced))
         .route("/api/v2/jobs/:job_id", delete(cancel_job_enhanced))
         .route("/api/v2/jobs", get(list_jobs_enhanced))
-        
         // Runner management endpoints (enhanced)
         .route("/api/v2/runners", get(list_runners_enhanced))
-        .route("/api/v2/runners/:runner_id", get(get_runner_details_enhanced))
-        .route("/api/v2/runners/:runner_id/status", put(update_runner_status_enhanced))
+        .route(
+            "/api/v2/runners/:runner_id",
+            get(get_runner_details_enhanced),
+        )
+        .route(
+            "/api/v2/runners/:runner_id/status",
+            put(update_runner_status_enhanced),
+        )
         .route("/api/v2/runners/register", post(register_runner_enhanced))
-        
         // Performance and monitoring endpoints
         .route("/api/v2/performance/metrics", get(get_performance_metrics))
         .route("/api/v2/performance/health", get(get_system_health))
-        .route("/api/v2/performance/diagnostics", get(get_system_diagnostics))
-        
+        .route(
+            "/api/v2/performance/diagnostics",
+            get(get_system_diagnostics),
+        )
         // Configuration management endpoints
         .route("/api/v2/config/valkyrie", get(get_valkyrie_config))
         .route("/api/v2/config/valkyrie", put(update_valkyrie_config))
-        .route("/api/v2/config/valkyrie/reload", post(reload_valkyrie_config))
-        .route("/api/v2/config/valkyrie/validate", post(validate_valkyrie_config))
-        
+        .route(
+            "/api/v2/config/valkyrie/reload",
+            post(reload_valkyrie_config),
+        )
+        .route(
+            "/api/v2/config/valkyrie/validate",
+            post(validate_valkyrie_config),
+        )
         // Integration status endpoints
         .route("/api/v2/integration/status", get(get_integration_status))
-        .route("/api/v2/integration/capabilities", get(get_integration_capabilities))
+        .route(
+            "/api/v2/integration/capabilities",
+            get(get_integration_capabilities),
+        )
         .route("/api/v2/integration/fallback", post(toggle_fallback_mode))
-        
         // Backward compatibility endpoints (v1 API with Valkyrie enhancement)
         .route("/api/v1/jobs", post(submit_job_compatible))
         .route("/api/v1/jobs/:job_id", get(get_job_status_compatible))
         .route("/api/v1/jobs/:job_id", delete(cancel_job_compatible))
         .route("/api/v1/runners", get(list_runners_compatible))
-        
         .with_state(control_plane_handler)
 }
 
@@ -71,7 +85,7 @@ pub struct EnhancedJobSubmissionRequest {
     pub payload: serde_json::Value,
     pub requirements: Option<JobRequirementsRequest>,
     pub metadata: Option<HashMap<String, String>>,
-    
+
     // Valkyrie-specific enhancements
     pub qos_requirements: Option<QoSRequirementsRequest>,
     pub routing_hints: Option<RoutingHintsRequest>,
@@ -93,8 +107,8 @@ pub struct JobRequirementsRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QoSRequirementsRequest {
-    pub max_latency: Option<u64>, // milliseconds
-    pub min_throughput: Option<u64>, // bytes/second
+    pub max_latency: Option<u64>,           // milliseconds
+    pub min_throughput: Option<u64>,        // bytes/second
     pub reliability_threshold: Option<f64>, // 0.0 to 1.0
     pub priority_class: Option<String>,
 }
@@ -117,8 +131,8 @@ pub struct AffinityRuleRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PerformanceTargetsRequest {
-    pub max_dispatch_latency: Option<u64>, // microseconds
-    pub target_completion_time: Option<u64>, // seconds
+    pub max_dispatch_latency: Option<u64>,       // microseconds
+    pub target_completion_time: Option<u64>,     // seconds
     pub resource_efficiency_target: Option<f64>, // 0.0 to 1.0
 }
 
@@ -335,7 +349,7 @@ pub async fn get_job_status_enhanced(
 ) -> Result<Json<EnhancedJobStatusResponse>> {
     let job_id = Uuid::parse_str(&job_id)
         .map_err(|_| AppError::ValidationError("Invalid job ID format".to_string()))?;
-    
+
     let result = handler.get_job_status_enhanced(job_id).await?;
     Ok(Json(result))
 }
@@ -347,7 +361,7 @@ pub async fn cancel_job_enhanced(
 ) -> Result<Json<serde_json::Value>> {
     let job_id = Uuid::parse_str(&job_id)
         .map_err(|_| AppError::ValidationError("Invalid job ID format".to_string()))?;
-    
+
     handler.cancel_job_enhanced(job_id).await?;
     Ok(Json(serde_json::json!({
         "job_id": job_id.to_string(),
@@ -381,7 +395,7 @@ pub async fn get_runner_details_enhanced(
 ) -> Result<Json<EnhancedRunnerInfo>> {
     let runner_id = Uuid::parse_str(&runner_id)
         .map_err(|_| AppError::ValidationError("Invalid runner ID format".to_string()))?;
-    
+
     let result = handler.get_runner_details_enhanced(runner_id).await?;
     Ok(Json(result))
 }
@@ -394,8 +408,10 @@ pub async fn update_runner_status_enhanced(
 ) -> Result<Json<serde_json::Value>> {
     let runner_id = Uuid::parse_str(&runner_id)
         .map_err(|_| AppError::ValidationError("Invalid runner ID format".to_string()))?;
-    
-    handler.update_runner_status_enhanced(runner_id, status).await?;
+
+    handler
+        .update_runner_status_enhanced(runner_id, status)
+        .await?;
     Ok(Json(serde_json::json!({
         "runner_id": runner_id.to_string(),
         "status": "updated",
@@ -519,7 +535,7 @@ pub async fn get_job_status_compatible(
 ) -> Result<Json<serde_json::Value>> {
     let job_id = Uuid::parse_str(&job_id)
         .map_err(|_| AppError::ValidationError("Invalid job ID format".to_string()))?;
-    
+
     let result = handler.get_job_status_compatible(job_id).await?;
     Ok(Json(result))
 }
@@ -531,7 +547,7 @@ pub async fn cancel_job_compatible(
 ) -> Result<Json<serde_json::Value>> {
     let job_id = Uuid::parse_str(&job_id)
         .map_err(|_| AppError::ValidationError("Invalid job ID format".to_string()))?;
-    
+
     let result = handler.cancel_job_compatible(job_id).await?;
     Ok(Json(result))
 }

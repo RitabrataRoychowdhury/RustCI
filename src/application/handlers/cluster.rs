@@ -12,7 +12,6 @@ use std::collections::HashMap;
 use tracing::info;
 use utoipa::ToSchema;
 
-
 use crate::core::cluster::cluster_coordinator::ClusterCoordinator;
 use crate::domain::entities::{
     ClusterMetrics, ClusterNode, ClusterStatus, NodeId, NodeRole, NodeStatus,

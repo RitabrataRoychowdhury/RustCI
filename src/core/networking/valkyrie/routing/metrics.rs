@@ -118,7 +118,10 @@ pub enum MetricsFormat {
 /// Metrics exporter trait
 #[async_trait::async_trait]
 pub trait MetricsExporter: Send + Sync {
-    async fn export_metrics(&self, metrics: &RoutingMetricsSnapshot) -> Result<String, MetricsError>;
+    async fn export_metrics(
+        &self,
+        metrics: &RoutingMetricsSnapshot,
+    ) -> Result<String, MetricsError>;
     fn get_format(&self) -> MetricsFormat;
     fn get_export_interval(&self) -> Duration;
 }
@@ -210,17 +213,20 @@ pub struct SecurityMetricsSnapshot {
 #[derive(Debug, thiserror::Error)]
 pub enum MetricsError {
     #[error("Export failed: {format:?} - {error}")]
-    ExportFailed { format: MetricsFormat, error: String },
-    
+    ExportFailed {
+        format: MetricsFormat,
+        error: String,
+    },
+
     #[error("Collection failed: {component} - {error}")]
     CollectionFailed { component: String, error: String },
-    
+
     #[error("Serialization failed: {error}")]
     SerializationFailed { error: String },
-    
+
     #[error("Network error: {error}")]
     NetworkError { error: String },
-    
+
     #[error("Configuration error: {error}")]
     ConfigurationError { error: String },
 }
@@ -246,68 +252,94 @@ impl RoutingMetricsCollector {
         result: &Result<Route, RoutingError>,
         qos_priority: MessagePriority,
     ) {
-        self.routing_metrics.total_routes_calculated.fetch_add(1, Ordering::Relaxed);
-        
+        self.routing_metrics
+            .total_routes_calculated
+            .fetch_add(1, Ordering::Relaxed);
+
         match result {
             Ok(route) => {
-                self.routing_metrics.successful_routes.fetch_add(1, Ordering::Relaxed);
-                
+                self.routing_metrics
+                    .successful_routes
+                    .fetch_add(1, Ordering::Relaxed);
+
                 // Update algorithm metrics
                 let mut algorithm_usage = self.routing_metrics.algorithm_usage.write().await;
                 let metrics = algorithm_usage.entry(algorithm).or_default();
                 metrics.usage_count += 1;
                 metrics.success_count += 1;
                 metrics.last_used = Some(Instant::now());
-                
+
                 // Update average time
-                let total_time = metrics.average_time.as_nanos() as u64 * (metrics.usage_count - 1) + duration.as_nanos() as u64;
+                let total_time = metrics.average_time.as_nanos() as u64 * (metrics.usage_count - 1)
+                    + duration.as_nanos() as u64;
                 metrics.average_time = Duration::from_nanos(total_time / metrics.usage_count);
-                
+
                 // Update route quality
                 let quality_score = self.calculate_route_quality(route);
-                metrics.average_quality = (metrics.average_quality * (metrics.success_count - 1) as f64 + quality_score) / metrics.success_count as f64;
-                
+                metrics.average_quality =
+                    (metrics.average_quality * (metrics.success_count - 1) as f64 + quality_score)
+                        / metrics.success_count as f64;
+
                 // Update QoS metrics
                 let mut qos_metrics = self.routing_metrics.qos_metrics.write().await;
                 let qos_metric = qos_metrics.entry(qos_priority).or_default();
                 qos_metric.routes_calculated += 1;
                 qos_metric.average_latency = Duration::from_nanos(
-                    (qos_metric.average_latency.as_nanos() as u64 * (qos_metric.routes_calculated - 1) + 
-                     route.estimated_latency.as_nanos() as u64) / qos_metric.routes_calculated
+                    (qos_metric.average_latency.as_nanos() as u64
+                        * (qos_metric.routes_calculated - 1)
+                        + route.estimated_latency.as_nanos() as u64)
+                        / qos_metric.routes_calculated,
                 );
-                qos_metric.reliability_score = (qos_metric.reliability_score * (qos_metric.routes_calculated - 1) as f64 + 
-                                               route.reliability_score) / qos_metric.routes_calculated as f64;
+                qos_metric.reliability_score = (qos_metric.reliability_score
+                    * (qos_metric.routes_calculated - 1) as f64
+                    + route.reliability_score)
+                    / qos_metric.routes_calculated as f64;
             }
             Err(error) => {
-                self.routing_metrics.failed_routes.fetch_add(1, Ordering::Relaxed);
-                self.error_metrics.total_errors.fetch_add(1, Ordering::Relaxed);
-                
+                self.routing_metrics
+                    .failed_routes
+                    .fetch_add(1, Ordering::Relaxed);
+                self.error_metrics
+                    .total_errors
+                    .fetch_add(1, Ordering::Relaxed);
+
                 // Update algorithm failure metrics
                 let mut algorithm_usage = self.routing_metrics.algorithm_usage.write().await;
                 let metrics = algorithm_usage.entry(algorithm).or_default();
                 metrics.usage_count += 1;
                 metrics.failure_count += 1;
-                
+
                 // Record error type
                 let error_type = format!("{:?}", error);
                 let mut routing_errors = self.error_metrics.routing_errors.write().await;
                 *routing_errors.entry(error_type).or_insert(0) += 1;
-                
+
                 // Update algorithm error metrics
                 let mut algorithm_errors = self.error_metrics.algorithm_errors.write().await;
                 *algorithm_errors.entry(algorithm).or_insert(0) += 1;
             }
         }
-        
+
         // Update timing metrics
         self.update_timing_metrics(duration).await;
     }
 
     /// Record topology change
-    pub async fn record_topology_change(&self, change_type: &str, node_count: u64, link_count: u64) {
-        self.topology_metrics.topology_changes.fetch_add(1, Ordering::Relaxed);
-        self.topology_metrics.total_nodes.store(node_count, Ordering::Relaxed);
-        self.topology_metrics.total_links.store(link_count, Ordering::Relaxed);
+    pub async fn record_topology_change(
+        &self,
+        change_type: &str,
+        node_count: u64,
+        link_count: u64,
+    ) {
+        self.topology_metrics
+            .topology_changes
+            .fetch_add(1, Ordering::Relaxed);
+        self.topology_metrics
+            .total_nodes
+            .store(node_count, Ordering::Relaxed);
+        self.topology_metrics
+            .total_links
+            .store(link_count, Ordering::Relaxed);
     }
 
     /// Record performance metrics
@@ -318,38 +350,62 @@ impl RoutingMetricsCollector {
         memory_usage: u64,
         cpu_utilization: f64,
     ) {
-        self.performance_metrics.throughput_messages_per_second.store(throughput, Ordering::Relaxed);
-        self.performance_metrics.concurrent_routing_operations.store(concurrent_ops, Ordering::Relaxed);
-        self.performance_metrics.memory_usage_bytes.store(memory_usage, Ordering::Relaxed);
-        self.performance_metrics.cpu_utilization.store((cpu_utilization * 100.0) as u64, Ordering::Relaxed);
+        self.performance_metrics
+            .throughput_messages_per_second
+            .store(throughput, Ordering::Relaxed);
+        self.performance_metrics
+            .concurrent_routing_operations
+            .store(concurrent_ops, Ordering::Relaxed);
+        self.performance_metrics
+            .memory_usage_bytes
+            .store(memory_usage, Ordering::Relaxed);
+        self.performance_metrics
+            .cpu_utilization
+            .store((cpu_utilization * 100.0) as u64, Ordering::Relaxed);
     }
 
     /// Record security event
     pub async fn record_security_event(&self, event_type: SecurityEventType) {
         match event_type {
             SecurityEventType::AuthenticationAttempt => {
-                self.security_metrics.authentication_attempts.fetch_add(1, Ordering::Relaxed);
+                self.security_metrics
+                    .authentication_attempts
+                    .fetch_add(1, Ordering::Relaxed);
             }
             SecurityEventType::AuthenticationFailure => {
-                self.security_metrics.authentication_failures.fetch_add(1, Ordering::Relaxed);
+                self.security_metrics
+                    .authentication_failures
+                    .fetch_add(1, Ordering::Relaxed);
             }
             SecurityEventType::AuthorizationCheck => {
-                self.security_metrics.authorization_checks.fetch_add(1, Ordering::Relaxed);
+                self.security_metrics
+                    .authorization_checks
+                    .fetch_add(1, Ordering::Relaxed);
             }
             SecurityEventType::AuthorizationDenial => {
-                self.security_metrics.authorization_denials.fetch_add(1, Ordering::Relaxed);
+                self.security_metrics
+                    .authorization_denials
+                    .fetch_add(1, Ordering::Relaxed);
             }
             SecurityEventType::EncryptionOperation => {
-                self.security_metrics.encryption_operations.fetch_add(1, Ordering::Relaxed);
+                self.security_metrics
+                    .encryption_operations
+                    .fetch_add(1, Ordering::Relaxed);
             }
             SecurityEventType::AuditEvent => {
-                self.security_metrics.audit_events.fetch_add(1, Ordering::Relaxed);
+                self.security_metrics
+                    .audit_events
+                    .fetch_add(1, Ordering::Relaxed);
             }
             SecurityEventType::PolicyViolation => {
-                self.security_metrics.security_policy_violations.fetch_add(1, Ordering::Relaxed);
+                self.security_metrics
+                    .security_policy_violations
+                    .fetch_add(1, Ordering::Relaxed);
             }
             SecurityEventType::SuspiciousActivity => {
-                self.security_metrics.suspicious_activities.fetch_add(1, Ordering::Relaxed);
+                self.security_metrics
+                    .suspicious_activities
+                    .fetch_add(1, Ordering::Relaxed);
             }
         }
     }
@@ -399,42 +455,60 @@ impl RoutingMetricsCollector {
     // Private helper methods
     async fn update_timing_metrics(&self, duration: Duration) {
         let duration_nanos = duration.as_nanos() as u64;
-        let total_routes = self.routing_metrics.total_routes_calculated.load(Ordering::Relaxed);
-        
+        let total_routes = self
+            .routing_metrics
+            .total_routes_calculated
+            .load(Ordering::Relaxed);
+
         if total_routes > 0 {
-            let current_avg = self.routing_metrics.average_calculation_time.load(Ordering::Relaxed);
+            let current_avg = self
+                .routing_metrics
+                .average_calculation_time
+                .load(Ordering::Relaxed);
             let new_avg = (current_avg * (total_routes - 1) + duration_nanos) / total_routes;
-            self.routing_metrics.average_calculation_time.store(new_avg, Ordering::Relaxed);
+            self.routing_metrics
+                .average_calculation_time
+                .store(new_avg, Ordering::Relaxed);
         }
-        
+
         // Update percentiles (simplified implementation)
         // In a real implementation, you'd use a proper percentile calculation
-        self.routing_metrics.p95_calculation_time.store(duration_nanos * 95 / 100, Ordering::Relaxed);
-        self.routing_metrics.p99_calculation_time.store(duration_nanos * 99 / 100, Ordering::Relaxed);
+        self.routing_metrics
+            .p95_calculation_time
+            .store(duration_nanos * 95 / 100, Ordering::Relaxed);
+        self.routing_metrics
+            .p99_calculation_time
+            .store(duration_nanos * 99 / 100, Ordering::Relaxed);
     }
 
     fn calculate_route_quality(&self, route: &Route) -> f64 {
         // Calculate route quality based on various factors
         let mut quality = 1.0;
-        
+
         // Factor in cost (lower is better)
         quality *= 1.0 / (1.0 + route.total_cost);
-        
+
         // Factor in reliability
         quality *= route.reliability_score;
-        
+
         // Factor in latency (lower is better)
         let latency_seconds = route.estimated_latency.as_secs_f64();
         quality *= 1.0 / (1.0 + latency_seconds);
-        
+
         quality.clamp(0.0, 1.0)
     }
 
     async fn get_routing_metrics_snapshot(&self) -> RoutingMetricsSnapshot_ {
-        let total_routes = self.routing_metrics.total_routes_calculated.load(Ordering::Relaxed);
-        let successful_routes = self.routing_metrics.successful_routes.load(Ordering::Relaxed);
+        let total_routes = self
+            .routing_metrics
+            .total_routes_calculated
+            .load(Ordering::Relaxed);
+        let successful_routes = self
+            .routing_metrics
+            .successful_routes
+            .load(Ordering::Relaxed);
         let failed_routes = self.routing_metrics.failed_routes.load(Ordering::Relaxed);
-        
+
         let success_rate = if total_routes > 0 {
             successful_routes as f64 / total_routes as f64
         } else {
@@ -443,7 +517,7 @@ impl RoutingMetricsCollector {
 
         let algorithm_usage = self.routing_metrics.algorithm_usage.read().await.clone();
         let qos_metrics = self.routing_metrics.qos_metrics.read().await.clone();
-        
+
         // Calculate average route quality
         let route_quality_scores = self.routing_metrics.route_quality_scores.read().await;
         let average_route_quality = if !route_quality_scores.is_empty() {
@@ -458,25 +532,34 @@ impl RoutingMetricsCollector {
             failed_routes,
             success_rate,
             average_calculation_time: Duration::from_nanos(
-                self.routing_metrics.average_calculation_time.load(Ordering::Relaxed)
+                self.routing_metrics
+                    .average_calculation_time
+                    .load(Ordering::Relaxed),
             ),
             p95_calculation_time: Duration::from_nanos(
-                self.routing_metrics.p95_calculation_time.load(Ordering::Relaxed)
+                self.routing_metrics
+                    .p95_calculation_time
+                    .load(Ordering::Relaxed),
             ),
             p99_calculation_time: Duration::from_nanos(
-                self.routing_metrics.p99_calculation_time.load(Ordering::Relaxed)
+                self.routing_metrics
+                    .p99_calculation_time
+                    .load(Ordering::Relaxed),
             ),
             algorithm_usage,
             qos_metrics,
             average_route_quality,
-            adaptive_improvements: self.routing_metrics.adaptive_improvements.load(Ordering::Relaxed),
+            adaptive_improvements: self
+                .routing_metrics
+                .adaptive_improvements
+                .load(Ordering::Relaxed),
         }
     }
 
     async fn get_topology_metrics_snapshot(&self) -> TopologyMetricsSnapshot {
         let total_nodes = self.topology_metrics.total_nodes.load(Ordering::Relaxed);
         let active_nodes = self.topology_metrics.active_nodes.load(Ordering::Relaxed);
-        
+
         let health_score = if total_nodes > 0 {
             active_nodes as f64 / total_nodes as f64
         } else {
@@ -488,12 +571,32 @@ impl RoutingMetricsCollector {
             active_nodes,
             total_links: self.topology_metrics.total_links.load(Ordering::Relaxed),
             active_links: self.topology_metrics.active_links.load(Ordering::Relaxed),
-            topology_changes: self.topology_metrics.topology_changes.load(Ordering::Relaxed),
-            discovery_operations: self.topology_metrics.discovery_operations.load(Ordering::Relaxed),
-            metrics_collections: self.topology_metrics.metrics_collections.load(Ordering::Relaxed),
-            average_node_load: self.topology_metrics.average_node_load.load(Ordering::Relaxed) as f64 / 100.0,
-            average_link_utilization: self.topology_metrics.average_link_utilization.load(Ordering::Relaxed) as f64 / 100.0,
-            network_partitions: self.topology_metrics.network_partitions.load(Ordering::Relaxed),
+            topology_changes: self
+                .topology_metrics
+                .topology_changes
+                .load(Ordering::Relaxed),
+            discovery_operations: self
+                .topology_metrics
+                .discovery_operations
+                .load(Ordering::Relaxed),
+            metrics_collections: self
+                .topology_metrics
+                .metrics_collections
+                .load(Ordering::Relaxed),
+            average_node_load: self
+                .topology_metrics
+                .average_node_load
+                .load(Ordering::Relaxed) as f64
+                / 100.0,
+            average_link_utilization: self
+                .topology_metrics
+                .average_link_utilization
+                .load(Ordering::Relaxed) as f64
+                / 100.0,
+            network_partitions: self
+                .topology_metrics
+                .network_partitions
+                .load(Ordering::Relaxed),
             health_score,
         }
     }
@@ -502,23 +605,50 @@ impl RoutingMetricsCollector {
         let queue_depths = self.performance_metrics.queue_depths.read().await.clone();
 
         PerformanceMetricsSnapshot {
-            throughput_messages_per_second: self.performance_metrics.throughput_messages_per_second.load(Ordering::Relaxed),
-            concurrent_routing_operations: self.performance_metrics.concurrent_routing_operations.load(Ordering::Relaxed),
-            memory_usage_bytes: self.performance_metrics.memory_usage_bytes.load(Ordering::Relaxed),
-            cpu_utilization: self.performance_metrics.cpu_utilization.load(Ordering::Relaxed) as f64 / 100.0,
-            gc_pressure: self.performance_metrics.gc_pressure.load(Ordering::Relaxed) as f64 / 100.0,
-            thread_pool_utilization: self.performance_metrics.thread_pool_utilization.load(Ordering::Relaxed) as f64 / 100.0,
+            throughput_messages_per_second: self
+                .performance_metrics
+                .throughput_messages_per_second
+                .load(Ordering::Relaxed),
+            concurrent_routing_operations: self
+                .performance_metrics
+                .concurrent_routing_operations
+                .load(Ordering::Relaxed),
+            memory_usage_bytes: self
+                .performance_metrics
+                .memory_usage_bytes
+                .load(Ordering::Relaxed),
+            cpu_utilization: self
+                .performance_metrics
+                .cpu_utilization
+                .load(Ordering::Relaxed) as f64
+                / 100.0,
+            gc_pressure: self.performance_metrics.gc_pressure.load(Ordering::Relaxed) as f64
+                / 100.0,
+            thread_pool_utilization: self
+                .performance_metrics
+                .thread_pool_utilization
+                .load(Ordering::Relaxed) as f64
+                / 100.0,
             queue_depths,
-            resource_contention: self.performance_metrics.resource_contention.load(Ordering::Relaxed),
+            resource_contention: self
+                .performance_metrics
+                .resource_contention
+                .load(Ordering::Relaxed),
         }
     }
 
     async fn get_error_metrics_snapshot(&self) -> ErrorMetricsSnapshot {
         let routing_errors = self.error_metrics.routing_errors.read().await.clone();
         let algorithm_errors = self.error_metrics.algorithm_errors.read().await.clone();
-        
-        let recovery_attempts = self.error_metrics.error_recovery_attempts.load(Ordering::Relaxed);
-        let recovery_successes = self.error_metrics.error_recovery_successes.load(Ordering::Relaxed);
+
+        let recovery_attempts = self
+            .error_metrics
+            .error_recovery_attempts
+            .load(Ordering::Relaxed);
+        let recovery_successes = self
+            .error_metrics
+            .error_recovery_successes
+            .load(Ordering::Relaxed);
         let error_recovery_rate = if recovery_attempts > 0 {
             recovery_successes as f64 / recovery_attempts as f64
         } else {
@@ -531,7 +661,10 @@ impl RoutingMetricsCollector {
             timeout_errors: self.error_metrics.timeout_errors.load(Ordering::Relaxed),
             topology_errors: self.error_metrics.topology_errors.load(Ordering::Relaxed),
             qos_violations: self.error_metrics.qos_violations.load(Ordering::Relaxed),
-            security_violations: self.error_metrics.security_violations.load(Ordering::Relaxed),
+            security_violations: self
+                .error_metrics
+                .security_violations
+                .load(Ordering::Relaxed),
             algorithm_errors,
             error_recovery_attempts: recovery_attempts,
             error_recovery_successes: recovery_successes,
@@ -540,16 +673,28 @@ impl RoutingMetricsCollector {
     }
 
     async fn get_security_metrics_snapshot(&self) -> SecurityMetricsSnapshot {
-        let auth_attempts = self.security_metrics.authentication_attempts.load(Ordering::Relaxed);
-        let auth_failures = self.security_metrics.authentication_failures.load(Ordering::Relaxed);
+        let auth_attempts = self
+            .security_metrics
+            .authentication_attempts
+            .load(Ordering::Relaxed);
+        let auth_failures = self
+            .security_metrics
+            .authentication_failures
+            .load(Ordering::Relaxed);
         let auth_success_rate = if auth_attempts > 0 {
             (auth_attempts - auth_failures) as f64 / auth_attempts as f64
         } else {
             0.0
         };
 
-        let authz_checks = self.security_metrics.authorization_checks.load(Ordering::Relaxed);
-        let authz_denials = self.security_metrics.authorization_denials.load(Ordering::Relaxed);
+        let authz_checks = self
+            .security_metrics
+            .authorization_checks
+            .load(Ordering::Relaxed);
+        let authz_denials = self
+            .security_metrics
+            .authorization_denials
+            .load(Ordering::Relaxed);
         let authz_success_rate = if authz_checks > 0 {
             (authz_checks - authz_denials) as f64 / authz_checks as f64
         } else {
@@ -563,10 +708,19 @@ impl RoutingMetricsCollector {
             authorization_checks: authz_checks,
             authorization_denials: authz_denials,
             authorization_success_rate: authz_success_rate,
-            encryption_operations: self.security_metrics.encryption_operations.load(Ordering::Relaxed),
+            encryption_operations: self
+                .security_metrics
+                .encryption_operations
+                .load(Ordering::Relaxed),
             audit_events: self.security_metrics.audit_events.load(Ordering::Relaxed),
-            security_policy_violations: self.security_metrics.security_policy_violations.load(Ordering::Relaxed),
-            suspicious_activities: self.security_metrics.suspicious_activities.load(Ordering::Relaxed),
+            security_policy_violations: self
+                .security_metrics
+                .security_policy_violations
+                .load(Ordering::Relaxed),
+            suspicious_activities: self
+                .security_metrics
+                .suspicious_activities
+                .load(Ordering::Relaxed),
         }
     }
 }

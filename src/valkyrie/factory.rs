@@ -3,12 +3,11 @@
 //! This module provides factory patterns for creating and configuring
 //! Valkyrie Protocol components with proper dependency injection.
 
-use std::sync::Arc;
 use crate::valkyrie::{
-    ValkyrieEngine, ValkyrieConfig, ValkyrieConfigBuilder,
-    TransportManager, SecurityManager, StreamMultiplexer, 
-    ObservabilityManager, Result
+    ObservabilityManager, Result, SecurityManager, StreamMultiplexer, TransportManager,
+    ValkyrieConfig, ValkyrieConfigBuilder, ValkyrieEngine,
 };
+use std::sync::Arc;
 
 /// Factory for creating Valkyrie Protocol engines
 pub struct ValkyrieFactory;
@@ -22,16 +21,16 @@ impl ValkyrieFactory {
             .with_default_streaming()
             .with_default_observability()
             .build()?;
-            
+
         Self::create_with_config(config).await
     }
-    
+
     /// Create a new Valkyrie engine with custom configuration
     pub async fn create_with_config(config: ValkyrieConfig) -> Result<ValkyrieEngine> {
         let builder = EngineBuilder::new(config);
         builder.build().await
     }
-    
+
     /// Create a Valkyrie engine optimized for RustCI integration
     pub async fn create_for_rustci() -> Result<ValkyrieEngine> {
         let config = ValkyrieConfigBuilder::new()
@@ -40,7 +39,7 @@ impl ValkyrieFactory {
             .enable_container_transport()
             .enable_kubernetes_transport()
             .build()?;
-            
+
         Self::create_with_config(config).await
     }
 }
@@ -65,31 +64,31 @@ impl EngineBuilder {
             observability_manager: None,
         }
     }
-    
+
     /// Set a custom transport manager
     pub fn with_transport_manager(mut self, manager: Arc<TransportManager>) -> Self {
         self.transport_manager = Some(manager);
         self
     }
-    
+
     /// Set a custom security manager
     pub fn with_security_manager(mut self, manager: Arc<SecurityManager>) -> Self {
         self.security_manager = Some(manager);
         self
     }
-    
+
     /// Set a custom stream multiplexer
     pub fn with_stream_multiplexer(mut self, multiplexer: Arc<StreamMultiplexer>) -> Self {
         self.stream_multiplexer = Some(multiplexer);
         self
     }
-    
+
     /// Set a custom observability manager
     pub fn with_observability_manager(mut self, manager: Arc<ObservabilityManager>) -> Self {
         self.observability_manager = Some(manager);
         self
     }
-    
+
     /// Build the Valkyrie engine
     pub async fn build(self) -> Result<ValkyrieEngine> {
         // Create managers if not provided
@@ -97,22 +96,24 @@ impl EngineBuilder {
             Some(manager) => manager,
             None => Arc::new(TransportManager::new(self.config.transport.clone())?),
         };
-        
+
         let security_manager = match self.security_manager {
             Some(manager) => manager,
             None => Arc::new(SecurityManager::new(self.config.security.clone())?),
         };
-        
+
         let stream_multiplexer = match self.stream_multiplexer {
             Some(multiplexer) => multiplexer,
             None => Arc::new(StreamMultiplexer::new(self.config.streaming.clone())),
         };
-        
+
         let observability_manager = match self.observability_manager {
             Some(manager) => manager,
-            None => Arc::new(ObservabilityManager::new(self.config.observability.clone())?),
+            None => Arc::new(ObservabilityManager::new(
+                self.config.observability.clone(),
+            )?),
         };
-        
+
         // Create the engine with dependency injection
         ValkyrieEngine::new_with_dependencies(
             self.config,
@@ -172,14 +173,14 @@ impl EngineStrategy for SecureStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_factory_create_default() {
         let _result = ValkyrieFactory::create_default().await;
         // This would need proper mocking to test
         // assert!(result.is_ok());
     }
-    
+
     #[tokio::test]
     async fn test_builder_pattern() {
         let config = ValkyrieConfigBuilder::new().build().unwrap();

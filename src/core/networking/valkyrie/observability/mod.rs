@@ -1,47 +1,47 @@
 // Valkyrie Protocol Observability Module
 // Self-contained observability without external dependencies
 
-pub mod metrics;
-pub mod logging;
-pub mod health;
-pub mod dashboard;
-pub mod correlation;
-pub mod compatibility;
-pub mod external;
-pub mod adapters;
 pub mod adapter_system;
+pub mod adapters;
+pub mod compatibility;
+pub mod correlation;
+pub mod dashboard;
+pub mod external;
+pub mod health;
+pub mod logging;
+pub mod metrics;
 pub mod opentelemetry_adapter;
 
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 // tokio::sync::RwLock import removed as unused
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 // uuid::Uuid import removed as unused
 
-pub use metrics::{MetricsCollector, MetricValue, MetricType};
-pub use logging::{StructuredLogger, LogLevel};
-pub use health::{HealthMonitor, HealthStatus, HealthCheck};
-pub use dashboard::{MetricsDashboard, DashboardConfig};
-pub use correlation::{CorrelationId, CorrelationTracker};
 pub use compatibility::{
-    LegacyObservabilityAdapter, CompatibilityConfig,
-    ProtocolVersionNegotiator, FeatureDetector
+    CompatibilityConfig, FeatureDetector, LegacyObservabilityAdapter, ProtocolVersionNegotiator,
 };
+pub use correlation::{CorrelationId, CorrelationTracker};
+pub use dashboard::{DashboardConfig, MetricsDashboard};
 pub use external::{
-    ExternalObservabilityIntegration, ExternalObservabilityConfig, ExternalObservabilityStatus,
-    PrometheusIntegration, OpenTelemetryIntegration, JaegerIntegration, GrafanaIntegration,
-    IntegrationStatus, TraceSpan, SpanLog
+    ExternalObservabilityConfig, ExternalObservabilityIntegration, ExternalObservabilityStatus,
+    GrafanaIntegration, IntegrationStatus, JaegerIntegration, OpenTelemetryIntegration,
+    PrometheusIntegration, SpanLog, TraceSpan,
 };
+pub use health::{HealthCheck, HealthMonitor, HealthStatus};
+pub use logging::{LogLevel, StructuredLogger};
+pub use metrics::{MetricType, MetricValue, MetricsCollector};
 
 // Re-export adapter system types for external use
 pub use adapter_system::{
-    ObservabilityManager as PluggableObservabilityManager, MetricsAdapter, TracingAdapter, 
-    HealthAdapter, LoggingAdapter, SpanId, SpanStatus, HealthStatus as AdapterHealthStatus,
-    LogLevel as AdapterLogLevel, AdapterHealth, DependencyHealth, ObservabilityConfig as AdapterConfig
+    AdapterHealth, DependencyHealth, HealthAdapter, HealthStatus as AdapterHealthStatus,
+    LogLevel as AdapterLogLevel, LoggingAdapter, MetricsAdapter,
+    ObservabilityConfig as AdapterConfig, ObservabilityManager as PluggableObservabilityManager,
+    SpanId, SpanStatus, TracingAdapter,
 };
 
 // Re-export OpenTelemetry adapter types for external use
-pub use opentelemetry_adapter::{OpenTelemetryConfig, OpenTelemetryAdapterFactory};
+pub use opentelemetry_adapter::{OpenTelemetryAdapterFactory, OpenTelemetryConfig};
 
 /// Main observability manager for the Valkyrie Protocol
 pub struct ObservabilityManager {
@@ -117,16 +117,22 @@ impl ObservabilityManager {
             config.dashboard_refresh_seconds,
         ));
         let correlation_tracker = Arc::new(CorrelationTracker::new());
-        
+
         let external_integration = if let Some(ref external_config) = config.external_config {
-            Some(Arc::new(external::ExternalObservabilityIntegration::new(external_config.clone())))
+            Some(Arc::new(external::ExternalObservabilityIntegration::new(
+                external_config.clone(),
+            )))
         } else {
             None
         };
 
-        let adapter_registry_config = config.adapter_registry_config.clone()
+        let adapter_registry_config = config
+            .adapter_registry_config
+            .clone()
             .unwrap_or_else(|| adapters::AdapterRegistryConfig::default());
-        let adapter_registry = Arc::new(adapters::ObservabilityAdapterRegistry::new(adapter_registry_config));
+        let adapter_registry = Arc::new(adapters::ObservabilityAdapterRegistry::new(
+            adapter_registry_config,
+        ));
 
         Self {
             metrics_collector,
@@ -240,7 +246,9 @@ impl ObservabilityManager {
         let mut enhanced_labels = labels;
         enhanced_labels.insert("correlation_id".to_string(), correlation_id.to_string());
 
-        self.metrics_collector.record(name, value, enhanced_labels).await
+        self.metrics_collector
+            .record(name, value, enhanced_labels)
+            .await
     }
 
     /// Log with correlation
@@ -307,22 +315,22 @@ pub struct ObservabilityStatus {
 pub enum ObservabilityError {
     #[error("Metrics error: {0}")]
     Metrics(String),
-    
+
     #[error("Logging error: {0}")]
     Logging(String),
-    
+
     #[error("Health monitoring error: {0}")]
     Health(String),
-    
+
     #[error("Dashboard error: {0}")]
     Dashboard(String),
-    
+
     #[error("Correlation tracking error: {0}")]
     Correlation(String),
-    
+
     #[error("Configuration error: {0}")]
     Configuration(String),
-    
+
     #[error("Internal error: {0}")]
     Internal(String),
 }

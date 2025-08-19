@@ -3,7 +3,7 @@
 //! This module provides streaming and multiplexing capabilities
 //! for the Valkyrie Protocol.
 
-use crate::valkyrie::{StreamingConfig, Result};
+use crate::valkyrie::{Result, StreamingConfig};
 
 /// Stream multiplexer for the Valkyrie Protocol
 pub struct StreamMultiplexer {
@@ -15,12 +15,12 @@ impl StreamMultiplexer {
     pub fn new(config: StreamingConfig) -> Self {
         Self { config }
     }
-    
+
     /// Start the stream multiplexer
     pub async fn start(&self) -> Result<()> {
         Ok(())
     }
-    
+
     /// Stop the stream multiplexer
     pub async fn stop(&self) -> Result<()> {
         Ok(())

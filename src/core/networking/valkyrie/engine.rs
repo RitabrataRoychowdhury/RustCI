@@ -4,26 +4,23 @@
 //! providing a high-level interface for distributed communication with
 //! advanced features like multi-transport support, security, and observability.
 
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
-use async_trait::async_trait;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
 // use uuid::Uuid; // Unused
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 // Import canonical types from central types module and message module
-use super::types::{
-    ValkyrieMessage,
-    ConnectionId, StreamId, Duration
-};
 use super::types::MessageType;
+use super::types::{ConnectionId, Duration, StreamId, ValkyrieMessage};
 
 // Removed unused imports
 use crate::core::networking::transport::{Connection, TransportConfig};
-use crate::core::networking::valkyrie::zero_copy::ZeroCopyBufferPool;
 use crate::core::networking::valkyrie::simd_processor::{SimdMessageProcessor, SimdPatternMatcher};
+use crate::core::networking::valkyrie::zero_copy::ZeroCopyBufferPool;
 use crate::error::Result;
 
 // Type aliases removed - now imported from central types module
@@ -126,9 +123,11 @@ impl ValkyrieEngine {
         let mut state = self.state.write().await;
         *state = ProtocolState::Running;
 
-        self.event_bus.publish(ValkyrieEvent::EngineStarted {
-            timestamp: Utc::now(),
-        }).await;
+        self.event_bus
+            .publish(ValkyrieEvent::EngineStarted {
+                timestamp: Utc::now(),
+            })
+            .await;
 
         Ok(())
     }
@@ -162,9 +161,11 @@ impl ValkyrieEngine {
         let mut state = self.state.write().await;
         *state = ProtocolState::Stopped;
 
-        self.event_bus.publish(ValkyrieEvent::EngineStopped {
-            timestamp: Utc::now(),
-        }).await;
+        self.event_bus
+            .publish(ValkyrieEvent::EngineStopped {
+                timestamp: Utc::now(),
+            })
+            .await;
 
         Ok(())
     }
@@ -172,11 +173,13 @@ impl ValkyrieEngine {
     /// Create a new connection to a remote endpoint
     pub async fn connect(&self, endpoint: Endpoint) -> Result<ConnectionHandle> {
         let connection_id = ConnectionId::new_v4();
-        
+
         // Authenticate and establish connection
         let transport_connection = self.transport_manager.connect(&endpoint).await?;
-        let _authenticated_connection = self.security_manager
-            .authenticate_connection(transport_connection, &endpoint).await?;
+        let _authenticated_connection = self
+            .security_manager
+            .authenticate_connection(transport_connection, &endpoint)
+            .await?;
 
         // Register connection
         let connection_info = ConnectionInfo {
@@ -188,7 +191,9 @@ impl ValkyrieEngine {
             streams: HashMap::new(),
         };
 
-        self.connection_registry.register(connection_id, connection_info).await?;
+        self.connection_registry
+            .register(connection_id, connection_info)
+            .await?;
 
         // Create connection handle
         let handle = ConnectionHandle {
@@ -197,13 +202,17 @@ impl ValkyrieEngine {
             engine: Arc::downgrade(&Arc::new(self.clone())),
         };
 
-        self.event_bus.publish(ValkyrieEvent::ConnectionEstablished {
-            connection_id,
-            endpoint: handle.endpoint.clone(),
-            timestamp: Utc::now(),
-        }).await;
+        self.event_bus
+            .publish(ValkyrieEvent::ConnectionEstablished {
+                connection_id,
+                endpoint: handle.endpoint.clone(),
+                timestamp: Utc::now(),
+            })
+            .await;
 
-        self.metrics.increment_counter("connections_established", &[]).await;
+        self.metrics
+            .increment_counter("connections_established", &[])
+            .await;
 
         Ok(handle)
     }
@@ -211,11 +220,13 @@ impl ValkyrieEngine {
     /// Listen for incoming connections
     pub async fn listen(&self, bind_address: std::net::SocketAddr) -> Result<Listener> {
         let listener = self.transport_manager.listen(bind_address).await?;
-        
-        self.event_bus.publish(ValkyrieEvent::ListenerStarted {
-            address: bind_address,
-            timestamp: Utc::now(),
-        }).await;
+
+        self.event_bus
+            .publish(ValkyrieEvent::ListenerStarted {
+                address: bind_address,
+                timestamp: Utc::now(),
+            })
+            .await;
 
         Ok(Listener {
             inner: listener,
@@ -241,11 +252,16 @@ impl ValkyrieEngine {
         };
 
         // Route message through the message router
-        self.message_router.route_message(connection, processed_message).await?;
-        
-        self.metrics.increment_counter("messages_sent", &[
-            ("connection_id", &connection.to_string())
-        ]).await;
+        self.message_router
+            .route_message(connection, processed_message)
+            .await?;
+
+        self.metrics
+            .increment_counter(
+                "messages_sent",
+                &[("connection_id", &connection.to_string())],
+            )
+            .await;
 
         Ok(())
     }
@@ -268,7 +284,11 @@ impl ValkyrieEngine {
                     // For now, just use regular processing
                     // TODO: Implement proper batch processing with SIMD results
                     for connection_id in connections {
-                        match self.message_router.route_message(connection_id, message.clone()).await {
+                        match self
+                            .message_router
+                            .route_message(connection_id, message.clone())
+                            .await
+                        {
                             Ok(()) => {
                                 results.insert(connection_id, Ok(()));
                                 successful += 1;
@@ -319,10 +339,15 @@ impl ValkyrieEngine {
             results,
         };
 
-        self.metrics.increment_counter("messages_broadcast", &[
-            ("successful", &successful.to_string()),
-            ("failed", &failed.to_string()),
-        ]).await;
+        self.metrics
+            .increment_counter(
+                "messages_broadcast",
+                &[
+                    ("successful", &successful.to_string()),
+                    ("failed", &failed.to_string()),
+                ],
+            )
+            .await;
 
         Ok(result)
     }
@@ -332,7 +357,8 @@ impl ValkyrieEngine {
     where
         H: MessageHandler + Send + Sync + 'static,
     {
-        self.message_router.register_handler(message_type, Box::new(handler));
+        self.message_router
+            .register_handler(message_type, Box::new(handler));
     }
 
     /// Get engine statistics
@@ -402,12 +428,16 @@ impl ValkyrieEngine {
     }
 
     /// Get SIMD processor statistics
-    pub fn get_simd_stats(&self) -> crate::core::networking::valkyrie::simd_processor::MessageProcessingStats {
+    pub fn get_simd_stats(
+        &self,
+    ) -> crate::core::networking::valkyrie::simd_processor::MessageProcessingStats {
         self.simd_processor.get_stats()
     }
 
     /// Get pattern matcher statistics
-    pub fn get_pattern_matcher_stats(&self) -> crate::core::networking::valkyrie::simd_processor::MatchStats {
+    pub fn get_pattern_matcher_stats(
+        &self,
+    ) -> crate::core::networking::valkyrie::simd_processor::MatchStats {
         self.pattern_matcher.get_stats()
     }
 
@@ -422,10 +452,12 @@ impl ValkyrieEngine {
         // Extract message data for pattern matching
         let data = match &message.payload {
             crate::core::networking::valkyrie::types::MessagePayload::Binary(data) => data.clone(),
-            crate::core::networking::valkyrie::types::MessagePayload::Text(text) => text.as_bytes().to_vec(),
+            crate::core::networking::valkyrie::types::MessagePayload::Text(text) => {
+                text.as_bytes().to_vec()
+            }
             crate::core::networking::valkyrie::types::MessagePayload::Json(value) => {
                 serde_json::to_vec(value).unwrap_or_default()
-            },
+            }
             _ => Vec::new(),
         };
 
@@ -830,7 +862,7 @@ impl ConnectionHandle {
             engine.send_message(self.id, message).await
         } else {
             Err(crate::error::AppError::InternalServerError(
-                "Engine has been dropped".to_string()
+                "Engine has been dropped".to_string(),
             ))
         }
     }
@@ -857,11 +889,11 @@ impl Listener {
     /// Accept incoming connections
     pub async fn accept(&mut self) -> Result<ConnectionHandle> {
         let _connection = self.inner.accept().await?;
-        
+
         if let Some(_engine) = self.engine.upgrade() {
             // Process the incoming connection through the engine
             let connection_id = ConnectionId::new_v4();
-            
+
             // This would involve authentication, registration, etc.
             // For now, create a basic handle
             let handle = ConnectionHandle {
@@ -874,11 +906,11 @@ impl Listener {
                 },
                 engine: std::sync::Weak::clone(&self.engine),
             };
-            
+
             Ok(handle)
         } else {
             Err(crate::error::AppError::InternalServerError(
-                "Engine has been dropped".to_string()
+                "Engine has been dropped".to_string(),
             ))
         }
     }
@@ -912,13 +944,9 @@ pub trait MessageHandler: Send + Sync {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ValkyrieEvent {
     /// Engine started
-    EngineStarted {
-        timestamp: DateTime<Utc>,
-    },
+    EngineStarted { timestamp: DateTime<Utc> },
     /// Engine stopped
-    EngineStopped {
-        timestamp: DateTime<Utc>,
-    },
+    EngineStopped { timestamp: DateTime<Utc> },
     /// Connection established
     ConnectionEstablished {
         connection_id: ConnectionId,
@@ -1032,11 +1060,20 @@ impl TransportManager {
     }
 
     pub async fn connect(&self, _endpoint: &Endpoint) -> Result<Box<dyn Connection>> {
-        Err(crate::error::AppError::NotImplemented("Transport connection not implemented".to_string()).into())
+        Err(crate::error::AppError::NotImplemented(
+            "Transport connection not implemented".to_string(),
+        )
+        .into())
     }
 
-    pub async fn listen(&self, _address: std::net::SocketAddr) -> Result<Box<dyn crate::core::networking::transport::Listener>> {
-        Err(crate::error::AppError::NotImplemented("Transport listener not implemented".to_string()).into())
+    pub async fn listen(
+        &self,
+        _address: std::net::SocketAddr,
+    ) -> Result<Box<dyn crate::core::networking::transport::Listener>> {
+        Err(crate::error::AppError::NotImplemented(
+            "Transport listener not implemented".to_string(),
+        )
+        .into())
     }
 
     pub async fn get_stats(&self) -> TransportStats {

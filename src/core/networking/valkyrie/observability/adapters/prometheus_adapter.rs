@@ -1,20 +1,21 @@
 // Prometheus Adapter - Direct connection for Prometheus servers
 // Enables Prometheus to scrape Valkyrie metrics with 100μs performance
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
-use super::{
-    ObservabilityAdapter, AdapterProtocol, AdapterCapabilities, AdapterConfig,
-    AdapterConnection, AdapterHealth, AdapterPerformanceMetrics, HealthStatus,
-    MetricData, LogData, TraceData, MetricsQuery, LogsQuery, TracesQuery,
-    DataFormat, ObservabilityError,
+use super::network_server::{
+    ProtocolCapabilities, ProtocolHandler, ProtocolRequest, ProtocolResponse,
 };
-use super::network_server::{ProtocolHandler, ProtocolRequest, ProtocolResponse, ProtocolCapabilities};
+use super::{
+    AdapterCapabilities, AdapterConfig, AdapterConnection, AdapterHealth,
+    AdapterPerformanceMetrics, AdapterProtocol, DataFormat, HealthStatus, LogData, LogsQuery,
+    MetricData, MetricsQuery, ObservabilityAdapter, ObservabilityError, TraceData, TracesQuery,
+};
 
 /// Prometheus adapter for direct Prometheus server integration
 pub struct PrometheusAdapter {
@@ -135,7 +136,7 @@ impl PrometheusPerformanceTracker {
         self.sample_index = (self.sample_index + 1) % self.request_latencies_us.len();
         self.total_requests += 1;
         self.bytes_served += bytes_served;
-        
+
         // Update cache hit rate (exponential moving average)
         let hit_value = if cache_hit { 1.0 } else { 0.0 };
         self.cache_hit_rate = 0.9 * self.cache_hit_rate + 0.1 * hit_value;
@@ -145,7 +146,7 @@ impl PrometheusPerformanceTracker {
     pub fn get_metrics(&self) -> AdapterPerformanceMetrics {
         let mut sorted_latencies = self.request_latencies_us.clone();
         sorted_latencies.sort_unstable();
-        
+
         let avg_latency = if !sorted_latencies.is_empty() {
             sorted_latencies.iter().sum::<u64>() as f64 / sorted_latencies.len() as f64
         } else {
@@ -170,7 +171,7 @@ impl PrometheusPerformanceTracker {
             p95_latency_us: p95_latency,
             p99_latency_us: p99_latency,
             throughput_ops: throughput,
-            memory_usage_bytes: 0, // Would be calculated separately
+            memory_usage_bytes: 0,  // Would be calculated separately
             cpu_usage_percent: 0.0, // Would be calculated separately
             network_bytes_sent: self.bytes_served,
             network_bytes_received: 0, // Prometheus typically only receives
@@ -275,7 +276,7 @@ impl PrometheusAdapter {
     /// Update metrics cache for high-performance serving
     pub async fn update_cache(&self, metrics: &[MetricData]) -> Result<(), ObservabilityError> {
         let exposition = self.convert_metrics_to_prometheus(metrics).await;
-        
+
         let mut cache = self.metrics_cache.write().await;
         cache.cached_exposition = exposition;
         cache.cache_timestamp = Instant::now();
@@ -292,24 +293,29 @@ impl PrometheusAdapter {
                 metric.timestamp_us / 1000
             );
 
-            cache.metric_cache.insert(metric_name.clone(), CachedMetric {
-                name: metric_name,
-                prometheus_format,
-                updated_at: Instant::now(),
-                access_count: 0,
-            });
+            cache.metric_cache.insert(
+                metric_name.clone(),
+                CachedMetric {
+                    name: metric_name,
+                    prometheus_format,
+                    updated_at: Instant::now(),
+                    access_count: 0,
+                },
+            );
         }
 
         // Limit cache size for memory efficiency
         if cache.metric_cache.len() > self.config.max_cache_size {
             // Remove least recently used metrics
-            let metrics_by_access: Vec<_> = cache.metric_cache.iter()
+            let metrics_by_access: Vec<_> = cache
+                .metric_cache
+                .iter()
                 .map(|(name, metric)| (name.clone(), metric.access_count))
                 .collect();
-            
+
             let mut sorted_metrics = metrics_by_access;
             sorted_metrics.sort_by_key(|(_, access_count)| *access_count);
-            
+
             let to_remove = cache.metric_cache.len() - self.config.max_cache_size;
             for (name, _) in sorted_metrics.iter().take(to_remove) {
                 cache.metric_cache.remove(name);
@@ -322,14 +328,14 @@ impl PrometheusAdapter {
     /// Serve metrics with sub-millisecond performance
     pub async fn serve_metrics(&self) -> Result<String, ObservabilityError> {
         let start_time = Instant::now();
-        
+
         let cache = self.metrics_cache.read().await;
         let exposition = cache.cached_exposition.clone();
         let cache_age = start_time.duration_since(cache.cache_timestamp);
-        
+
         // Check if cache is fresh (within refresh interval)
         let cache_hit = cache_age.as_micros() < self.config.cache_refresh_interval_us as u128;
-        
+
         drop(cache); // Release lock quickly
 
         // Record performance
@@ -351,11 +357,15 @@ impl PrometheusAdapter {
     }
 
     /// Handle push gateway request
-    pub async fn handle_push_gateway(&self, _job_name: &str, _metrics_data: &[u8]) -> Result<(), ObservabilityError> {
+    pub async fn handle_push_gateway(
+        &self,
+        _job_name: &str,
+        _metrics_data: &[u8],
+    ) -> Result<(), ObservabilityError> {
         // Parse incoming metrics and store them
         // This would typically involve parsing the Prometheus exposition format
         // and converting it to internal metric format
-        
+
         // For now, just acknowledge the push
         Ok(())
     }
@@ -420,15 +430,18 @@ impl ObservabilityAdapter for PrometheusAdapter {
     async fn stop(&mut self) -> Result<(), ObservabilityError> {
         let mut running = self.running.write().await;
         *running = false;
-        
+
         // Close all active connections
         let mut connections = self.active_connections.write().await;
         connections.clear();
-        
+
         Ok(())
     }
 
-    async fn handle_connection(&self, connection: AdapterConnection) -> Result<(), ObservabilityError> {
+    async fn handle_connection(
+        &self,
+        connection: AdapterConnection,
+    ) -> Result<(), ObservabilityError> {
         let mut connections = self.active_connections.write().await;
         connections.insert(connection.id, connection);
         Ok(())
@@ -441,26 +454,40 @@ impl ObservabilityAdapter for PrometheusAdapter {
 
     async fn export_logs(&self, _logs: &[LogData]) -> Result<(), ObservabilityError> {
         // Prometheus doesn't handle logs
-        Err(ObservabilityError::Internal("Prometheus adapter doesn't support logs".to_string()))
+        Err(ObservabilityError::Internal(
+            "Prometheus adapter doesn't support logs".to_string(),
+        ))
     }
 
     async fn export_traces(&self, _traces: &[TraceData]) -> Result<(), ObservabilityError> {
         // Prometheus doesn't handle traces
-        Err(ObservabilityError::Internal("Prometheus adapter doesn't support traces".to_string()))
+        Err(ObservabilityError::Internal(
+            "Prometheus adapter doesn't support traces".to_string(),
+        ))
     }
 
-    async fn query_metrics(&self, _query: MetricsQuery) -> Result<Vec<MetricData>, ObservabilityError> {
+    async fn query_metrics(
+        &self,
+        _query: MetricsQuery,
+    ) -> Result<Vec<MetricData>, ObservabilityError> {
         // Prometheus typically pulls metrics, not queries them
         // This could be implemented for advanced use cases
         Ok(vec![])
     }
 
     async fn query_logs(&self, _query: LogsQuery) -> Result<Vec<LogData>, ObservabilityError> {
-        Err(ObservabilityError::Internal("Prometheus adapter doesn't support logs".to_string()))
+        Err(ObservabilityError::Internal(
+            "Prometheus adapter doesn't support logs".to_string(),
+        ))
     }
 
-    async fn query_traces(&self, _query: TracesQuery) -> Result<Vec<TraceData>, ObservabilityError> {
-        Err(ObservabilityError::Internal("Prometheus adapter doesn't support traces".to_string()))
+    async fn query_traces(
+        &self,
+        _query: TracesQuery,
+    ) -> Result<Vec<TraceData>, ObservabilityError> {
+        Err(ObservabilityError::Internal(
+            "Prometheus adapter doesn't support traces".to_string(),
+        ))
     }
 
     async fn health(&self) -> AdapterHealth {
@@ -470,7 +497,8 @@ impl ObservabilityAdapter for PrometheusAdapter {
         let metrics = performance.get_metrics();
 
         let status = if running {
-            if metrics.avg_latency_us < 100.0 { // 100μs target
+            if metrics.avg_latency_us < 100.0 {
+                // 100μs target
                 HealthStatus::Healthy
             } else {
                 HealthStatus::Degraded
@@ -482,7 +510,10 @@ impl ObservabilityAdapter for PrometheusAdapter {
         AdapterHealth {
             status,
             message: format!("Prometheus adapter - {} connections", connections.len()),
-            last_check: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            last_check: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             active_connections: connections.len(),
             error_count: 0, // Would be tracked separately
             performance: metrics,
@@ -510,18 +541,24 @@ impl PrometheusProtocolHandler {
 
 #[async_trait::async_trait]
 impl ProtocolHandler for PrometheusProtocolHandler {
-    async fn handle_request(&self, request: ProtocolRequest) -> Result<ProtocolResponse, ObservabilityError> {
+    async fn handle_request(
+        &self,
+        request: ProtocolRequest,
+    ) -> Result<ProtocolResponse, ObservabilityError> {
         let start_time = Instant::now();
-        
+
         match request.method.as_str() {
             "GET" => {
                 if request.path == "/metrics" || request.path.starts_with("/metrics") {
                     // Serve metrics endpoint
                     let exposition = self.adapter.serve_metrics().await?;
-                    
+
                     let mut headers = HashMap::new();
-                    headers.insert("Content-Type".to_string(), "text/plain; version=0.0.4; charset=utf-8".to_string());
-                    
+                    headers.insert(
+                        "Content-Type".to_string(),
+                        "text/plain; version=0.0.4; charset=utf-8".to_string(),
+                    );
+
                     if self.adapter.config.compression_enabled {
                         headers.insert("Content-Encoding".to_string(), "gzip".to_string());
                         // In a real implementation, we'd compress the response here
@@ -546,9 +583,14 @@ impl ProtocolHandler for PrometheusProtocolHandler {
             "POST" => {
                 if request.path.starts_with("/metrics/job/") {
                     // Push gateway endpoint
-                    let job_name = request.path.strip_prefix("/metrics/job/").unwrap_or("unknown");
-                    self.adapter.handle_push_gateway(job_name, &request.body).await?;
-                    
+                    let job_name = request
+                        .path
+                        .strip_prefix("/metrics/job/")
+                        .unwrap_or("unknown");
+                    self.adapter
+                        .handle_push_gateway(job_name, &request.body)
+                        .await?;
+
                     Ok(ProtocolResponse {
                         status_code: 200,
                         headers: HashMap::new(),
@@ -582,7 +624,7 @@ impl ProtocolHandler for PrometheusProtocolHandler {
                 "GET /metrics".to_string(),
                 "POST /metrics/job/{job}".to_string(),
             ],
-            max_request_size: 1024 * 1024, // 1MB
+            max_request_size: 1024 * 1024,       // 1MB
             max_response_size: 10 * 1024 * 1024, // 10MB
             supports_streaming: false,
             supports_compression: self.adapter.config.compression_enabled,

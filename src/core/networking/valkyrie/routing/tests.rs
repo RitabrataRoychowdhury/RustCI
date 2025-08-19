@@ -12,7 +12,7 @@ mod tests {
     /// Create a test network topology
     fn create_test_topology() -> NetworkTopology {
         let mut topology = NetworkTopology::new();
-        
+
         // Create test nodes
         let node1 = NetworkNode {
             id: Uuid::new_v4(),
@@ -24,7 +24,7 @@ mod tests {
             status: NodeStatus::Active,
             security_level: SecurityLevel::Internal,
         };
-        
+
         let node2 = NetworkNode {
             id: Uuid::new_v4(),
             address: SocketAddr::from_str("127.0.0.1:8002").unwrap(),
@@ -35,7 +35,7 @@ mod tests {
             status: NodeStatus::Active,
             security_level: SecurityLevel::Internal,
         };
-        
+
         let node3 = NetworkNode {
             id: Uuid::new_v4(),
             address: SocketAddr::from_str("127.0.0.1:8003").unwrap(),
@@ -46,7 +46,7 @@ mod tests {
             status: NodeStatus::Active,
             security_level: SecurityLevel::Internal,
         };
-        
+
         // Create test links
         let link1 = NetworkLink {
             id: Uuid::new_v4(),
@@ -61,7 +61,7 @@ mod tests {
             status: LinkStatus::Active,
             last_updated: Instant::now(),
         };
-        
+
         let link2 = NetworkLink {
             id: Uuid::new_v4(),
             from: node2.id,
@@ -75,7 +75,7 @@ mod tests {
             status: LinkStatus::Active,
             last_updated: Instant::now(),
         };
-        
+
         let link3 = NetworkLink {
             id: Uuid::new_v4(),
             from: node1.id,
@@ -89,7 +89,7 @@ mod tests {
             status: LinkStatus::Active,
             last_updated: Instant::now(),
         };
-        
+
         // Add nodes and links to topology
         topology.nodes.insert(node1.id, node1);
         topology.nodes.insert(node2.id, node2);
@@ -97,7 +97,7 @@ mod tests {
         topology.links.insert(link1.id, link1);
         topology.links.insert(link2.id, link2);
         topology.links.insert(link3.id, link3);
-        
+
         topology
     }
 
@@ -125,17 +125,17 @@ mod tests {
     async fn test_dijkstra_shortest_path() {
         let topology = create_test_topology();
         let nodes: Vec<_> = topology.nodes.keys().copied().collect();
-        
+
         let cost_calculator = Arc::new(DefaultCostCalculator);
         let strategy = DijkstraStrategy::new(cost_calculator);
-        
+
         let context = create_test_context(nodes[0], nodes[2]);
-        
+
         let route = strategy
             .calculate_route(&nodes[0], &nodes[2], &context, &topology)
             .await
             .expect("Should find a route");
-        
+
         assert!(!route.path.is_empty());
         assert_eq!(route.path[0], nodes[0]);
         assert_eq!(route.path[route.path.len() - 1], nodes[2]);
@@ -147,24 +147,20 @@ mod tests {
     async fn test_load_aware_routing() {
         let topology = create_test_topology();
         let nodes: Vec<_> = topology.nodes.keys().copied().collect();
-        
+
         let cost_calculator = Arc::new(DefaultCostCalculator);
         let load_monitor = Arc::new(SimpleLoadMonitor::new());
         let heuristic_calculator = Arc::new(DefaultHeuristicCalculator);
-        
-        let strategy = LoadAwareStrategy::new(
-            cost_calculator,
-            load_monitor,
-            heuristic_calculator,
-        );
-        
+
+        let strategy = LoadAwareStrategy::new(cost_calculator, load_monitor, heuristic_calculator);
+
         let context = create_test_context(nodes[0], nodes[2]);
-        
+
         let route = strategy
             .calculate_route(&nodes[0], &nodes[2], &context, &topology)
             .await
             .expect("Should find a route");
-        
+
         assert!(!route.path.is_empty());
         assert_eq!(route.path[0], nodes[0]);
         assert_eq!(route.path[route.path.len() - 1], nodes[2]);
@@ -174,19 +170,19 @@ mod tests {
     async fn test_algorithm_manager() {
         let topology = create_test_topology();
         let nodes: Vec<_> = topology.nodes.keys().copied().collect();
-        
+
         let mut manager = AlgorithmManager::new(
             RoutingAlgorithm::LoadAware,
             Arc::new(SimpleAlgorithmSelector),
         );
-        
+
         // Register strategies
         let cost_calculator = Arc::new(DefaultCostCalculator);
         manager.register_strategy(
             RoutingAlgorithm::ShortestPath,
             Arc::new(DijkstraStrategy::new(cost_calculator.clone())),
         );
-        
+
         let load_monitor = Arc::new(SimpleLoadMonitor::new());
         let heuristic_calculator = Arc::new(DefaultHeuristicCalculator);
         manager.register_strategy(
@@ -197,14 +193,14 @@ mod tests {
                 heuristic_calculator,
             )),
         );
-        
+
         let context = create_test_context(nodes[0], nodes[2]);
-        
+
         let route = manager
             .calculate_route(&context, &topology)
             .await
             .expect("Should calculate route");
-        
+
         assert!(!route.path.is_empty());
         assert!(route.metadata.algorithm_used.len() > 0);
     }
@@ -215,9 +211,9 @@ mod tests {
         let strategy = RoundRobinStrategy::new();
         let context = create_test_request_context();
         let health_status = create_healthy_status(&endpoints);
-        
+
         let mut selected_endpoints = Vec::new();
-        
+
         // Test multiple selections
         for _ in 0..endpoints.len() * 2 {
             let selected = strategy
@@ -226,10 +222,10 @@ mod tests {
                 .expect("Should select endpoint");
             selected_endpoints.push(selected.id);
         }
-        
+
         // Verify round-robin behavior
         assert_eq!(selected_endpoints.len(), endpoints.len() * 2);
-        
+
         // Check that all endpoints were selected
         for endpoint in &endpoints {
             assert!(selected_endpoints.contains(&endpoint.id));
@@ -241,16 +237,16 @@ mod tests {
         let endpoints = create_test_endpoints();
         let strategy = ConsistentHashingStrategy::new(150, HashFunction::Fnv1a);
         let health_status = create_healthy_status(&endpoints);
-        
+
         // Test with different request contexts (different session IDs)
         let contexts = vec![
             create_request_context_with_session("session1"),
             create_request_context_with_session("session2"),
             create_request_context_with_session("session3"),
         ];
-        
+
         let mut selections = HashMap::new();
-        
+
         for context in &contexts {
             let selected = strategy
                 .select_endpoint(&endpoints, context, &health_status)
@@ -258,14 +254,14 @@ mod tests {
                 .expect("Should select endpoint");
             selections.insert(context.session_id.clone().unwrap(), selected.id);
         }
-        
+
         // Test consistency - same session should get same endpoint
         for context in &contexts {
             let selected = strategy
                 .select_endpoint(&endpoints, context, &health_status)
                 .await
                 .expect("Should select endpoint");
-            
+
             let session_id = context.session_id.clone().unwrap();
             assert_eq!(selections[&session_id], selected.id);
         }
@@ -275,10 +271,10 @@ mod tests {
     async fn test_route_cache() {
         let cache_config = CacheConfig::default();
         let cache = RouteCache::new(cache_config);
-        
+
         let topology = create_test_topology();
         let nodes: Vec<_> = topology.nodes.keys().copied().collect();
-        
+
         let key = RouteCacheKey {
             source: nodes[0],
             destination: nodes[2],
@@ -286,11 +282,11 @@ mod tests {
             security_level: SecurityLevel::Internal,
             topology_version: topology.version,
         };
-        
+
         // Test cache miss
         let cached_route = cache.get(&key).await;
         assert!(cached_route.is_none());
-        
+
         // Create and cache a route
         let route = Route {
             id: Uuid::new_v4(),
@@ -304,9 +300,9 @@ mod tests {
             expires_at: Some(Instant::now() + Duration::from_secs(300)),
             metadata: RouteMetadata::default(),
         };
-        
+
         cache.put(key.clone(), route.clone()).await;
-        
+
         // Test cache hit
         let cached_route = cache.get(&key).await;
         assert!(cached_route.is_some());
@@ -318,28 +314,28 @@ mod tests {
     #[tokio::test]
     async fn test_qos_router() {
         let qos_router = QoSRouter::new(10_000_000, SchedulingAlgorithm::WeightedFairQueuing);
-        
+
         let topology = create_test_topology();
         let nodes: Vec<_> = topology.nodes.keys().copied().collect();
-        
+
         let cost_calculator = Arc::new(DefaultCostCalculator);
         let mut routing_engine = AlgorithmManager::new(
             RoutingAlgorithm::LoadAware,
             Arc::new(SimpleAlgorithmSelector),
         );
-        
+
         routing_engine.register_strategy(
             RoutingAlgorithm::ShortestPath,
             Arc::new(DijkstraStrategy::new(cost_calculator)),
         );
-        
+
         let context = create_test_context(nodes[0], nodes[2]);
-        
+
         let route = qos_router
             .route_with_qos(&context, &routing_engine, &topology)
             .await
             .expect("Should route with QoS");
-        
+
         assert!(!route.path.is_empty());
         assert!(route.estimated_latency <= context.qos_requirements.max_latency.unwrap());
     }
@@ -347,10 +343,10 @@ mod tests {
     #[tokio::test]
     async fn test_metrics_collection() {
         let metrics_collector = RoutingMetricsCollector::new();
-        
+
         let topology = create_test_topology();
         let nodes: Vec<_> = topology.nodes.keys().copied().collect();
-        
+
         let route = Route {
             id: Uuid::new_v4(),
             path: vec![nodes[0], nodes[2]],
@@ -363,7 +359,7 @@ mod tests {
             expires_at: Some(Instant::now() + Duration::from_secs(300)),
             metadata: RouteMetadata::default(),
         };
-        
+
         // Record successful routing operation
         metrics_collector
             .record_routing_operation(
@@ -373,7 +369,7 @@ mod tests {
                 MessagePriority::Normal,
             )
             .await;
-        
+
         // Record failed routing operation
         metrics_collector
             .record_routing_operation(
@@ -386,9 +382,9 @@ mod tests {
                 MessagePriority::High,
             )
             .await;
-        
+
         let snapshot = metrics_collector.get_metrics_snapshot().await;
-        
+
         assert_eq!(snapshot.routing.total_routes_calculated, 2);
         assert_eq!(snapshot.routing.successful_routes, 1);
         assert_eq!(snapshot.routing.failed_routes, 1);
@@ -453,7 +449,7 @@ mod tests {
 
     fn create_healthy_status(endpoints: &[ServiceEndpoint]) -> HealthStatus {
         let mut endpoint_health = HashMap::new();
-        
+
         for endpoint in endpoints {
             endpoint_health.insert(
                 endpoint.id,
@@ -470,7 +466,7 @@ mod tests {
                 },
             );
         }
-        
+
         HealthStatus {
             endpoint_health,
             last_updated: Instant::now(),
@@ -511,51 +507,48 @@ mod tests {
 
     #[tokio::test]
     async fn test_topology_manager() {
-        let nodes = vec![
-            NetworkNode {
-                id: Uuid::new_v4(),
-                address: SocketAddr::from_str("127.0.0.1:8001").unwrap(),
-                region: "us-east-1".to_string(),
-                zone: "us-east-1a".to_string(),
-                capabilities: NodeCapabilities::default(),
-                metrics: NodeMetrics::default(),
-                status: NodeStatus::Active,
-                security_level: SecurityLevel::Internal,
-            },
-        ];
-        
-        let links = vec![
-            NetworkLink {
-                id: Uuid::new_v4(),
-                from: nodes[0].id,
-                to: nodes[0].id,
-                transport: TransportType::TCP,
-                latency: Duration::from_millis(1),
-                bandwidth: 1_000_000,
-                reliability: 0.99,
-                cost: 0.1,
-                utilization: 0.1,
-                status: LinkStatus::Active,
-                last_updated: Instant::now(),
-            },
-        ];
-        
-        let discovery_agents: Vec<Arc<dyn DiscoveryAgent>> = vec![
-            Arc::new(StaticDiscoveryAgent::new(nodes, links)),
-        ];
-        
-        let metric_collectors: Vec<Arc<dyn MetricCollector>> = vec![
-            Arc::new(SimpleMetricsCollector),
-        ];
-        
+        let nodes = vec![NetworkNode {
+            id: Uuid::new_v4(),
+            address: SocketAddr::from_str("127.0.0.1:8001").unwrap(),
+            region: "us-east-1".to_string(),
+            zone: "us-east-1a".to_string(),
+            capabilities: NodeCapabilities::default(),
+            metrics: NodeMetrics::default(),
+            status: NodeStatus::Active,
+            security_level: SecurityLevel::Internal,
+        }];
+
+        let links = vec![NetworkLink {
+            id: Uuid::new_v4(),
+            from: nodes[0].id,
+            to: nodes[0].id,
+            transport: TransportType::TCP,
+            latency: Duration::from_millis(1),
+            bandwidth: 1_000_000,
+            reliability: 0.99,
+            cost: 0.1,
+            utilization: 0.1,
+            status: LinkStatus::Active,
+            last_updated: Instant::now(),
+        }];
+
+        let discovery_agents: Vec<Arc<dyn DiscoveryAgent>> =
+            vec![Arc::new(StaticDiscoveryAgent::new(nodes, links))];
+
+        let metric_collectors: Vec<Arc<dyn MetricCollector>> =
+            vec![Arc::new(SimpleMetricsCollector)];
+
         let topology_manager = TopologyManager::new(discovery_agents, metric_collectors);
-        
+
         // Start topology management
-        topology_manager.start().await.expect("Should start topology manager");
-        
+        topology_manager
+            .start()
+            .await
+            .expect("Should start topology manager");
+
         // Wait a bit for discovery
         sleep(Duration::from_millis(100)).await;
-        
+
         let topology = topology_manager.get_topology().await;
         assert!(!topology.nodes.is_empty());
     }
@@ -564,17 +557,17 @@ mod tests {
     async fn test_performance_under_load() {
         let topology = create_test_topology();
         let nodes: Vec<_> = topology.nodes.keys().copied().collect();
-        
+
         let cost_calculator = Arc::new(DefaultCostCalculator);
         let strategy = DijkstraStrategy::new(cost_calculator);
-        
+
         let start_time = Instant::now();
         let mut successful_routes = 0;
-        
+
         // Test 1000 route calculations
         for _ in 0..1000 {
             let context = create_test_context(nodes[0], nodes[2]);
-            
+
             if let Ok(_route) = strategy
                 .calculate_route(&nodes[0], &nodes[2], &context, &topology)
                 .await
@@ -582,17 +575,20 @@ mod tests {
                 successful_routes += 1;
             }
         }
-        
+
         let duration = start_time.elapsed();
         let avg_time_per_route = duration / 1000;
-        
+
         println!("Performance test results:");
         println!("  Total time: {:?}", duration);
         println!("  Average time per route: {:?}", avg_time_per_route);
         println!("  Successful routes: {}/1000", successful_routes);
-        
+
         // Verify performance requirements
-        assert!(avg_time_per_route < Duration::from_millis(1), "Route calculation should be < 1ms");
+        assert!(
+            avg_time_per_route < Duration::from_millis(1),
+            "Route calculation should be < 1ms"
+        );
         assert!(successful_routes >= 999, "Success rate should be > 99.9%");
     }
 }

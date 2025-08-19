@@ -1,17 +1,17 @@
 //! Load Balancer for Service Registry
-//! 
+//!
 //! Implements intelligent load balancing with multiple strategies,
 //! health-aware routing, and performance optimization.
 
+use crate::error::AppError;
+use dashmap::DashMap;
 use std::collections::HashMap;
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::{atomic::Ordering, Arc};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use dashmap::DashMap;
-use crate::error::AppError;
 use tracing::info;
 
-use super::{ServiceEntry, ServiceEndpoint, EndpointId, HealthStatus};
+use super::{EndpointId, HealthStatus, ServiceEndpoint, ServiceEntry};
 use crate::error::{Result, ValkyrieError};
 
 /// Load balancer with multiple strategies
@@ -36,14 +36,24 @@ pub use crate::core::networking::valkyrie::types::LoadBalancingStrategy;
 /// Load balancing algorithm trait
 pub trait LoadBalancingAlgorithm: Send + Sync {
     /// Select best endpoint from available services
-    fn select_endpoint(&self, services: &[ServiceEntry], state: &DashMap<EndpointId, EndpointState>) -> Result<ServiceEndpoint>;
-    
+    fn select_endpoint(
+        &self,
+        services: &[ServiceEntry],
+        state: &DashMap<EndpointId, EndpointState>,
+    ) -> Result<ServiceEndpoint>;
+
     /// Algorithm name
     fn name(&self) -> &str;
-    
+
     /// Update algorithm state after request
-    fn update_state(&self, endpoint_id: EndpointId, response_time: Duration, success: bool, state: &DashMap<EndpointId, EndpointState>);
-    
+    fn update_state(
+        &self,
+        endpoint_id: EndpointId,
+        response_time: Duration,
+        success: bool,
+        state: &DashMap<EndpointId, EndpointState>,
+    );
+
     /// Algorithm priority (lower = higher priority)
     fn priority(&self) -> u8;
 }
@@ -214,14 +224,19 @@ impl LoadBalancer {
         let start_time = Instant::now();
 
         if services.is_empty() {
-            return Err(ValkyrieError::NoHealthyEndpoints("No services available".to_string()));
+            return Err(ValkyrieError::NoHealthyEndpoints(
+                "No services available".to_string(),
+            ));
         }
 
         // Filter healthy services if health-aware routing is enabled
         let available_services = if self.config.health_aware {
-            services.iter()
-                .filter(|s| matches!(s.health_status, HealthStatus::Healthy) || 
-                           matches!(s.health_status, HealthStatus::Degraded { .. }))
+            services
+                .iter()
+                .filter(|s| {
+                    matches!(s.health_status, HealthStatus::Healthy)
+                        || matches!(s.health_status, HealthStatus::Degraded { .. })
+                })
                 .cloned()
                 .collect::<Vec<_>>()
         } else {
@@ -230,7 +245,9 @@ impl LoadBalancer {
 
         if available_services.is_empty() {
             self.update_failed_selection_metrics().await;
-            return Err(ValkyrieError::NoHealthyEndpoints("No healthy services available".to_string()));
+            return Err(ValkyrieError::NoHealthyEndpoints(
+                "No healthy services available".to_string(),
+            ));
         }
 
         // Get all healthy endpoints
@@ -245,24 +262,28 @@ impl LoadBalancer {
 
         if healthy_endpoints.is_empty() {
             self.update_failed_selection_metrics().await;
-            return Err(ValkyrieError::NoHealthyEndpoints("No healthy endpoints available".to_string()));
+            return Err(ValkyrieError::NoHealthyEndpoints(
+                "No healthy endpoints available".to_string(),
+            ));
         }
 
         // Select endpoint using current strategy
         let selected_endpoint = self.select_using_strategy(&healthy_endpoints).await?;
 
         // Update metrics
-        self.update_selection_metrics(&selected_endpoint, start_time.elapsed()).await;
+        self.update_selection_metrics(&selected_endpoint, start_time.elapsed())
+            .await;
 
         Ok(selected_endpoint)
     }
 
     /// Select endpoint using current strategy
-    async fn select_using_strategy(&self, endpoints: &[ServiceEndpoint]) -> Result<ServiceEndpoint> {
+    async fn select_using_strategy(
+        &self,
+        endpoints: &[ServiceEndpoint],
+    ) -> Result<ServiceEndpoint> {
         match self.strategy {
-            LoadBalancingStrategy::RoundRobin => {
-                self.round_robin_select(endpoints).await
-            }
+            LoadBalancingStrategy::RoundRobin => self.round_robin_select(endpoints).await,
             LoadBalancingStrategy::WeightedRoundRobin => {
                 self.weighted_round_robin_select(endpoints).await
             }
@@ -272,43 +293,35 @@ impl LoadBalancer {
             LoadBalancingStrategy::WeightedLeastConnections => {
                 self.weighted_least_connections_select(endpoints).await
             }
-            LoadBalancingStrategy::Random => {
-                self.random_select(endpoints).await
-            }
-            LoadBalancingStrategy::WeightedRandom => {
-                self.weighted_random_select(endpoints).await
-            }
-            LoadBalancingStrategy::ResponseTime => {
-                self.response_time_select(endpoints).await
-            }
-            LoadBalancingStrategy::ResourceBased => {
-                self.resource_based_select(endpoints).await
-            }
+            LoadBalancingStrategy::Random => self.random_select(endpoints).await,
+            LoadBalancingStrategy::WeightedRandom => self.weighted_random_select(endpoints).await,
+            LoadBalancingStrategy::ResponseTime => self.response_time_select(endpoints).await,
+            LoadBalancingStrategy::ResourceBased => self.resource_based_select(endpoints).await,
             LoadBalancingStrategy::ConsistentHashing => {
                 self.consistent_hash_select(endpoints).await
             }
-            LoadBalancingStrategy::Adaptive => {
-                self.adaptive_select(endpoints).await
-            }
+            LoadBalancingStrategy::Adaptive => self.adaptive_select(endpoints).await,
             LoadBalancingStrategy::LatencyBased => {
                 // Select endpoint with lowest latency
-                endpoints.iter()
+                endpoints
+                    .iter()
                     .min_by_key(|e| e.latency.unwrap_or(Duration::from_millis(1000)))
                     .cloned()
                     .ok_or_else(|| AppError::LoadBalancingError("No endpoint selected".to_string()))
-            },
+            }
             LoadBalancingStrategy::Custom(_) => {
                 // Use round-robin as fallback for custom strategies
-                let index = self.round_robin_counter.fetch_add(1, Ordering::Relaxed) % endpoints.len();
+                let index =
+                    self.round_robin_counter.fetch_add(1, Ordering::Relaxed) % endpoints.len();
                 Ok(endpoints[index].clone())
-            },
+            }
         }
     }
 
     /// Round-robin endpoint selection
     async fn round_robin_select(&self, endpoints: &[ServiceEndpoint]) -> Result<ServiceEndpoint> {
         static mut COUNTER: usize = 0;
-        
+
         unsafe {
             let index = COUNTER % endpoints.len();
             COUNTER = (COUNTER + 1) % endpoints.len();
@@ -317,14 +330,19 @@ impl LoadBalancer {
     }
 
     /// Weighted round-robin endpoint selection
-    async fn weighted_round_robin_select(&self, endpoints: &[ServiceEndpoint]) -> Result<ServiceEndpoint> {
+    async fn weighted_round_robin_select(
+        &self,
+        endpoints: &[ServiceEndpoint],
+    ) -> Result<ServiceEndpoint> {
         let mut best_endpoint = None;
         let mut best_score = -1i32;
 
         for endpoint in endpoints {
-            let state = self.get_or_create_endpoint_state(endpoint.endpoint_id).await;
+            let state = self
+                .get_or_create_endpoint_state(endpoint.endpoint_id)
+                .await;
             let current_weight = state.current_weight as i32;
-            
+
             if current_weight > best_score {
                 best_score = current_weight;
                 best_endpoint = Some(endpoint.clone());
@@ -333,46 +351,63 @@ impl LoadBalancer {
 
         // Decrease weight of selected endpoint and increase others
         if let Some(ref selected) = best_endpoint {
-            let mut selected_state = self.get_or_create_endpoint_state(selected.endpoint_id).await;
+            let mut selected_state = self
+                .get_or_create_endpoint_state(selected.endpoint_id)
+                .await;
             selected_state.current_weight = selected_state.current_weight.saturating_sub(1);
-            self.endpoint_state.insert(selected.endpoint_id, selected_state);
+            self.endpoint_state
+                .insert(selected.endpoint_id, selected_state);
 
             // Increase weights of other endpoints
             for endpoint in endpoints {
                 if endpoint.endpoint_id != selected.endpoint_id {
-                    let mut state = self.get_or_create_endpoint_state(endpoint.endpoint_id).await;
+                    let mut state = self
+                        .get_or_create_endpoint_state(endpoint.endpoint_id)
+                        .await;
                     state.current_weight += endpoint.weight;
                     self.endpoint_state.insert(endpoint.endpoint_id, state);
                 }
             }
         }
 
-        best_endpoint.ok_or_else(|| ValkyrieError::LoadBalancingError("No endpoint selected".to_string()))
+        best_endpoint
+            .ok_or_else(|| ValkyrieError::LoadBalancingError("No endpoint selected".to_string()))
     }
 
     /// Least connections endpoint selection
-    async fn least_connections_select(&self, endpoints: &[ServiceEndpoint]) -> Result<ServiceEndpoint> {
+    async fn least_connections_select(
+        &self,
+        endpoints: &[ServiceEndpoint],
+    ) -> Result<ServiceEndpoint> {
         let mut best_endpoint = None;
         let mut min_connections = u32::MAX;
 
         for endpoint in endpoints {
-            let state = self.get_or_create_endpoint_state(endpoint.endpoint_id).await;
+            let state = self
+                .get_or_create_endpoint_state(endpoint.endpoint_id)
+                .await;
             if state.active_connections < min_connections {
                 min_connections = state.active_connections;
                 best_endpoint = Some(endpoint.clone());
             }
         }
 
-        best_endpoint.ok_or_else(|| ValkyrieError::LoadBalancingError("No endpoint selected".to_string()))
+        best_endpoint
+            .ok_or_else(|| ValkyrieError::LoadBalancingError("No endpoint selected".to_string()))
     }
 
     /// Weighted least connections endpoint selection
-    async fn weighted_least_connections_select(&self, endpoints: &[ServiceEndpoint]) -> Result<ServiceEndpoint> {
+    async fn weighted_least_connections_select(
+        &self,
+        endpoints: &[ServiceEndpoint],
+    ) -> Result<ServiceEndpoint> {
         let mut best_endpoint = None;
         let mut best_ratio = f64::MAX;
 
         for endpoint in endpoints {
-            let state = self.get_or_create_endpoint_state(endpoint.endpoint_id).await;
+            let state = self
+                .get_or_create_endpoint_state(endpoint.endpoint_id)
+                .await;
             let ratio = if endpoint.weight > 0 {
                 state.active_connections as f64 / endpoint.weight as f64
             } else {
@@ -385,7 +420,8 @@ impl LoadBalancer {
             }
         }
 
-        best_endpoint.ok_or_else(|| ValkyrieError::LoadBalancingError("No endpoint selected".to_string()))
+        best_endpoint
+            .ok_or_else(|| ValkyrieError::LoadBalancingError("No endpoint selected".to_string()))
     }
 
     /// Random endpoint selection
@@ -397,9 +433,12 @@ impl LoadBalancer {
     }
 
     /// Weighted random endpoint selection
-    async fn weighted_random_select(&self, endpoints: &[ServiceEndpoint]) -> Result<ServiceEndpoint> {
+    async fn weighted_random_select(
+        &self,
+        endpoints: &[ServiceEndpoint],
+    ) -> Result<ServiceEndpoint> {
         use rand::Rng;
-        
+
         let total_weight: u32 = endpoints.iter().map(|e| e.weight).sum();
         if total_weight == 0 {
             return self.random_select(endpoints).await;
@@ -425,44 +464,56 @@ impl LoadBalancer {
         let mut best_response_time = Duration::from_secs(u64::MAX);
 
         for endpoint in endpoints {
-            let state = self.get_or_create_endpoint_state(endpoint.endpoint_id).await;
+            let state = self
+                .get_or_create_endpoint_state(endpoint.endpoint_id)
+                .await;
             if state.avg_response_time < best_response_time {
                 best_response_time = state.avg_response_time;
                 best_endpoint = Some(endpoint.clone());
             }
         }
 
-        best_endpoint.ok_or_else(|| ValkyrieError::LoadBalancingError("No endpoint selected".to_string()))
+        best_endpoint
+            .ok_or_else(|| ValkyrieError::LoadBalancingError("No endpoint selected".to_string()))
     }
 
     /// Resource-based endpoint selection
-    async fn resource_based_select(&self, endpoints: &[ServiceEndpoint]) -> Result<ServiceEndpoint> {
+    async fn resource_based_select(
+        &self,
+        endpoints: &[ServiceEndpoint],
+    ) -> Result<ServiceEndpoint> {
         let mut best_endpoint = None;
         let mut best_score = f64::MAX;
 
         for endpoint in endpoints {
-            let state = self.get_or_create_endpoint_state(endpoint.endpoint_id).await;
+            let state = self
+                .get_or_create_endpoint_state(endpoint.endpoint_id)
+                .await;
             let resource_score = self.calculate_resource_score(&state.resource_utilization);
-            
+
             if resource_score < best_score {
                 best_score = resource_score;
                 best_endpoint = Some(endpoint.clone());
             }
         }
 
-        best_endpoint.ok_or_else(|| ValkyrieError::LoadBalancingError("No endpoint selected".to_string()))
+        best_endpoint
+            .ok_or_else(|| ValkyrieError::LoadBalancingError("No endpoint selected".to_string()))
     }
 
     /// Consistent hash endpoint selection
-    async fn consistent_hash_select(&self, endpoints: &[ServiceEndpoint]) -> Result<ServiceEndpoint> {
+    async fn consistent_hash_select(
+        &self,
+        endpoints: &[ServiceEndpoint],
+    ) -> Result<ServiceEndpoint> {
         // Simplified consistent hashing - in practice would use proper hash ring
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         std::time::SystemTime::now().hash(&mut hasher);
         let hash = hasher.finish();
-        
+
         let index = (hash as usize) % endpoints.len();
         Ok(endpoints[index].clone())
     }
@@ -473,29 +524,36 @@ impl LoadBalancer {
         let mut best_score = f64::MIN;
 
         for endpoint in endpoints {
-            let state = self.get_or_create_endpoint_state(endpoint.endpoint_id).await;
+            let state = self
+                .get_or_create_endpoint_state(endpoint.endpoint_id)
+                .await;
             let score = self.calculate_adaptive_score(endpoint, &state).await;
-            
+
             if score > best_score {
                 best_score = score;
                 best_endpoint = Some(endpoint.clone());
             }
         }
 
-        best_endpoint.ok_or_else(|| ValkyrieError::LoadBalancingError("No endpoint selected".to_string()))
+        best_endpoint
+            .ok_or_else(|| ValkyrieError::LoadBalancingError("No endpoint selected".to_string()))
     }
 
     /// Calculate resource utilization score
     fn calculate_resource_score(&self, utilization: &ResourceUtilization) -> f64 {
         // Weighted average of resource utilization
-        (utilization.cpu * 0.4) + 
-        (utilization.memory * 0.3) + 
-        (utilization.network * 0.2) + 
-        (utilization.disk * 0.1)
+        (utilization.cpu * 0.4)
+            + (utilization.memory * 0.3)
+            + (utilization.network * 0.2)
+            + (utilization.disk * 0.1)
     }
 
     /// Calculate adaptive score using ML
-    async fn calculate_adaptive_score(&self, endpoint: &ServiceEndpoint, state: &EndpointState) -> f64 {
+    async fn calculate_adaptive_score(
+        &self,
+        endpoint: &ServiceEndpoint,
+        state: &EndpointState,
+    ) -> f64 {
         // Simplified ML scoring - in practice would use trained models
         let response_time_score = 1.0 / (state.avg_response_time.as_millis() as f64 + 1.0);
         let connection_score = 1.0 / (state.active_connections as f64 + 1.0);
@@ -503,10 +561,10 @@ impl LoadBalancer {
         let resource_score = 1.0 - self.calculate_resource_score(&state.resource_utilization);
 
         // Weighted combination
-        (response_time_score * self.config.response_time_weight) +
-        (connection_score * self.config.connection_weight) +
-        (health_score * self.config.health_weight) +
-        (resource_score * self.config.resource_weight)
+        (response_time_score * self.config.response_time_weight)
+            + (connection_score * self.config.connection_weight)
+            + (health_score * self.config.health_weight)
+            + (resource_score * self.config.resource_weight)
     }
 
     /// Check if endpoint is healthy
@@ -518,7 +576,9 @@ impl LoadBalancer {
         match endpoint.health_status {
             HealthStatus::Healthy => true,
             HealthStatus::Degraded { .. } => {
-                let state = self.get_or_create_endpoint_state(endpoint.endpoint_id).await;
+                let state = self
+                    .get_or_create_endpoint_state(endpoint.endpoint_id)
+                    .await;
                 state.health_score >= self.config.min_health_score
             }
             _ => false,
@@ -561,9 +621,11 @@ impl LoadBalancer {
             }
 
             // Update average response time
-            let total_time = state.avg_response_time.as_nanos() * (state.total_requests - 1) as u128
+            let total_time = state.avg_response_time.as_nanos()
+                * (state.total_requests - 1) as u128
                 + response_time.as_nanos();
-            state.avg_response_time = Duration::from_nanos((total_time / state.total_requests as u128) as u64);
+            state.avg_response_time =
+                Duration::from_nanos((total_time / state.total_requests as u128) as u64);
 
             // Update health score based on success rate
             state.health_score = state.successful_requests as f64 / state.total_requests as f64;
@@ -590,14 +652,22 @@ impl LoadBalancer {
     async fn update_selection_metrics(&self, endpoint: &ServiceEndpoint, latency: Duration) {
         let mut metrics = self.metrics.write().await;
         metrics.total_decisions += 1;
-        
-        *metrics.decisions_by_strategy.entry(self.strategy.clone()).or_insert(0) += 1;
-        *metrics.endpoint_distribution.entry(endpoint.endpoint_id).or_insert(0) += 1;
+
+        *metrics
+            .decisions_by_strategy
+            .entry(self.strategy.clone())
+            .or_insert(0) += 1;
+        *metrics
+            .endpoint_distribution
+            .entry(endpoint.endpoint_id)
+            .or_insert(0) += 1;
 
         // Update average decision latency
-        let total_latency = metrics.avg_decision_latency.as_nanos() * (metrics.total_decisions - 1) as u128
+        let total_latency = metrics.avg_decision_latency.as_nanos()
+            * (metrics.total_decisions - 1) as u128
             + latency.as_nanos();
-        metrics.avg_decision_latency = Duration::from_nanos((total_latency / metrics.total_decisions as u128) as u64);
+        metrics.avg_decision_latency =
+            Duration::from_nanos((total_latency / metrics.total_decisions as u128) as u64);
     }
 
     /// Update failed selection metrics
@@ -610,10 +680,10 @@ impl LoadBalancer {
     pub async fn change_strategy(&mut self, new_strategy: LoadBalancingStrategy) {
         if self.strategy != new_strategy {
             self.strategy = new_strategy;
-            
+
             let mut metrics = self.metrics.write().await;
             metrics.strategy_switches += 1;
-            
+
             info!("Changed load balancing strategy to: {:?}", self.strategy);
         }
     }
@@ -625,7 +695,10 @@ impl LoadBalancer {
 
     /// Get endpoint states
     pub async fn endpoint_states(&self) -> Vec<EndpointState> {
-        self.endpoint_state.iter().map(|entry| entry.clone()).collect()
+        self.endpoint_state
+            .iter()
+            .map(|entry| entry.clone())
+            .collect()
     }
 }
 
@@ -659,13 +732,17 @@ impl std::fmt::Display for LoadBalancingStrategy {
             LoadBalancingStrategy::RoundRobin => write!(f, "RoundRobin"),
             LoadBalancingStrategy::WeightedRoundRobin => write!(f, "WeightedRoundRobin"),
             LoadBalancingStrategy::LeastConnections => write!(f, "LeastConnections"),
-            LoadBalancingStrategy::WeightedLeastConnections => write!(f, "WeightedLeastConnections"),
+            LoadBalancingStrategy::WeightedLeastConnections => {
+                write!(f, "WeightedLeastConnections")
+            }
             LoadBalancingStrategy::Random => write!(f, "Random"),
             LoadBalancingStrategy::WeightedRandom => write!(f, "WeightedRandom"),
             LoadBalancingStrategy::ResponseTime => write!(f, "ResponseTime"),
             LoadBalancingStrategy::ResourceBased => write!(f, "ResourceBased"),
             LoadBalancingStrategy::ConsistentHashing => write!(f, "ConsistentHash"),
             LoadBalancingStrategy::Adaptive => write!(f, "Adaptive"),
+            LoadBalancingStrategy::LatencyBased => write!(f, "LatencyBased"),
+            LoadBalancingStrategy::Custom(name) => write!(f, "Custom({})", name),
         }
     }
 }

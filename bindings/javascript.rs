@@ -11,8 +11,8 @@ use std::time::Duration;
 use tokio::runtime::Runtime;
 
 use crate::api::valkyrie::{
-    ValkyrieClient, ClientConfig, ClientMessage, ClientMessageType,
-    ClientMessagePriority, ClientPayload, ClientStats
+    ClientConfig, ClientMessage, ClientMessagePriority, ClientMessageType, ClientPayload,
+    ClientStats, ValkyrieClient,
 };
 
 /// JavaScript wrapper for ValkyrieClient
@@ -33,11 +33,21 @@ impl JsValkyrieClient {
     /// Create a new Valkyrie client with custom configuration
     #[napi(factory)]
     pub fn new_with_config(config: JsValkyrieConfig) -> Result<Self> {
-        let runtime = Runtime::new()
-            .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to create runtime: {}", e)))?;
-        
-        let client = runtime.block_on(ValkyrieClient::new(config.to_rust_config()))
-            .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to create client: {}", e)))?;
+        let runtime = Runtime::new().map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to create runtime: {}", e),
+            )
+        })?;
+
+        let client = runtime
+            .block_on(ValkyrieClient::new(config.to_rust_config()))
+            .map_err(|e| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to create client: {}", e),
+                )
+            })?;
 
         Ok(Self {
             client: Arc::new(client),
@@ -48,14 +58,16 @@ impl JsValkyrieClient {
     /// Connect to a remote endpoint
     #[napi]
     pub fn connect(&self, endpoint_url: String) -> Result<String> {
-        self.runtime.block_on(self.client.connect(&endpoint_url))
+        self.runtime
+            .block_on(self.client.connect(&endpoint_url))
             .map_err(|e| Error::new(Status::GenericFailure, format!("Connection failed: {}", e)))
     }
 
     /// Send a text message to a connection
     #[napi]
     pub fn send_text(&self, connection_id: String, text: String) -> Result<()> {
-        self.runtime.block_on(self.client.send_text(&connection_id, &text))
+        self.runtime
+            .block_on(self.client.send_text(&connection_id, &text))
             .map_err(|e| Error::new(Status::GenericFailure, format!("Send failed: {}", e)))
     }
 
@@ -63,7 +75,8 @@ impl JsValkyrieClient {
     #[napi]
     pub fn send_binary(&self, connection_id: String, data: Buffer) -> Result<()> {
         let data_bytes = data.as_ref();
-        self.runtime.block_on(self.client.send_data(&connection_id, data_bytes))
+        self.runtime
+            .block_on(self.client.send_data(&connection_id, data_bytes))
             .map_err(|e| Error::new(Status::GenericFailure, format!("Send failed: {}", e)))
     }
 
@@ -71,15 +84,22 @@ impl JsValkyrieClient {
     #[napi]
     pub fn send_message(&self, connection_id: String, message: JsValkyrieMessage) -> Result<()> {
         let rust_message = message.to_rust_message()?;
-        self.runtime.block_on(self.client.send_message(&connection_id, rust_message))
+        self.runtime
+            .block_on(self.client.send_message(&connection_id, rust_message))
             .map_err(|e| Error::new(Status::GenericFailure, format!("Send failed: {}", e)))
     }
 
     /// Broadcast a message to multiple connections
     #[napi]
-    pub fn broadcast(&self, connection_ids: Vec<String>, message: JsValkyrieMessage) -> Result<JsBroadcastResult> {
+    pub fn broadcast(
+        &self,
+        connection_ids: Vec<String>,
+        message: JsValkyrieMessage,
+    ) -> Result<JsBroadcastResult> {
         let rust_message = message.to_rust_message()?;
-        let result = self.runtime.block_on(self.client.broadcast(&connection_ids, rust_message))
+        let result = self
+            .runtime
+            .block_on(self.client.broadcast(&connection_ids, rust_message))
             .map_err(|e| Error::new(Status::GenericFailure, format!("Broadcast failed: {}", e)))?;
 
         Ok(JsBroadcastResult::from_rust_result(result))
@@ -95,7 +115,8 @@ impl JsValkyrieClient {
     /// Close a specific connection
     #[napi]
     pub fn close_connection(&self, connection_id: String) -> Result<()> {
-        self.runtime.block_on(self.client.close_connection(&connection_id))
+        self.runtime
+            .block_on(self.client.close_connection(&connection_id))
             .map_err(|e| Error::new(Status::GenericFailure, format!("Close failed: {}", e)))
     }
 
@@ -257,9 +278,13 @@ impl JsValkyrieMessage {
     /// Create a JSON message
     #[napi(factory)]
     pub fn json(data: serde_json::Value) -> Result<Self> {
-        let json_str = serde_json::to_string(&data)
-            .map_err(|e| Error::new(Status::InvalidArg, format!("JSON serialization failed: {}", e)))?;
-        
+        let json_str = serde_json::to_string(&data).map_err(|e| {
+            Error::new(
+                Status::InvalidArg,
+                format!("JSON serialization failed: {}", e),
+            )
+        })?;
+
         Ok(Self {
             message_type: "json".to_string(),
             priority: "normal".to_string(),
@@ -533,7 +558,8 @@ pub fn generate_package_json() -> String {
   },
   "homepage": "https://github.com/rustci/valkyrie-protocol#readme"
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 #[cfg(test)]

@@ -15,12 +15,12 @@ impl ObservabilityManager {
     pub fn new(config: ObservabilityConfig) -> Result<Self> {
         Ok(Self { config })
     }
-    
+
     /// Start the observability manager
     pub async fn start(&self) -> Result<()> {
         Ok(())
     }
-    
+
     /// Stop the observability manager
     pub async fn stop(&self) -> Result<()> {
         Ok(())

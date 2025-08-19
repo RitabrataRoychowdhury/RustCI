@@ -2,11 +2,11 @@
 // Task 3.1.3: Network Topology Management
 
 use super::*;
+use dashmap::DashMap;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use dashmap::DashMap;
 
 /// Topology manager for network discovery and management
 pub struct TopologyManager {
@@ -30,13 +30,13 @@ pub trait DiscoveryAgent: Send + Sync {
 /// Types of discovery agents
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiscoveryAgentType {
-    Static,      // Static configuration
-    Kubernetes,  // Kubernetes service discovery
-    Consul,      // Consul service discovery
-    Etcd,        // etcd service discovery
-    DNS,         // DNS-based discovery
-    SNMP,        // SNMP network discovery
-    Custom,      // Custom discovery logic
+    Static,     // Static configuration
+    Kubernetes, // Kubernetes service discovery
+    Consul,     // Consul service discovery
+    Etcd,       // etcd service discovery
+    DNS,        // DNS-based discovery
+    SNMP,       // SNMP network discovery
+    Custom,     // Custom discovery logic
 }
 
 /// Trait for collecting network metrics
@@ -51,10 +51,10 @@ pub trait MetricCollector: Send + Sync {
 /// Types of metric collectors
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MetricCollectorType {
-    Prometheus,  // Prometheus metrics
-    SNMP,        // SNMP metrics
-    Custom,      // Custom metrics collection
-    Synthetic,   // Synthetic monitoring
+    Prometheus, // Prometheus metrics
+    SNMP,       // SNMP metrics
+    Custom,     // Custom metrics collection
+    Synthetic,  // Synthetic monitoring
 }
 
 /// Link metrics for topology
@@ -66,7 +66,7 @@ pub struct LinkMetrics {
     pub jitter: Duration,
     pub error_rate: f64,
     pub throughput: u64,
-    #[serde(skip)]
+    #[serde(skip, default = "Instant::now")]
     pub last_updated: Instant,
 }
 
@@ -121,7 +121,7 @@ pub struct TopologyChanges {
 /// Geographic management for topology
 pub struct GeographicManager {
     region_manager: Arc<RegionManager>,
-    distance_calculator: Arc<DistanceCalculator>,
+    distance_calculator: Arc<dyn DistanceCalculator>,
     preference_engine: Arc<PreferenceEngine>,
 }
 
@@ -134,7 +134,12 @@ pub struct RegionManager {
 /// Distance calculation between geographic points
 pub trait DistanceCalculator: Send + Sync {
     fn calculate_distance(&self, from: &GeoCoordinates, to: &GeoCoordinates) -> f64;
-    fn calculate_network_distance(&self, from: &NodeId, to: &NodeId, topology: &NetworkTopology) -> Option<f64>;
+    fn calculate_network_distance(
+        &self,
+        from: &NodeId,
+        to: &NodeId,
+        topology: &NetworkTopology,
+    ) -> Option<f64>;
 }
 
 /// Preference engine for geographic routing
@@ -183,26 +188,32 @@ pub struct ComplianceRequirements {
 #[derive(Debug, thiserror::Error)]
 pub enum TopologyError {
     #[error("Discovery failed: {agent:?} - {error}")]
-    DiscoveryFailed { agent: DiscoveryAgentType, error: String },
-    
+    DiscoveryFailed {
+        agent: DiscoveryAgentType,
+        error: String,
+    },
+
     #[error("Metrics collection failed: {collector:?} - {error}")]
-    MetricsCollectionFailed { collector: MetricCollectorType, error: String },
-    
+    MetricsCollectionFailed {
+        collector: MetricCollectorType,
+        error: String,
+    },
+
     #[error("Node not found: {node_id}")]
     NodeNotFound { node_id: NodeId },
-    
+
     #[error("Link not found: {link_id}")]
     LinkNotFound { link_id: LinkId },
-    
+
     #[error("Region not found: {region_id}")]
     RegionNotFound { region_id: RegionId },
-    
+
     #[error("Geographic calculation failed: {reason}")]
     GeographicCalculationFailed { reason: String },
-    
+
     #[error("Compliance violation: {rule} - {reason}")]
     ComplianceViolation { rule: String, reason: String },
-    
+
     #[error("Internal error: {message}")]
     Internal { message: String },
 }
@@ -239,7 +250,7 @@ impl TopologyManager {
         let discovery_agents_clone = discovery_agents.clone();
         let discovery_scheduler = Arc::clone(&update_scheduler);
         let discovery_detector = Arc::clone(&change_detector);
-        
+
         tokio::spawn(async move {
             loop {
                 if discovery_scheduler.should_run_discovery().await {
@@ -247,7 +258,9 @@ impl TopologyManager {
                         &discovery_topology,
                         &discovery_agents_clone,
                         &discovery_detector,
-                    ).await {
+                    )
+                    .await
+                    {
                         eprintln!("Discovery failed: {}", e);
                     }
                     discovery_scheduler.mark_discovery_complete().await;
@@ -260,14 +273,14 @@ impl TopologyManager {
         let metrics_topology = Arc::clone(&topology);
         let metrics_collectors_clone = metric_collectors.clone();
         let metrics_scheduler = Arc::clone(&update_scheduler);
-        
+
         tokio::spawn(async move {
             loop {
                 if metrics_scheduler.should_run_metrics().await {
-                    if let Err(e) = Self::run_metrics_collection(
-                        &metrics_topology,
-                        &metrics_collectors_clone,
-                    ).await {
+                    if let Err(e) =
+                        Self::run_metrics_collection(&metrics_topology, &metrics_collectors_clone)
+                            .await
+                    {
                         eprintln!("Metrics collection failed: {}", e);
                     }
                     metrics_scheduler.mark_metrics_complete().await;
@@ -285,12 +298,18 @@ impl TopologyManager {
     }
 
     /// Update topology with new data
-    pub async fn update_topology(&self, new_topology: NetworkTopology) -> Result<(), TopologyError> {
+    pub async fn update_topology(
+        &self,
+        new_topology: NetworkTopology,
+    ) -> Result<(), TopologyError> {
         let mut topology = self.topology.write().await;
-        
+
         // Detect changes
-        let changes = self.change_detector.detect_changes(&topology, &new_topology).await;
-        
+        let changes = self
+            .change_detector
+            .detect_changes(&topology, &new_topology)
+            .await;
+
         // Update topology
         *topology = new_topology;
         topology.update_version();
@@ -307,8 +326,14 @@ impl TopologyManager {
     }
 
     /// Get geographic information for routing
-    pub async fn get_geographic_info(&self, from: &NodeId, to: &NodeId) -> Result<GeographicInfo, TopologyError> {
-        self.geographic_manager.get_geographic_info(from, to, &self.get_topology().await).await
+    pub async fn get_geographic_info(
+        &self,
+        from: &NodeId,
+        to: &NodeId,
+    ) -> Result<GeographicInfo, TopologyError> {
+        self.geographic_manager
+            .get_geographic_info(from, to, &self.get_topology().await)
+            .await
     }
 
     async fn run_discovery(
@@ -328,7 +353,11 @@ impl TopologyManager {
 
             match agent.discover_links().await {
                 Ok(mut links) => discovered_links.append(&mut links),
-                Err(e) => eprintln!("Link discovery failed for {:?}: {}", agent.get_agent_type(), e),
+                Err(e) => eprintln!(
+                    "Link discovery failed for {:?}: {}",
+                    agent.get_agent_type(),
+                    e
+                ),
             }
         }
 
@@ -351,7 +380,7 @@ impl TopologyManager {
         // Detect and notify changes
         let changes = change_detector.detect_changes(&old_topology, &topo).await;
         drop(topo); // Release lock before async call
-        
+
         change_detector.notify_listeners(&changes).await;
 
         Ok(())
@@ -533,22 +562,31 @@ impl GeographicManager {
         to: &NodeId,
         topology: &NetworkTopology,
     ) -> Result<GeographicInfo, TopologyError> {
-        let from_node = topology.nodes.get(from)
+        let from_node = topology
+            .nodes
+            .get(from)
             .ok_or_else(|| TopologyError::NodeNotFound { node_id: *from })?;
-        let to_node = topology.nodes.get(to)
+        let to_node = topology
+            .nodes
+            .get(to)
             .ok_or_else(|| TopologyError::NodeNotFound { node_id: *to })?;
 
         let from_region = self.region_manager.get_region(&from_node.region).await?;
         let to_region = self.region_manager.get_region(&to_node.region).await?;
 
-        let distance = if let (Some(from_coords), Some(to_coords)) = 
-            (&from_region.coordinates, &to_region.coordinates) {
-            Some(self.distance_calculator.calculate_distance(from_coords, to_coords))
+        let distance = if let (Some(from_coords), Some(to_coords)) =
+            (&from_region.coordinates, &to_region.coordinates)
+        {
+            Some(
+                self.distance_calculator
+                    .calculate_distance(from_coords, to_coords),
+            )
         } else {
             None
         };
 
-        let preferences = self.preference_engine
+        let preferences = self
+            .preference_engine
             .get_regional_preferences(&from_node.region, &to_node.region)
             .await;
 
@@ -557,7 +595,9 @@ impl GeographicManager {
             to_region: to_region.clone(),
             distance_km: distance,
             preferences,
-            regulatory_constraints: self.get_regulatory_constraints(&from_region, &to_region).await,
+            regulatory_constraints: self
+                .get_regulatory_constraints(&from_region, &to_region)
+                .await,
         })
     }
 
@@ -592,9 +632,12 @@ impl RegionManager {
 
     pub async fn get_region(&self, region_id: &RegionId) -> Result<Region, TopologyError> {
         let regions = self.regions.read().await;
-        regions.get(region_id)
+        regions
+            .get(region_id)
             .cloned()
-            .ok_or_else(|| TopologyError::RegionNotFound { region_id: region_id.clone() })
+            .ok_or_else(|| TopologyError::RegionNotFound {
+                region_id: region_id.clone(),
+            })
     }
 
     pub async fn add_region(&self, region: Region) {
@@ -625,18 +668,23 @@ impl DistanceCalculator for HaversineDistanceCalculator {
         let delta_lat = (to.latitude - from.latitude).to_radians();
         let delta_lon = (to.longitude - from.longitude).to_radians();
 
-        let a = (delta_lat / 2.0).sin().powi(2) +
-                lat1_rad.cos() * lat2_rad.cos() * (delta_lon / 2.0).sin().powi(2);
+        let a = (delta_lat / 2.0).sin().powi(2)
+            + lat1_rad.cos() * lat2_rad.cos() * (delta_lon / 2.0).sin().powi(2);
         let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
 
         EARTH_RADIUS_KM * c
     }
 
-    fn calculate_network_distance(&self, from: &NodeId, to: &NodeId, topology: &NetworkTopology) -> Option<f64> {
+    fn calculate_network_distance(
+        &self,
+        from: &NodeId,
+        to: &NodeId,
+        topology: &NetworkTopology,
+    ) -> Option<f64> {
         // Simple implementation: return geographic distance if available
         let from_node = topology.nodes.get(from)?;
         let to_node = topology.nodes.get(to)?;
-        
+
         // This would typically use network topology to calculate
         // the actual network distance, but for simplicity we'll
         // return None to indicate it's not implemented
@@ -658,9 +706,7 @@ impl PreferenceEngine {
         to_region: &RegionId,
     ) -> RegionalPreferences {
         let preferences = self.regional_preferences.read().await;
-        preferences.get(from_region)
-            .cloned()
-            .unwrap_or_default()
+        preferences.get(from_region).cloned().unwrap_or_default()
     }
 
     pub async fn set_regional_preferences(
@@ -692,10 +738,11 @@ impl RegulatoryEngine {
         data_type: &str,
     ) -> Result<Vec<ComplianceRule>, TopologyError> {
         let rules = self.compliance_rules.read().await;
-        let applicable_rules: Vec<_> = rules.values()
+        let applicable_rules: Vec<_> = rules
+            .values()
             .filter(|rule| {
-                rule.applicable_regions.contains(from_region) ||
-                rule.applicable_regions.contains(to_region)
+                rule.applicable_regions.contains(from_region)
+                    || rule.applicable_regions.contains(to_region)
             })
             .filter(|rule| {
                 rule.data_types.is_empty() || rule.data_types.contains(&data_type.to_string())

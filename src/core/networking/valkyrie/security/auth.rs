@@ -1,5 +1,8 @@
+use async_trait::async_trait;
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use serde::{Deserialize, Serialize};
 /// Multi-provider authentication system for the Valkyrie Protocol
-/// 
+///
 /// This module provides pluggable authentication mechanisms including:
 /// - JWT token authentication
 /// - Mutual TLS authentication
@@ -7,34 +10,30 @@
 /// - OAuth2 integration
 /// - LDAP authentication
 /// - Custom authentication providers
-
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 
+use super::{AuthMethod, CertificateManager};
 use crate::core::networking::node_communication::NodeId;
 use crate::error::Result;
-use super::{AuthMethod, CertificateManager};
 
 /// Authentication provider trait
 #[async_trait]
 pub trait AuthProvider: Send + Sync {
     /// Authenticate using the provided credentials
     async fn authenticate(&self, credentials: AuthCredentials) -> Result<AuthResult>;
-    
+
     /// Validate an existing authentication token/session
     async fn validate(&self, token: &str) -> Result<AuthResult>;
-    
+
     /// Revoke an authentication token/session
     async fn revoke(&self, token: &str) -> Result<()>;
-    
+
     /// Get provider capabilities
     fn capabilities(&self) -> AuthCapabilities;
-    
+
     /// Get provider metrics
     async fn metrics(&self) -> AuthProviderMetrics;
 }
@@ -52,7 +51,7 @@ impl AuthCredentials {
     pub fn node_id(&self) -> Option<NodeId> {
         self.node_id.clone()
     }
-    
+
     pub fn source_ip(&self) -> Option<String> {
         self.source_ip.clone()
     }
@@ -61,12 +60,27 @@ impl AuthCredentials {
 /// Authentication credential data variants
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AuthCredentialData {
-    JWT { token: String },
-    MutualTLS { certificate: Vec<u8>, private_key: Vec<u8> },
-    SPIFFE { svid: String },
-    OAuth2 { access_token: String, refresh_token: Option<String> },
-    LDAP { username: String, password: String },
-    Custom { data: HashMap<String, String> },
+    JWT {
+        token: String,
+    },
+    MutualTLS {
+        certificate: Vec<u8>,
+        private_key: Vec<u8>,
+    },
+    SPIFFE {
+        svid: String,
+    },
+    OAuth2 {
+        access_token: String,
+        refresh_token: Option<String>,
+    },
+    LDAP {
+        username: String,
+        password: String,
+    },
+    Custom {
+        data: HashMap<String, String>,
+    },
 }
 
 /// Authentication result
@@ -180,13 +194,13 @@ impl Default for JwtConfig {
 /// JWT claims structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JwtClaims {
-    pub sub: String, // Subject (node_id)
-    pub iss: String, // Issuer
+    pub sub: String,         // Subject (node_id)
+    pub iss: String,         // Issuer
     pub aud: Option<String>, // Audience
-    pub exp: u64, // Expiration time
-    pub iat: u64, // Issued at
-    pub nbf: u64, // Not before
-    pub jti: String, // JWT ID
+    pub exp: u64,            // Expiration time
+    pub iat: u64,            // Issued at
+    pub nbf: u64,            // Not before
+    pub jti: String,         // JWT ID
     pub node_id: NodeId,
     pub node_type: String,
     pub roles: Vec<String>,
@@ -203,14 +217,18 @@ impl JwtAuthProvider {
             "RS256" => Algorithm::RS256,
             "RS384" => Algorithm::RS384,
             "RS512" => Algorithm::RS512,
-            _ => return Err(crate::error::AppError::SecurityError(
-                format!("Unsupported JWT algorithm: {}", config.algorithm)
-            ).into()),
+            _ => {
+                return Err(crate::error::AppError::SecurityError(format!(
+                    "Unsupported JWT algorithm: {}",
+                    config.algorithm
+                ))
+                .into())
+            }
         };
 
         let encoding_key = EncodingKey::from_secret(config.secret.as_ref());
         let decoding_key = DecodingKey::from_secret(config.secret.as_ref());
-        
+
         let mut validation = Validation::new(algorithm);
         validation.set_issuer(&[&config.issuer]);
         if let Some(ref audience) = config.audience {
@@ -233,7 +251,13 @@ impl JwtAuthProvider {
         })
     }
 
-    pub async fn generate_token(&self, node_id: NodeId, node_type: String, roles: Vec<String>, permissions: Vec<String>) -> Result<String> {
+    pub async fn generate_token(
+        &self,
+        node_id: NodeId,
+        node_type: String,
+        roles: Vec<String>,
+        permissions: Vec<String>,
+    ) -> Result<String> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -254,29 +278,32 @@ impl JwtAuthProvider {
             attributes: HashMap::new(),
         };
 
-        let token = encode(&Header::default(), &claims, &self.encoding_key)
-            .map_err(|e| crate::error::AppError::SecurityError(
-                format!("Failed to generate JWT token: {}", e)
-            ))?;
+        let token = encode(&Header::default(), &claims, &self.encoding_key).map_err(|e| {
+            crate::error::AppError::SecurityError(format!("Failed to generate JWT token: {}", e))
+        })?;
 
         // Store token for tracking
-        self.active_tokens.write().await.insert(token.clone(), claims);
+        self.active_tokens
+            .write()
+            .await
+            .insert(token.clone(), claims);
 
         Ok(token)
     }
 
     async fn verify_token(&self, token: &str) -> Result<JwtClaims> {
-        let token_data = decode::<JwtClaims>(token, &self.decoding_key, &self.validation)
-            .map_err(|e| crate::error::AppError::SecurityError(
-                format!("Invalid JWT token: {}", e)
-            ))?;
+        let token_data =
+            decode::<JwtClaims>(token, &self.decoding_key, &self.validation).map_err(|e| {
+                crate::error::AppError::SecurityError(format!("Invalid JWT token: {}", e))
+            })?;
 
         // Check if token is still active
         let active_tokens = self.active_tokens.read().await;
         if !active_tokens.contains_key(token) {
             return Err(crate::error::AppError::SecurityError(
-                "Token has been revoked".to_string()
-            ).into());
+                "Token has been revoked".to_string(),
+            )
+            .into());
         }
 
         Ok(token_data.claims)
@@ -287,51 +314,51 @@ impl JwtAuthProvider {
 impl AuthProvider for JwtAuthProvider {
     async fn authenticate(&self, credentials: AuthCredentials) -> Result<AuthResult> {
         let start_time = std::time::Instant::now();
-        
-        let result = match credentials.data {
-            AuthCredentialData::JWT { token } => {
-                match self.verify_token(&token).await {
-                    Ok(claims) => {
-                        let subject = AuthSubject {
-                            node_id: claims.node_id.clone(),
-                            identity: claims.sub.clone(),
-                            roles: claims.roles.clone(),
-                            attributes: claims.attributes.clone(),
-                            source_ip: credentials.source_ip,
-                            authenticated_at: chrono::Utc::now(),
-                        };
 
-                        AuthResult {
-                            success: true,
-                            subject: Some(subject),
-                            token: Some(token),
-                            expires_at: Some(chrono::DateTime::from_timestamp(claims.exp as i64, 0).unwrap_or_default()),
-                            permissions: claims.permissions,
-                            metadata: HashMap::new(),
-                        }
-                    }
-                    Err(e) => AuthResult {
-                        success: false,
-                        subject: None,
-                        token: None,
-                        expires_at: None,
-                        permissions: Vec::new(),
-                        metadata: HashMap::from([
-                            ("error".to_string(), e.to_string()),
-                        ]),
+        let result = match credentials.data {
+            AuthCredentialData::JWT { token } => match self.verify_token(&token).await {
+                Ok(claims) => {
+                    let subject = AuthSubject {
+                        node_id: claims.node_id.clone(),
+                        identity: claims.sub.clone(),
+                        roles: claims.roles.clone(),
+                        attributes: claims.attributes.clone(),
+                        source_ip: credentials.source_ip,
+                        authenticated_at: chrono::Utc::now(),
+                    };
+
+                    AuthResult {
+                        success: true,
+                        subject: Some(subject),
+                        token: Some(token),
+                        expires_at: Some(
+                            chrono::DateTime::from_timestamp(claims.exp as i64, 0)
+                                .unwrap_or_default(),
+                        ),
+                        permissions: claims.permissions,
+                        metadata: HashMap::new(),
                     }
                 }
-            }
+                Err(e) => AuthResult {
+                    success: false,
+                    subject: None,
+                    token: None,
+                    expires_at: None,
+                    permissions: Vec::new(),
+                    metadata: HashMap::from([("error".to_string(), e.to_string())]),
+                },
+            },
             _ => AuthResult {
                 success: false,
                 subject: None,
                 token: None,
                 expires_at: None,
                 permissions: Vec::new(),
-                metadata: HashMap::from([
-                    ("error".to_string(), "Invalid credential type for JWT provider".to_string()),
-                ]),
-            }
+                metadata: HashMap::from([(
+                    "error".to_string(),
+                    "Invalid credential type for JWT provider".to_string(),
+                )]),
+            },
         };
 
         // Update metrics
@@ -343,7 +370,10 @@ impl AuthProvider for JwtAuthProvider {
         } else {
             metrics.failed_authentications += 1;
         }
-        metrics.average_auth_time_ms = (metrics.average_auth_time_ms * (metrics.total_authentications - 1) as f64 + duration.as_millis() as f64) / metrics.total_authentications as f64;
+        metrics.average_auth_time_ms = (metrics.average_auth_time_ms
+            * (metrics.total_authentications - 1) as f64
+            + duration.as_millis() as f64)
+            / metrics.total_authentications as f64;
 
         Ok(result)
     }
@@ -357,14 +387,17 @@ impl AuthProvider for JwtAuthProvider {
                     roles: claims.roles.clone(),
                     attributes: claims.attributes.clone(),
                     source_ip: None,
-                    authenticated_at: chrono::DateTime::from_timestamp(claims.iat as i64, 0).unwrap_or_default(),
+                    authenticated_at: chrono::DateTime::from_timestamp(claims.iat as i64, 0)
+                        .unwrap_or_default(),
                 };
 
                 Ok(AuthResult {
                     success: true,
                     subject: Some(subject),
                     token: Some(token.to_string()),
-                    expires_at: Some(chrono::DateTime::from_timestamp(claims.exp as i64, 0).unwrap_or_default()),
+                    expires_at: Some(
+                        chrono::DateTime::from_timestamp(claims.exp as i64, 0).unwrap_or_default(),
+                    ),
                     permissions: claims.permissions,
                     metadata: HashMap::new(),
                 })
@@ -375,10 +408,8 @@ impl AuthProvider for JwtAuthProvider {
                 token: None,
                 expires_at: None,
                 permissions: Vec::new(),
-                metadata: HashMap::from([
-                    ("error".to_string(), e.to_string()),
-                ]),
-            })
+                metadata: HashMap::from([("error".to_string(), e.to_string())]),
+            }),
         }
     }
 
@@ -400,7 +431,7 @@ impl AuthProvider for JwtAuthProvider {
     async fn metrics(&self) -> AuthProviderMetrics {
         let metrics = self.metrics.read().await;
         let active_sessions = self.active_tokens.read().await.len() as u64;
-        
+
         AuthProviderMetrics {
             total_authentications: metrics.total_authentications,
             successful_authentications: metrics.successful_authentications,
@@ -436,7 +467,7 @@ impl MtlsAuthProvider {
 impl AuthProvider for MtlsAuthProvider {
     async fn authenticate(&self, credentials: AuthCredentials) -> Result<AuthResult> {
         let start_time = std::time::Instant::now();
-        
+
         let result = match credentials.data {
             AuthCredentialData::MutualTLS { certificate, .. } => {
                 match self.cert_manager.verify_certificate(&certificate).await {
@@ -465,10 +496,8 @@ impl AuthProvider for MtlsAuthProvider {
                         token: None,
                         expires_at: None,
                         permissions: Vec::new(),
-                        metadata: HashMap::from([
-                            ("error".to_string(), e.to_string()),
-                        ]),
-                    }
+                        metadata: HashMap::from([("error".to_string(), e.to_string())]),
+                    },
                 }
             }
             _ => AuthResult {
@@ -477,10 +506,11 @@ impl AuthProvider for MtlsAuthProvider {
                 token: None,
                 expires_at: None,
                 permissions: Vec::new(),
-                metadata: HashMap::from([
-                    ("error".to_string(), "Invalid credential type for mTLS provider".to_string()),
-                ]),
-            }
+                metadata: HashMap::from([(
+                    "error".to_string(),
+                    "Invalid credential type for mTLS provider".to_string(),
+                )]),
+            },
         };
 
         // Update metrics
@@ -492,14 +522,21 @@ impl AuthProvider for MtlsAuthProvider {
         } else {
             metrics.failed_authentications += 1;
         }
-        metrics.average_auth_time_ms = (metrics.average_auth_time_ms * (metrics.total_authentications - 1) as f64 + duration.as_millis() as f64) / metrics.total_authentications as f64;
+        metrics.average_auth_time_ms = (metrics.average_auth_time_ms
+            * (metrics.total_authentications - 1) as f64
+            + duration.as_millis() as f64)
+            / metrics.total_authentications as f64;
 
         Ok(result)
     }
 
     async fn validate(&self, token: &str) -> Result<AuthResult> {
         // For mTLS, the token is the certificate fingerprint
-        match self.cert_manager.get_certificate_by_fingerprint(token).await {
+        match self
+            .cert_manager
+            .get_certificate_by_fingerprint(token)
+            .await
+        {
             Ok(Some(cert_info)) => {
                 if cert_info.expires_at > chrono::Utc::now() {
                     let subject = AuthSubject {
@@ -526,9 +563,10 @@ impl AuthProvider for MtlsAuthProvider {
                         token: None,
                         expires_at: None,
                         permissions: Vec::new(),
-                        metadata: HashMap::from([
-                            ("error".to_string(), "Certificate has expired".to_string()),
-                        ]),
+                        metadata: HashMap::from([(
+                            "error".to_string(),
+                            "Certificate has expired".to_string(),
+                        )]),
                     })
                 }
             }
@@ -538,9 +576,10 @@ impl AuthProvider for MtlsAuthProvider {
                 token: None,
                 expires_at: None,
                 permissions: Vec::new(),
-                metadata: HashMap::from([
-                    ("error".to_string(), "Certificate not found".to_string()),
-                ]),
+                metadata: HashMap::from([(
+                    "error".to_string(),
+                    "Certificate not found".to_string(),
+                )]),
             }),
             Err(e) => Ok(AuthResult {
                 success: false,
@@ -548,10 +587,8 @@ impl AuthProvider for MtlsAuthProvider {
                 token: None,
                 expires_at: None,
                 permissions: Vec::new(),
-                metadata: HashMap::from([
-                    ("error".to_string(), e.to_string()),
-                ]),
-            })
+                metadata: HashMap::from([("error".to_string(), e.to_string())]),
+            }),
         }
     }
 
@@ -573,7 +610,7 @@ impl AuthProvider for MtlsAuthProvider {
     async fn metrics(&self) -> AuthProviderMetrics {
         let metrics = self.metrics.read().await;
         let active_sessions = self.cert_manager.get_active_certificate_count().await;
-        
+
         AuthProviderMetrics {
             total_authentications: metrics.total_authentications,
             successful_authentications: metrics.successful_authentications,
@@ -634,9 +671,10 @@ impl AuthProvider for SpiffeAuthProvider {
             token: None,
             expires_at: None,
             permissions: Vec::new(),
-            metadata: HashMap::from([
-                ("error".to_string(), "SPIFFE authentication not yet implemented".to_string()),
-            ]),
+            metadata: HashMap::from([(
+                "error".to_string(),
+                "SPIFFE authentication not yet implemented".to_string(),
+            )]),
         })
     }
 
@@ -647,9 +685,10 @@ impl AuthProvider for SpiffeAuthProvider {
             token: None,
             expires_at: None,
             permissions: Vec::new(),
-            metadata: HashMap::from([
-                ("error".to_string(), "SPIFFE validation not yet implemented".to_string()),
-            ]),
+            metadata: HashMap::from([(
+                "error".to_string(),
+                "SPIFFE validation not yet implemented".to_string(),
+            )]),
         })
     }
 

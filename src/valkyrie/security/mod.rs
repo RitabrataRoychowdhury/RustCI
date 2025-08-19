@@ -3,8 +3,8 @@
 //! This module provides security components for the Valkyrie Protocol,
 //! including authentication, encryption, and authorization.
 
-use crate::valkyrie::{Result};
 pub use crate::valkyrie::config::SecurityConfig;
+use crate::valkyrie::Result;
 
 /// Security manager for the Valkyrie Protocol
 pub struct SecurityManager {
@@ -16,27 +16,29 @@ impl SecurityManager {
     pub fn new(config: SecurityConfig) -> Result<Self> {
         Ok(Self { config })
     }
-    
+
     /// Start the security manager
     pub async fn start(&self) -> Result<()> {
         Ok(())
     }
-    
+
     /// Stop the security manager
     pub async fn stop(&self) -> Result<()> {
         Ok(())
     }
-    
+
     /// Authenticate a connection
     pub async fn authenticate_connection(
-        &self, 
+        &self,
         _connection: Box<dyn crate::valkyrie::transport::Connection>,
-        _endpoint: &crate::valkyrie::transport::Endpoint
+        _endpoint: &crate::valkyrie::transport::Endpoint,
     ) -> Result<Box<dyn crate::valkyrie::transport::Connection>> {
         // Placeholder implementation
-        Err(crate::valkyrie::ValkyrieError::InternalServerError("Connection authentication not implemented".to_string()))
+        Err(crate::valkyrie::ValkyrieError::InternalServerError(
+            "Connection authentication not implemented".to_string(),
+        ))
     }
-    
+
     /// Get security statistics
     pub async fn get_stats(&self) -> SecurityStats {
         SecurityStats {

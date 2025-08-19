@@ -1,15 +1,15 @@
 // Internal metrics dashboard
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio::time::interval;
-use serde::{Serialize, Deserialize};
 
-use super::{ObservabilityError, MetricsCollector, HealthMonitor, HealthStatus};
-use super::metrics::{MetricQuery, AggregationFunction, MetricsSummary};
 use super::health::HealthSummary;
+use super::metrics::{AggregationFunction, MetricQuery, MetricsSummary};
+use super::{HealthMonitor, HealthStatus, MetricsCollector, ObservabilityError};
 
 /// Internal metrics dashboard
 pub struct MetricsDashboard {
@@ -54,21 +54,36 @@ impl Default for DashboardConfig {
                     id: "system_overview".to_string(),
                     title: "System Overview".to_string(),
                     widget_type: WidgetType::SystemOverview,
-                    position: WidgetPosition { row: 0, col: 0, width: 12, height: 4 },
+                    position: WidgetPosition {
+                        row: 0,
+                        col: 0,
+                        width: 12,
+                        height: 4,
+                    },
                     config: WidgetConfig::default(),
                 },
                 DashboardWidget {
                     id: "health_status".to_string(),
                     title: "Health Status".to_string(),
                     widget_type: WidgetType::HealthStatus,
-                    position: WidgetPosition { row: 1, col: 0, width: 6, height: 4 },
+                    position: WidgetPosition {
+                        row: 1,
+                        col: 0,
+                        width: 6,
+                        height: 4,
+                    },
                     config: WidgetConfig::default(),
                 },
                 DashboardWidget {
                     id: "metrics_summary".to_string(),
                     title: "Metrics Summary".to_string(),
                     widget_type: WidgetType::MetricsSummary,
-                    position: WidgetPosition { row: 1, col: 6, width: 6, height: 4 },
+                    position: WidgetPosition {
+                        row: 1,
+                        col: 6,
+                        width: 6,
+                        height: 4,
+                    },
                     config: WidgetConfig::default(),
                 },
                 DashboardWidget {
@@ -77,7 +92,12 @@ impl Default for DashboardConfig {
                     widget_type: WidgetType::LineChart {
                         metrics: vec!["latency_ms".to_string(), "throughput_rps".to_string()],
                     },
-                    position: WidgetPosition { row: 2, col: 0, width: 12, height: 6 },
+                    position: WidgetPosition {
+                        row: 2,
+                        col: 0,
+                        width: 12,
+                        height: 6,
+                    },
                     config: WidgetConfig::default(),
                 },
             ],
@@ -213,13 +233,9 @@ pub enum WidgetData {
         unit: String,
     },
     /// Text data
-    Text {
-        content: String,
-    },
+    Text { content: String },
     /// JSON data
-    Json {
-        data: serde_json::Value,
-    },
+    Json { data: serde_json::Value },
 }
 
 /// Chart series data
@@ -289,17 +305,20 @@ impl MetricsDashboard {
         let running_flag = self.running.clone();
 
         *self.refresh_handle.lock().await = Some(tokio::spawn(async move {
-            let mut refresh_interval = interval(Duration::from_secs(config.refresh_interval_seconds));
+            let mut refresh_interval =
+                interval(Duration::from_secs(config.refresh_interval_seconds));
 
             while *running_flag.read().await {
                 refresh_interval.tick().await;
-                
+
                 if let Err(e) = Self::update_dashboard_data(
                     &metrics_collector,
                     &health_monitor,
                     &dashboard_data,
                     &config,
-                ).await {
+                )
+                .await
+                {
                     eprintln!("Dashboard refresh error: {}", e);
                 }
             }
@@ -334,7 +353,8 @@ impl MetricsDashboard {
             &self.health_monitor,
             &self.dashboard_data,
             &self.config,
-        ).await
+        )
+        .await
     }
 
     /// Update dashboard data
@@ -361,12 +381,10 @@ impl MetricsDashboard {
                 continue;
             }
 
-            let widget_data = Self::collect_widget_data(
-                &widget.widget_type,
-                metrics_collector,
-                health_monitor,
-            ).await?;
-            
+            let widget_data =
+                Self::collect_widget_data(&widget.widget_type, metrics_collector, health_monitor)
+                    .await?;
+
             widgets.insert(widget.id.clone(), widget_data);
         }
 
@@ -394,38 +412,47 @@ impl MetricsDashboard {
         metrics_collector: &MetricsCollector,
     ) -> Result<SystemOverviewData, ObservabilityError> {
         // Collect various system metrics
-        let active_connections = metrics_collector.aggregate(
-            MetricQuery {
-                name: Some("active_connections".to_string()),
-                labels: HashMap::new(),
-                start_time: None,
-                end_time: None,
-                limit: Some(1),
-            },
-            AggregationFunction::Sum,
-        ).await.unwrap_or(0.0) as u64;
+        let active_connections = metrics_collector
+            .aggregate(
+                MetricQuery {
+                    name: Some("active_connections".to_string()),
+                    labels: HashMap::new(),
+                    start_time: None,
+                    end_time: None,
+                    limit: Some(1),
+                },
+                AggregationFunction::Sum,
+            )
+            .await
+            .unwrap_or(0.0) as u64;
 
-        let total_messages = metrics_collector.aggregate(
-            MetricQuery {
-                name: Some("total_messages".to_string()),
-                labels: HashMap::new(),
-                start_time: None,
-                end_time: None,
-                limit: None,
-            },
-            AggregationFunction::Sum,
-        ).await.unwrap_or(0.0) as u64;
+        let total_messages = metrics_collector
+            .aggregate(
+                MetricQuery {
+                    name: Some("total_messages".to_string()),
+                    labels: HashMap::new(),
+                    start_time: None,
+                    end_time: None,
+                    limit: None,
+                },
+                AggregationFunction::Sum,
+            )
+            .await
+            .unwrap_or(0.0) as u64;
 
-        let average_latency = metrics_collector.aggregate(
-            MetricQuery {
-                name: Some("latency_ms".to_string()),
-                labels: HashMap::new(),
-                start_time: None,
-                end_time: None,
-                limit: Some(100),
-            },
-            AggregationFunction::Average,
-        ).await.unwrap_or(0.0);
+        let average_latency = metrics_collector
+            .aggregate(
+                MetricQuery {
+                    name: Some("latency_ms".to_string()),
+                    labels: HashMap::new(),
+                    start_time: None,
+                    end_time: None,
+                    limit: Some(100),
+                },
+                AggregationFunction::Average,
+            )
+            .await
+            .unwrap_or(0.0);
 
         Ok(SystemOverviewData {
             protocol_version: "1.0.0".to_string(),
@@ -434,8 +461,8 @@ impl MetricsDashboard {
             messages_per_second: 0.0, // Calculated from rate
             average_latency_ms: average_latency,
             error_rate_percent: 0.0, // Calculated from error metrics
-            memory_usage_mb: 0.0, // From system metrics
-            cpu_usage_percent: 0.0, // From system metrics
+            memory_usage_mb: 0.0,    // From system metrics
+            cpu_usage_percent: 0.0,  // From system metrics
         })
     }
 
@@ -446,18 +473,16 @@ impl MetricsDashboard {
         health_monitor: &HealthMonitor,
     ) -> Result<WidgetData, ObservabilityError> {
         match widget_type {
-            WidgetType::SystemOverview => {
-                Ok(WidgetData::Json {
-                    data: serde_json::json!({
-                        "status": "operational",
-                        "components": ["metrics", "health", "dashboard"]
-                    }),
-                })
-            }
+            WidgetType::SystemOverview => Ok(WidgetData::Json {
+                data: serde_json::json!({
+                    "status": "operational",
+                    "components": ["metrics", "health", "dashboard"]
+                }),
+            }),
             WidgetType::HealthStatus => {
                 let health_results = health_monitor.get_all_results().await;
                 let mut rows = Vec::new();
-                
+
                 for (check_id, result) in health_results {
                     rows.push(vec![
                         check_id,
@@ -480,13 +505,14 @@ impl MetricsDashboard {
             WidgetType::MetricsSummary => {
                 let summary = metrics_collector.summary().await;
                 Ok(WidgetData::Json {
-                    data: serde_json::to_value(summary)
-                        .map_err(|e| ObservabilityError::Dashboard(format!("Serialization error: {}", e)))?,
+                    data: serde_json::to_value(summary).map_err(|e| {
+                        ObservabilityError::Dashboard(format!("Serialization error: {}", e))
+                    })?,
                 })
             }
             WidgetType::LineChart { metrics } => {
                 let mut series = Vec::new();
-                
+
                 for metric_name in metrics {
                     let query = MetricQuery {
                         name: Some(metric_name.clone()),
@@ -495,10 +521,12 @@ impl MetricsDashboard {
                         end_time: None,
                         limit: Some(50),
                     };
-                    
+
                     let metric_series = metrics_collector.query(query).await?;
                     if let Some(first_series) = metric_series.first() {
-                        let data: Vec<f64> = first_series.data_points.iter()
+                        let data: Vec<f64> = first_series
+                            .data_points
+                            .iter()
                             .map(|point| match &point.value {
                                 super::metrics::MetricValue::Counter(v) => *v as f64,
                                 super::metrics::MetricValue::Gauge(v) => *v,
@@ -506,11 +534,15 @@ impl MetricsDashboard {
                                     values.iter().sum::<f64>() / values.len() as f64
                                 }
                                 super::metrics::MetricValue::Summary { sum, count } => {
-                                    if *count > 0 { *sum / *count as f64 } else { 0.0 }
+                                    if *count > 0 {
+                                        *sum / *count as f64
+                                    } else {
+                                        0.0
+                                    }
                                 }
                             })
                             .collect();
-                        
+
                         series.push(ChartSeries {
                             name: metric_name.clone(),
                             data,
@@ -531,20 +563,29 @@ impl MetricsDashboard {
                         data: vec![10.0, 20.0, 15.0, 30.0, 25.0], // Placeholder data
                         color: Some("#3498db".to_string()),
                     }],
-                    x_axis: vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string(), "E".to_string()],
+                    x_axis: vec![
+                        "A".to_string(),
+                        "B".to_string(),
+                        "C".to_string(),
+                        "D".to_string(),
+                        "E".to_string(),
+                    ],
                 })
             }
             WidgetType::Gauge { metric, min, max } => {
-                let current_value = metrics_collector.aggregate(
-                    MetricQuery {
-                        name: Some(metric.clone()),
-                        labels: HashMap::new(),
-                        start_time: None,
-                        end_time: None,
-                        limit: Some(1),
-                    },
-                    AggregationFunction::Average,
-                ).await.unwrap_or(0.0);
+                let current_value = metrics_collector
+                    .aggregate(
+                        MetricQuery {
+                            name: Some(metric.clone()),
+                            labels: HashMap::new(),
+                            start_time: None,
+                            end_time: None,
+                            limit: Some(1),
+                        },
+                        AggregationFunction::Average,
+                    )
+                    .await
+                    .unwrap_or(0.0);
 
                 Ok(WidgetData::Gauge {
                     current: current_value,
@@ -553,33 +594,28 @@ impl MetricsDashboard {
                     unit: "".to_string(),
                 })
             }
-            WidgetType::Table { columns } => {
-                Ok(WidgetData::Table {
-                    headers: columns.clone(),
-                    rows: vec![
-                        vec!["Sample".to_string(), "Data".to_string()],
-                        vec!["Row".to_string(), "1".to_string()],
-                    ],
-                })
-            }
-            WidgetType::LogViewer { max_entries: _ } => {
-                Ok(WidgetData::Text {
-                    content: "Log viewer not implemented".to_string(),
-                })
-            }
-            WidgetType::Custom { widget_name } => {
-                Ok(WidgetData::Text {
-                    content: format!("Custom widget '{}' not implemented", widget_name),
-                })
-            }
+            WidgetType::Table { columns } => Ok(WidgetData::Table {
+                headers: columns.clone(),
+                rows: vec![
+                    vec!["Sample".to_string(), "Data".to_string()],
+                    vec!["Row".to_string(), "1".to_string()],
+                ],
+            }),
+            WidgetType::LogViewer { max_entries: _ } => Ok(WidgetData::Text {
+                content: "Log viewer not implemented".to_string(),
+            }),
+            WidgetType::Custom { widget_name } => Ok(WidgetData::Text {
+                content: format!("Custom widget '{}' not implemented", widget_name),
+            }),
         }
     }
 
     /// Generate HTML dashboard
     pub async fn generate_html(&self) -> String {
         let data = self.get_data().await;
-        
-        format!(r#"
+
+        format!(
+            r#"
 <!DOCTYPE html>
 <html>
 <head>

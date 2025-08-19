@@ -1,7 +1,7 @@
 use crate::{
     application::handlers::ci::{
-        cancel_execution, create_pipeline, create_pipeline_multipart, get_execution,
-        get_pipeline, get_pipeline_yaml, list_executions, list_pipelines, trigger_pipeline, webhook_handler,
+        cancel_execution, create_pipeline, create_pipeline_multipart, get_execution, get_pipeline,
+        get_pipeline_yaml, list_executions, list_pipelines, trigger_pipeline, webhook_handler,
     },
     AppState,
 };
@@ -11,7 +11,7 @@ use axum::{
 };
 
 /// Create the CI/CD pipeline management router
-/// 
+///
 /// This router handles all CI/CD pipeline endpoints including pipeline
 /// execution, status monitoring, and configuration management.
 pub fn ci_router() -> Router<AppState> {

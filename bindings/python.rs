@@ -3,17 +3,17 @@
 //! This module provides Python bindings using PyO3, enabling Python applications
 //! to use the Valkyrie Protocol through a native Python interface.
 
+use pyo3::exceptions::{PyConnectionError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
-use pyo3::exceptions::{PyConnectionError, PyRuntimeError, PyValueError};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 
 use crate::api::valkyrie::{
-    ValkyrieClient, ClientConfig, ClientMessage, ClientMessageType,
-    ClientMessagePriority, ClientPayload, ClientStats
+    ClientConfig, ClientMessage, ClientMessagePriority, ClientMessageType, ClientPayload,
+    ClientStats, ValkyrieClient,
 };
 
 /// Python wrapper for ValkyrieClient
@@ -36,8 +36,9 @@ impl PyValkyrieClient {
     fn new_with_config(config: PyValkyrieConfig) -> PyResult<Self> {
         let runtime = Runtime::new()
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
-        
-        let client = runtime.block_on(ValkyrieClient::new(config.to_rust_config()))
+
+        let client = runtime
+            .block_on(ValkyrieClient::new(config.to_rust_config()))
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create client: {}", e)))?;
 
         Ok(Self {
@@ -48,34 +49,44 @@ impl PyValkyrieClient {
 
     /// Connect to a remote endpoint
     fn connect(&self, endpoint_url: &str) -> PyResult<String> {
-        self.runtime.block_on(self.client.connect(endpoint_url))
+        self.runtime
+            .block_on(self.client.connect(endpoint_url))
             .map_err(|e| PyConnectionError::new_err(format!("Connection failed: {}", e)))
     }
 
     /// Send a text message to a connection
     fn send_text(&self, connection_id: &str, text: &str) -> PyResult<()> {
-        self.runtime.block_on(self.client.send_text(connection_id, text))
+        self.runtime
+            .block_on(self.client.send_text(connection_id, text))
             .map_err(|e| PyRuntimeError::new_err(format!("Send failed: {}", e)))
     }
 
     /// Send binary data to a connection
     fn send_binary(&self, connection_id: &str, data: &PyBytes) -> PyResult<()> {
         let data_bytes = data.as_bytes();
-        self.runtime.block_on(self.client.send_data(connection_id, data_bytes))
+        self.runtime
+            .block_on(self.client.send_data(connection_id, data_bytes))
             .map_err(|e| PyRuntimeError::new_err(format!("Send failed: {}", e)))
     }
 
     /// Send a custom message to a connection
     fn send_message(&self, connection_id: &str, message: PyValkyrieMessage) -> PyResult<()> {
         let rust_message = message.to_rust_message()?;
-        self.runtime.block_on(self.client.send_message(connection_id, rust_message))
+        self.runtime
+            .block_on(self.client.send_message(connection_id, rust_message))
             .map_err(|e| PyRuntimeError::new_err(format!("Send failed: {}", e)))
     }
 
     /// Broadcast a message to multiple connections
-    fn broadcast(&self, connection_ids: Vec<String>, message: PyValkyrieMessage) -> PyResult<PyBroadcastResult> {
+    fn broadcast(
+        &self,
+        connection_ids: Vec<String>,
+        message: PyValkyrieMessage,
+    ) -> PyResult<PyBroadcastResult> {
         let rust_message = message.to_rust_message()?;
-        let result = self.runtime.block_on(self.client.broadcast(&connection_ids, rust_message))
+        let result = self
+            .runtime
+            .block_on(self.client.broadcast(&connection_ids, rust_message))
             .map_err(|e| PyRuntimeError::new_err(format!("Broadcast failed: {}", e)))?;
 
         Ok(PyBroadcastResult::from_rust_result(result))
@@ -89,7 +100,8 @@ impl PyValkyrieClient {
 
     /// Close a specific connection
     fn close_connection(&self, connection_id: &str) -> PyResult<()> {
-        self.runtime.block_on(self.client.close_connection(connection_id))
+        self.runtime
+            .block_on(self.client.close_connection(connection_id))
             .map_err(|e| PyRuntimeError::new_err(format!("Close failed: {}", e)))
     }
 
@@ -301,7 +313,7 @@ impl PyValkyrieMessage {
     fn json(data: &PyDict) -> PyResult<Self> {
         let json_str = serde_json::to_string(&data)
             .map_err(|e| PyValueError::new_err(format!("JSON serialization failed: {}", e)))?;
-        
+
         Ok(Self {
             message_type: "json".to_string(),
             priority: "normal".to_string(),
@@ -431,12 +443,12 @@ fn valkyrie_protocol(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyValkyrieMessage>()?;
     m.add_class::<PyBroadcastResult>()?;
     m.add_class::<PyValkyrieStats>()?;
-    
+
     // Add module-level convenience functions
     m.add_function(wrap_pyfunction!(create_client, m)?)?;
     m.add_function(wrap_pyfunction!(create_secure_client, m)?)?;
     m.add_function(wrap_pyfunction!(create_high_performance_client, m)?)?;
-    
+
     Ok(())
 }
 
@@ -448,7 +460,11 @@ fn create_client() -> PyResult<PyValkyrieClient> {
 
 /// Create a secure client (convenience function)
 #[pyfunction]
-fn create_secure_client(cert_path: &str, key_path: &str, ca_path: &str) -> PyResult<PyValkyrieClient> {
+fn create_secure_client(
+    cert_path: &str,
+    key_path: &str,
+    ca_path: &str,
+) -> PyResult<PyValkyrieClient> {
     PyValkyrieClient::secure(cert_path, key_path, ca_path)
 }
 
@@ -622,7 +638,8 @@ def create_secure_client(cert_path: str, key_path: str, ca_path: str) -> Valkyri
 def create_high_performance_client() -> ValkyrieClient:
     """Create a high-performance client."""
     ...
-"#.to_string()
+"#
+    .to_string()
 }
 
 #[cfg(test)]

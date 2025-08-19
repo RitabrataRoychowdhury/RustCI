@@ -17,10 +17,10 @@ pub struct AdapterConfig {
 pub trait IntegrationAdapter: Send + Sync {
     /// Start the adapter
     fn start(&self) -> Result<()>;
-    
+
     /// Stop the adapter
     fn stop(&self) -> Result<()>;
-    
+
     /// Get adapter status
     fn status(&self) -> AdapterStatus;
 }

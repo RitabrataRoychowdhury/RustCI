@@ -3,13 +3,13 @@
 //! This module provides event handling and publishing capabilities
 //! for the Valkyrie Protocol.
 
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use chrono::{DateTime, Utc};
-use async_trait::async_trait;
 
-use crate::valkyrie::core::{ConnectionId};
+use crate::valkyrie::core::ConnectionId;
 use crate::valkyrie::transport::Endpoint;
 use crate::valkyrie::Result;
 
@@ -17,13 +17,9 @@ use crate::valkyrie::Result;
 #[derive(Debug, Clone)]
 pub enum ValkyrieEvent {
     /// Engine started
-    EngineStarted {
-        timestamp: DateTime<Utc>,
-    },
+    EngineStarted { timestamp: DateTime<Utc> },
     /// Engine stopped
-    EngineStopped {
-        timestamp: DateTime<Utc>,
-    },
+    EngineStopped { timestamp: DateTime<Utc> },
     /// Connection established
     ConnectionEstablished {
         connection_id: ConnectionId,
@@ -91,26 +87,26 @@ impl EventBus {
     /// Create a new event bus
     pub fn new() -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        
+
         Self {
             handlers: Arc::new(RwLock::new(Vec::new())),
             event_tx,
             _event_rx: Arc::new(RwLock::new(Some(event_rx))),
         }
     }
-    
+
     /// Subscribe to events with a handler
     pub async fn subscribe(&self, handler: Arc<dyn EventHandler>) {
         let mut handlers = self.handlers.write().await;
         handlers.push(handler);
     }
-    
+
     /// Unsubscribe a handler (simplified - removes all instances)
     pub async fn unsubscribe(&self, _handler: Arc<dyn EventHandler>) {
         // In a real implementation, this would remove the specific handler
         // For now, this is a placeholder
     }
-    
+
     /// Publish an event
     pub async fn publish(&self, event: ValkyrieEvent) {
         // Send to internal channel for processing
@@ -118,7 +114,7 @@ impl EventBus {
             // Channel is closed, ignore
             return;
         }
-        
+
         // Notify all handlers
         let handlers = self.handlers.read().await;
         for handler in handlers.iter() {
@@ -128,14 +124,14 @@ impl EventBus {
             }
         }
     }
-    
+
     /// Start the event processing loop
     pub async fn start(&self) -> Result<()> {
         // In a real implementation, this would start a background task
         // to process events from the channel
         Ok(())
     }
-    
+
     /// Stop the event bus
     pub async fn stop(&self) -> Result<()> {
         // In a real implementation, this would stop the background task
@@ -156,11 +152,20 @@ impl EventHandler for LoggingEventHandler {
             ValkyrieEvent::EngineStopped { timestamp } => {
                 println!("Engine stopped at {}", timestamp);
             }
-            ValkyrieEvent::ConnectionEstablished { connection_id, endpoint, timestamp } => {
-                println!("Connection {} established to {}:{} at {}", 
-                    connection_id, endpoint.address, endpoint.port, timestamp);
+            ValkyrieEvent::ConnectionEstablished {
+                connection_id,
+                endpoint,
+                timestamp,
+            } => {
+                println!(
+                    "Connection {} established to {}:{} at {}",
+                    connection_id, endpoint.address, endpoint.port, timestamp
+                );
             }
-            ValkyrieEvent::ConnectionClosed { connection_id, timestamp } => {
+            ValkyrieEvent::ConnectionClosed {
+                connection_id,
+                timestamp,
+            } => {
                 println!("Connection {} closed at {}", connection_id, timestamp);
             }
             ValkyrieEvent::Error { error, timestamp } => {
@@ -187,12 +192,12 @@ impl MetricsEventHandler {
             counters: Arc::new(RwLock::new(HashMap::new())),
         }
     }
-    
+
     /// Get event counters
     pub async fn get_counters(&self) -> HashMap<String, u64> {
         self.counters.read().await.clone()
     }
-    
+
     /// Increment a counter
     async fn increment_counter(&self, name: &str) {
         let mut counters = self.counters.write().await;
@@ -237,23 +242,23 @@ impl EventHandler for MetricsEventHandler {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    
+
     struct TestEventHandler {
         call_count: Arc<AtomicUsize>,
     }
-    
+
     impl TestEventHandler {
         fn new() -> Self {
             Self {
                 call_count: Arc::new(AtomicUsize::new(0)),
             }
         }
-        
+
         fn get_call_count(&self) -> usize {
             self.call_count.load(Ordering::SeqCst)
         }
     }
-    
+
     #[async_trait]
     impl EventHandler for TestEventHandler {
         async fn handle_event(&self, _event: &ValkyrieEvent) -> Result<()> {
@@ -261,38 +266,38 @@ mod tests {
             Ok(())
         }
     }
-    
+
     #[tokio::test]
     async fn test_event_bus() {
         let event_bus = EventBus::new();
         let handler = Arc::new(TestEventHandler::new());
-        
+
         event_bus.subscribe(handler.clone()).await;
-        
+
         let event = ValkyrieEvent::EngineStarted {
             timestamp: Utc::now(),
         };
-        
+
         event_bus.publish(event).await;
-        
+
         // Give some time for async processing
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        
+
         assert_eq!(handler.get_call_count(), 1);
     }
-    
+
     #[tokio::test]
     async fn test_metrics_handler() {
         let handler = MetricsEventHandler::new();
-        
+
         let event = ValkyrieEvent::ConnectionEstablished {
             connection_id: uuid::Uuid::new_v4(),
             endpoint: Endpoint::tcp("localhost", 8080),
             timestamp: Utc::now(),
         };
-        
+
         handler.handle_event(&event).await.unwrap();
-        
+
         let counters = handler.get_counters().await;
         assert_eq!(counters.get("connections_established"), Some(&1));
     }

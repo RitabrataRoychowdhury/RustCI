@@ -1,13 +1,13 @@
 //! Service Discovery Engine
-//! 
+//!
 //! Implements intelligent service discovery with multiple strategies,
 //! caching, and real-time updates for optimal service location.
 
+use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use dashmap::DashMap;
 use tracing::{debug, info};
 
 use super::{ServiceEntry, ServiceId, ServiceType};
@@ -50,19 +50,27 @@ pub struct CachedDiscoveryResult {
 pub trait DiscoveryStrategy: Send + Sync {
     /// Strategy name
     fn name(&self) -> &str;
-    
+
     /// Discover services by name
     fn discover_by_name(&self, name: &str, services: &[ServiceEntry]) -> Vec<ServiceEntry>;
-    
+
     /// Discover services by tags
-    fn discover_by_tags(&self, tags: &HashMap<String, String>, services: &[ServiceEntry]) -> Vec<ServiceEntry>;
-    
+    fn discover_by_tags(
+        &self,
+        tags: &HashMap<String, String>,
+        services: &[ServiceEntry],
+    ) -> Vec<ServiceEntry>;
+
     /// Discover services by type
-    fn discover_by_type(&self, service_type: &ServiceType, services: &[ServiceEntry]) -> Vec<ServiceEntry>;
-    
+    fn discover_by_type(
+        &self,
+        service_type: &ServiceType,
+        services: &[ServiceEntry],
+    ) -> Vec<ServiceEntry>;
+
     /// Strategy priority (lower = higher priority)
     fn priority(&self) -> u8;
-    
+
     /// Strategy enabled
     fn enabled(&self) -> bool;
 }
@@ -266,11 +274,16 @@ impl ServiceDiscovery {
     }
 
     /// Register service for discovery
-    pub async fn register_service(&self, service_id: ServiceId, service: &ServiceEntry) -> Result<()> {
+    pub async fn register_service(
+        &self,
+        service_id: ServiceId,
+        service: &ServiceEntry,
+    ) -> Result<()> {
         // Update name index
         {
             let mut name_index = self.name_index.write().await;
-            name_index.entry(service.metadata.name.clone())
+            name_index
+                .entry(service.metadata.name.clone())
                 .or_insert_with(Vec::new)
                 .push(service_id);
         }
@@ -278,7 +291,8 @@ impl ServiceDiscovery {
         // Update type index
         {
             let mut type_index = self.type_index.write().await;
-            type_index.entry(service.metadata.service_type.clone())
+            type_index
+                .entry(service.metadata.service_type.clone())
                 .or_insert_with(Vec::new)
                 .push(service_id);
         }
@@ -288,7 +302,8 @@ impl ServiceDiscovery {
             let mut tag_index = self.tag_index.write().await;
             for (key, value) in &service.tags {
                 let tag_key = format!("{}:{}", key, value);
-                tag_index.entry(tag_key)
+                tag_index
+                    .entry(tag_key)
                     .or_insert_with(Vec::new)
                     .push(service_id);
             }
@@ -297,7 +312,10 @@ impl ServiceDiscovery {
         // Invalidate relevant cache entries
         self.invalidate_cache_for_service(service).await;
 
-        debug!("Registered service for discovery: {} ({})", service.metadata.name, service_id);
+        debug!(
+            "Registered service for discovery: {} ({})",
+            service.metadata.name, service_id
+        );
         Ok(())
     }
 
@@ -335,7 +353,7 @@ impl ServiceDiscovery {
     /// Discover services by name
     pub async fn discover_by_name(&self, name: &str) -> Result<Vec<ServiceEntry>> {
         let start_time = Instant::now();
-        
+
         // Check cache first
         if self.config.enable_caching {
             let cache_key = format!("name:{}", name);
@@ -362,15 +380,19 @@ impl ServiceDiscovery {
         }
 
         // Update metrics
-        self.update_discovery_metrics(start_time.elapsed(), !services.is_empty()).await;
+        self.update_discovery_metrics(start_time.elapsed(), !services.is_empty())
+            .await;
 
         Ok(services)
     }
 
     /// Discover services by tags
-    pub async fn discover_by_tags(&self, tags: &HashMap<String, String>) -> Result<Vec<ServiceEntry>> {
+    pub async fn discover_by_tags(
+        &self,
+        tags: &HashMap<String, String>,
+    ) -> Result<Vec<ServiceEntry>> {
         let start_time = Instant::now();
-        
+
         // Check cache first
         if self.config.enable_caching {
             let cache_key = self.create_tags_cache_key(tags);
@@ -382,10 +404,10 @@ impl ServiceDiscovery {
 
         // Find services matching all tags
         let mut matching_services: Option<Vec<ServiceId>> = None;
-        
+
         {
             let tag_index = self.tag_index.read().await;
-            
+
             for (key, value) in tags {
                 let tag_key = format!("{}:{}", key, value);
                 if let Some(service_ids) = tag_index.get(&tag_key) {
@@ -413,7 +435,8 @@ impl ServiceDiscovery {
         }
 
         // Update metrics
-        self.update_discovery_metrics(start_time.elapsed(), !services.is_empty()).await;
+        self.update_discovery_metrics(start_time.elapsed(), !services.is_empty())
+            .await;
 
         Ok(services)
     }
@@ -421,7 +444,7 @@ impl ServiceDiscovery {
     /// Discover services by type
     pub async fn discover_by_type(&self, service_type: &ServiceType) -> Result<Vec<ServiceEntry>> {
         let start_time = Instant::now();
-        
+
         // Check cache first
         if self.config.enable_caching {
             let cache_key = format!("type:{}", service_type);
@@ -446,7 +469,8 @@ impl ServiceDiscovery {
         }
 
         // Update metrics
-        self.update_discovery_metrics(start_time.elapsed(), !services.is_empty()).await;
+        self.update_discovery_metrics(start_time.elapsed(), !services.is_empty())
+            .await;
 
         Ok(services)
     }
@@ -454,7 +478,7 @@ impl ServiceDiscovery {
     /// Execute complex discovery query
     pub async fn discover(&self, query: DiscoveryQuery) -> Result<Vec<ServiceEntry>> {
         let start_time = Instant::now();
-        
+
         let services = match query.query_type {
             QueryType::ByName(ref name) => self.discover_by_name(name).await?,
             QueryType::ByTags(ref tags) => self.discover_by_tags(tags).await?,
@@ -469,13 +493,18 @@ impl ServiceDiscovery {
         let filtered_services = self.apply_query_filters(services, &query).await;
 
         // Update metrics
-        self.update_discovery_metrics(start_time.elapsed(), !filtered_services.is_empty()).await;
+        self.update_discovery_metrics(start_time.elapsed(), !filtered_services.is_empty())
+            .await;
 
         Ok(filtered_services)
     }
 
     /// Apply query filters to services
-    async fn apply_query_filters(&self, mut services: Vec<ServiceEntry>, query: &DiscoveryQuery) -> Vec<ServiceEntry> {
+    async fn apply_query_filters(
+        &self,
+        mut services: Vec<ServiceEntry>,
+        query: &DiscoveryQuery,
+    ) -> Vec<ServiceEntry> {
         // Filter by health status
         if !query.include_unhealthy {
             services.retain(|s| matches!(s.health_status, super::HealthStatus::Healthy));
@@ -484,9 +513,10 @@ impl ServiceDiscovery {
         // Filter by required capabilities
         if !query.required_capabilities.is_empty() {
             services.retain(|s| {
-                query.required_capabilities.iter().all(|cap| {
-                    s.capabilities.custom.contains_key(cap)
-                })
+                query
+                    .required_capabilities
+                    .iter()
+                    .all(|cap| s.capabilities.custom.contains_key(cap))
             });
         }
 
@@ -514,7 +544,8 @@ impl ServiceDiscovery {
                 // Update hit count
                 let mut cached_mut = cached.clone();
                 cached_mut.hit_count += 1;
-                self.service_cache.insert(cache_key.to_string(), cached_mut.clone());
+                self.service_cache
+                    .insert(cache_key.to_string(), cached_mut.clone());
                 return Some(cached_mut);
             } else {
                 // Remove expired entry
@@ -529,10 +560,12 @@ impl ServiceDiscovery {
         // Check cache size limit
         if self.service_cache.len() >= self.config.max_cache_size {
             // Remove oldest entries (simplified LRU)
-            let oldest_key = self.service_cache.iter()
+            let oldest_key = self
+                .service_cache
+                .iter()
                 .min_by_key(|entry| entry.cached_at)
                 .map(|entry| entry.key().clone());
-            
+
             if let Some(key) = oldest_key {
                 self.service_cache.remove(&key);
             }
@@ -546,19 +579,21 @@ impl ServiceDiscovery {
             query_hash: self.calculate_query_hash(cache_key),
         };
 
-        self.service_cache.insert(cache_key.to_string(), cached_result);
+        self.service_cache
+            .insert(cache_key.to_string(), cached_result);
     }
 
     /// Create cache key for tags query
     fn create_tags_cache_key(&self, tags: &HashMap<String, String>) -> String {
         let mut sorted_tags: Vec<_> = tags.iter().collect();
         sorted_tags.sort_by_key(|(k, _)| *k);
-        
-        let tags_str = sorted_tags.iter()
+
+        let tags_str = sorted_tags
+            .iter()
             .map(|(k, v)| format!("{}:{}", k, v))
             .collect::<Vec<_>>()
             .join(",");
-        
+
         format!("tags:{}", tags_str)
     }
 
@@ -566,7 +601,7 @@ impl ServiceDiscovery {
     fn calculate_query_hash(&self, cache_key: &str) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         cache_key.hash(&mut hasher);
         format!("{:x}", hasher.finish())
@@ -590,7 +625,7 @@ impl ServiceDiscovery {
     async fn update_discovery_metrics(&self, latency: Duration, success: bool) {
         let mut metrics = self.metrics.write().await;
         metrics.total_requests += 1;
-        
+
         if success {
             metrics.successful_discoveries += 1;
         } else {
@@ -599,15 +634,20 @@ impl ServiceDiscovery {
         }
 
         // Update average latency
-        let total_latency = metrics.avg_discovery_latency.as_nanos() * (metrics.total_requests - 1) as u128
+        let total_latency = metrics.avg_discovery_latency.as_nanos()
+            * (metrics.total_requests - 1) as u128
             + latency.as_nanos();
-        metrics.avg_discovery_latency = Duration::from_nanos((total_latency / metrics.total_requests as u128) as u64);
+        metrics.avg_discovery_latency =
+            Duration::from_nanos((total_latency / metrics.total_requests as u128) as u64);
     }
 
     /// Start refresh task for indexes
     pub async fn start_refresh_task(&self, refresh_interval: Duration) -> Result<()> {
         // In a real implementation, this would start a background task to refresh indexes
-        info!("Started discovery index refresh task with interval: {:?}", refresh_interval);
+        info!(
+            "Started discovery index refresh task with interval: {:?}",
+            refresh_interval
+        );
         Ok(())
     }
 
@@ -645,8 +685,11 @@ impl ServiceDiscovery {
             metrics.index_rebuilds += 1;
         }
 
-        info!("Rebuilt discovery indexes for {} services in {:?}", 
-              services.len(), start_time.elapsed());
+        info!(
+            "Rebuilt discovery indexes for {} services in {:?}",
+            services.len(),
+            start_time.elapsed()
+        );
         Ok(())
     }
 }
@@ -659,25 +702,35 @@ impl DiscoveryStrategy for ExactMatchStrategy {
     }
 
     fn discover_by_name(&self, name: &str, services: &[ServiceEntry]) -> Vec<ServiceEntry> {
-        services.iter()
+        services
+            .iter()
             .filter(|s| s.metadata.name == name)
             .cloned()
             .collect()
     }
 
-    fn discover_by_tags(&self, tags: &HashMap<String, String>, services: &[ServiceEntry]) -> Vec<ServiceEntry> {
-        services.iter()
+    fn discover_by_tags(
+        &self,
+        tags: &HashMap<String, String>,
+        services: &[ServiceEntry],
+    ) -> Vec<ServiceEntry> {
+        services
+            .iter()
             .filter(|s| {
-                tags.iter().all(|(key, value)| {
-                    s.tags.get(key).map_or(false, |v| v == value)
-                })
+                tags.iter()
+                    .all(|(key, value)| s.tags.get(key).map_or(false, |v| v == value))
             })
             .cloned()
             .collect()
     }
 
-    fn discover_by_type(&self, service_type: &ServiceType, services: &[ServiceEntry]) -> Vec<ServiceEntry> {
-        services.iter()
+    fn discover_by_type(
+        &self,
+        service_type: &ServiceType,
+        services: &[ServiceEntry],
+    ) -> Vec<ServiceEntry> {
+        services
+            .iter()
             .filter(|s| &s.metadata.service_type == service_type)
             .cloned()
             .collect()
@@ -698,20 +751,32 @@ impl DiscoveryStrategy for FuzzyMatchStrategy {
     }
 
     fn discover_by_name(&self, name: &str, services: &[ServiceEntry]) -> Vec<ServiceEntry> {
-        services.iter()
-            .filter(|s| self.calculate_similarity(name, &s.metadata.name) >= self.similarity_threshold)
+        services
+            .iter()
+            .filter(|s| {
+                self.calculate_similarity(name, &s.metadata.name) >= self.similarity_threshold
+            })
             .cloned()
             .collect()
     }
 
-    fn discover_by_tags(&self, tags: &HashMap<String, String>, services: &[ServiceEntry]) -> Vec<ServiceEntry> {
+    fn discover_by_tags(
+        &self,
+        tags: &HashMap<String, String>,
+        services: &[ServiceEntry],
+    ) -> Vec<ServiceEntry> {
         // Fuzzy tag matching implementation would go here
         Vec::new()
     }
 
-    fn discover_by_type(&self, service_type: &ServiceType, services: &[ServiceEntry]) -> Vec<ServiceEntry> {
+    fn discover_by_type(
+        &self,
+        service_type: &ServiceType,
+        services: &[ServiceEntry],
+    ) -> Vec<ServiceEntry> {
         // Exact match for types (fuzzy doesn't make sense for enums)
-        services.iter()
+        services
+            .iter()
             .filter(|s| &s.metadata.service_type == service_type)
             .cloned()
             .collect()
@@ -731,7 +796,7 @@ impl FuzzyMatchStrategy {
     fn calculate_similarity(&self, a: &str, b: &str) -> f64 {
         let len_a = a.len();
         let len_b = b.len();
-        
+
         if len_a == 0 {
             return if len_b == 0 { 1.0 } else { 0.0 };
         }
@@ -741,7 +806,7 @@ impl FuzzyMatchStrategy {
 
         let max_len = len_a.max(len_b);
         let distance = self.levenshtein_distance(a, b);
-        
+
         1.0 - (distance as f64 / max_len as f64)
     }
 
@@ -763,7 +828,11 @@ impl FuzzyMatchStrategy {
 
         for i in 1..=len_a {
             for j in 1..=len_b {
-                let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+                let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                    0
+                } else {
+                    1
+                };
                 matrix[i][j] = (matrix[i - 1][j] + 1)
                     .min(matrix[i][j - 1] + 1)
                     .min(matrix[i - 1][j - 1] + cost);
@@ -785,12 +854,21 @@ impl DiscoveryStrategy for SemanticDiscoveryStrategy {
         Vec::new()
     }
 
-    fn discover_by_tags(&self, _tags: &HashMap<String, String>, _services: &[ServiceEntry]) -> Vec<ServiceEntry> {
+    fn discover_by_tags(
+        &self,
+        _tags: &HashMap<String, String>,
+        _services: &[ServiceEntry],
+    ) -> Vec<ServiceEntry> {
         Vec::new()
     }
 
-    fn discover_by_type(&self, service_type: &ServiceType, services: &[ServiceEntry]) -> Vec<ServiceEntry> {
-        services.iter()
+    fn discover_by_type(
+        &self,
+        service_type: &ServiceType,
+        services: &[ServiceEntry],
+    ) -> Vec<ServiceEntry> {
+        services
+            .iter()
             .filter(|s| &s.metadata.service_type == service_type)
             .cloned()
             .collect()
@@ -811,7 +889,8 @@ impl DiscoveryStrategy for ProximityBasedStrategy {
     }
 
     fn discover_by_name(&self, name: &str, services: &[ServiceEntry]) -> Vec<ServiceEntry> {
-        let mut matching_services: Vec<_> = services.iter()
+        let mut matching_services: Vec<_> = services
+            .iter()
             .filter(|s| s.metadata.name == name)
             .cloned()
             .collect();
@@ -820,18 +899,24 @@ impl DiscoveryStrategy for ProximityBasedStrategy {
         matching_services.sort_by(|a, b| {
             let a_weight = self.region_weights.get(&a.metadata.region).unwrap_or(&1.0);
             let b_weight = self.region_weights.get(&b.metadata.region).unwrap_or(&1.0);
-            b_weight.partial_cmp(a_weight).unwrap_or(std::cmp::Ordering::Equal)
+            b_weight
+                .partial_cmp(a_weight)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         matching_services
     }
 
-    fn discover_by_tags(&self, tags: &HashMap<String, String>, services: &[ServiceEntry]) -> Vec<ServiceEntry> {
-        let mut matching_services: Vec<_> = services.iter()
+    fn discover_by_tags(
+        &self,
+        tags: &HashMap<String, String>,
+        services: &[ServiceEntry],
+    ) -> Vec<ServiceEntry> {
+        let mut matching_services: Vec<_> = services
+            .iter()
             .filter(|s| {
-                tags.iter().all(|(key, value)| {
-                    s.tags.get(key).map_or(false, |v| v == value)
-                })
+                tags.iter()
+                    .all(|(key, value)| s.tags.get(key).map_or(false, |v| v == value))
             })
             .cloned()
             .collect();
@@ -840,14 +925,21 @@ impl DiscoveryStrategy for ProximityBasedStrategy {
         matching_services.sort_by(|a, b| {
             let a_weight = self.region_weights.get(&a.metadata.region).unwrap_or(&1.0);
             let b_weight = self.region_weights.get(&b.metadata.region).unwrap_or(&1.0);
-            b_weight.partial_cmp(a_weight).unwrap_or(std::cmp::Ordering::Equal)
+            b_weight
+                .partial_cmp(a_weight)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         matching_services
     }
 
-    fn discover_by_type(&self, service_type: &ServiceType, services: &[ServiceEntry]) -> Vec<ServiceEntry> {
-        let mut matching_services: Vec<_> = services.iter()
+    fn discover_by_type(
+        &self,
+        service_type: &ServiceType,
+        services: &[ServiceEntry],
+    ) -> Vec<ServiceEntry> {
+        let mut matching_services: Vec<_> = services
+            .iter()
             .filter(|s| &s.metadata.service_type == service_type)
             .cloned()
             .collect();
@@ -856,7 +948,9 @@ impl DiscoveryStrategy for ProximityBasedStrategy {
         matching_services.sort_by(|a, b| {
             let a_weight = self.region_weights.get(&a.metadata.region).unwrap_or(&1.0);
             let b_weight = self.region_weights.get(&b.metadata.region).unwrap_or(&1.0);
-            b_weight.partial_cmp(a_weight).unwrap_or(std::cmp::Ordering::Equal)
+            b_weight
+                .partial_cmp(a_weight)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         matching_services
@@ -877,7 +971,8 @@ impl DiscoveryStrategy for LoadAwareStrategy {
     }
 
     fn discover_by_name(&self, name: &str, services: &[ServiceEntry]) -> Vec<ServiceEntry> {
-        let mut matching_services: Vec<_> = services.iter()
+        let mut matching_services: Vec<_> = services
+            .iter()
             .filter(|s| s.metadata.name == name)
             .filter(|s| s.capabilities.performance.cpu_usage < self.load_threshold)
             .cloned()
@@ -885,7 +980,9 @@ impl DiscoveryStrategy for LoadAwareStrategy {
 
         // Sort by load (CPU usage)
         matching_services.sort_by(|a, b| {
-            a.capabilities.performance.cpu_usage
+            a.capabilities
+                .performance
+                .cpu_usage
                 .partial_cmp(&b.capabilities.performance.cpu_usage)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
@@ -893,12 +990,16 @@ impl DiscoveryStrategy for LoadAwareStrategy {
         matching_services
     }
 
-    fn discover_by_tags(&self, tags: &HashMap<String, String>, services: &[ServiceEntry]) -> Vec<ServiceEntry> {
-        let mut matching_services: Vec<_> = services.iter()
+    fn discover_by_tags(
+        &self,
+        tags: &HashMap<String, String>,
+        services: &[ServiceEntry],
+    ) -> Vec<ServiceEntry> {
+        let mut matching_services: Vec<_> = services
+            .iter()
             .filter(|s| {
-                tags.iter().all(|(key, value)| {
-                    s.tags.get(key).map_or(false, |v| v == value)
-                })
+                tags.iter()
+                    .all(|(key, value)| s.tags.get(key).map_or(false, |v| v == value))
             })
             .filter(|s| s.capabilities.performance.cpu_usage < self.load_threshold)
             .cloned()
@@ -906,7 +1007,9 @@ impl DiscoveryStrategy for LoadAwareStrategy {
 
         // Sort by load
         matching_services.sort_by(|a, b| {
-            a.capabilities.performance.cpu_usage
+            a.capabilities
+                .performance
+                .cpu_usage
                 .partial_cmp(&b.capabilities.performance.cpu_usage)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
@@ -914,8 +1017,13 @@ impl DiscoveryStrategy for LoadAwareStrategy {
         matching_services
     }
 
-    fn discover_by_type(&self, service_type: &ServiceType, services: &[ServiceEntry]) -> Vec<ServiceEntry> {
-        let mut matching_services: Vec<_> = services.iter()
+    fn discover_by_type(
+        &self,
+        service_type: &ServiceType,
+        services: &[ServiceEntry],
+    ) -> Vec<ServiceEntry> {
+        let mut matching_services: Vec<_> = services
+            .iter()
             .filter(|s| &s.metadata.service_type == service_type)
             .filter(|s| s.capabilities.performance.cpu_usage < self.load_threshold)
             .cloned()
@@ -923,7 +1031,9 @@ impl DiscoveryStrategy for LoadAwareStrategy {
 
         // Sort by load
         matching_services.sort_by(|a, b| {
-            a.capabilities.performance.cpu_usage
+            a.capabilities
+                .performance
+                .cpu_usage
                 .partial_cmp(&b.capabilities.performance.cpu_usage)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });

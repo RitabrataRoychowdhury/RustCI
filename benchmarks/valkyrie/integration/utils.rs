@@ -1,11 +1,11 @@
-use std::time::{Duration, Instant};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use rustci::core::networking::valkyrie::engine::ValkyrieEngine;
-use rustci::core::networking::valkyrie::message::{ValkyrieMessage, MessageType, MessageHeader};
 use rustci::config::valkyrie::ValkyrieConfig;
+use rustci::core::networking::valkyrie::engine::ValkyrieEngine;
+use rustci::core::networking::valkyrie::message::{MessageHeader, MessageType, ValkyrieMessage};
 
 /// Test utilities for Valkyrie Protocol testing
 pub struct TestUtils;
@@ -50,7 +50,9 @@ impl TestUtils {
     }
 
     /// Create multiple test engines for multi-node testing
-    pub async fn create_test_cluster(node_count: usize) -> Result<Vec<ValkyrieEngine>, Box<dyn std::error::Error>> {
+    pub async fn create_test_cluster(
+        node_count: usize,
+    ) -> Result<Vec<ValkyrieEngine>, Box<dyn std::error::Error>> {
         let mut engines = Vec::new();
         for i in 0..node_count {
             let mut config = ValkyrieConfig::test_default();
@@ -70,7 +72,7 @@ impl PerformanceUtils {
     pub fn calculate_percentiles(mut latencies: Vec<Duration>) -> LatencyStats {
         latencies.sort();
         let len = latencies.len();
-        
+
         LatencyStats {
             min: latencies[0],
             max: latencies[len - 1],
@@ -79,18 +81,17 @@ impl PerformanceUtils {
             p99: latencies[(len * 99) / 100],
             p999: latencies[(len * 999) / 1000],
             mean: Duration::from_nanos(
-                latencies.iter().map(|d| d.as_nanos() as u64).sum::<u64>() / len as u64
+                latencies.iter().map(|d| d.as_nanos() as u64).sum::<u64>() / len as u64,
             ),
         }
     }
 
     /// Measure throughput over time
-    pub async fn measure_throughput<F>(
-        operation: F,
-        duration: Duration,
-    ) -> ThroughputStats
+    pub async fn measure_throughput<F>(operation: F, duration: Duration) -> ThroughputStats
     where
-        F: Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send>>,
+        F: Fn() -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send>,
+        >,
     {
         let start = Instant::now();
         let mut operations = 0;
@@ -162,13 +163,22 @@ impl TestAssertions {
             latency,
             micros
         );
-        
+
         if micros > 500.0 {
-            println!("⚠️  Warning: {} latency {:.2}μs is sub-millisecond but >500μs", context, micros);
+            println!(
+                "⚠️  Warning: {} latency {:.2}μs is sub-millisecond but >500μs",
+                context, micros
+            );
         } else if micros > 100.0 {
-            println!("✅ Good: {} latency {:.2}μs is well within sub-millisecond", context, micros);
+            println!(
+                "✅ Good: {} latency {:.2}μs is well within sub-millisecond",
+                context, micros
+            );
         } else {
-            println!("🚀 Excellent: {} latency {:.2}μs is ultra-fast", context, micros);
+            println!(
+                "🚀 Excellent: {} latency {:.2}μs is ultra-fast",
+                context, micros
+            );
         }
     }
 
@@ -195,10 +205,17 @@ impl TestAssertions {
     }
 
     /// Assert sub-millisecond performance for a batch of latencies
-    pub fn assert_sub_millisecond_batch(latencies: &[Duration], min_percentage: f64, context: &str) {
-        let sub_ms_count = latencies.iter().filter(|&&lat| lat < Duration::from_millis(1)).count();
+    pub fn assert_sub_millisecond_batch(
+        latencies: &[Duration],
+        min_percentage: f64,
+        context: &str,
+    ) {
+        let sub_ms_count = latencies
+            .iter()
+            .filter(|&&lat| lat < Duration::from_millis(1))
+            .count();
         let percentage = (sub_ms_count as f64 / latencies.len() as f64) * 100.0;
-        
+
         assert!(
             percentage >= min_percentage,
             "Sub-millisecond batch assertion failed for {}: {:.2}% < {:.2}% (only {}/{} requests were sub-millisecond)",
@@ -208,8 +225,14 @@ impl TestAssertions {
             sub_ms_count,
             latencies.len()
         );
-        
-        println!("✅ Sub-millisecond batch validation for {}: {:.2}% ({}/{}) >= {:.2}%", 
-                context, percentage, sub_ms_count, latencies.len(), min_percentage);
+
+        println!(
+            "✅ Sub-millisecond batch validation for {}: {:.2}% ({}/{}) >= {:.2}%",
+            context,
+            percentage,
+            sub_ms_count,
+            latencies.len(),
+            min_percentage
+        );
     }
 }

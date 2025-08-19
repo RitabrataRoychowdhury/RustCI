@@ -9,10 +9,9 @@ use std::ptr;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
-use crate::api::valkyrie::{ValkyrieClient, ClientConfig};
+use crate::api::valkyrie::{ClientConfig, ValkyrieClient};
 use crate::bindings::c::{
-    ValkyrieClientHandle, ValkyrieErrorCode, ValkyrieMessageC, 
-    ValkyrieConfigC, ValkyrieStatsC
+    ValkyrieClientHandle, ValkyrieConfigC, ValkyrieErrorCode, ValkyrieMessageC, ValkyrieStatsC,
 };
 
 // Re-export C bindings for Go compatibility
@@ -423,7 +422,8 @@ func (m *Message) WithTTL(ttl time.Duration) *Message {
     m.TTL = ttl
     return m
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Generate Go module file
@@ -434,7 +434,8 @@ module github.com/rustci/valkyrie-protocol-go
 go 1.19
 
 require ()
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Generate Go test file
@@ -535,7 +536,8 @@ func BenchmarkClientCreation(b *testing.B) {
         client.Close()
     }
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Generate Go example file
@@ -624,7 +626,8 @@ func main() {
 
     fmt.Println("Example completed")
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 #[cfg(test)]

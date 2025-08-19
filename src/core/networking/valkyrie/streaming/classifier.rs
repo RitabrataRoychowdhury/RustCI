@@ -1,14 +1,14 @@
 //! Message Classification System for QoS-Aware Routing
-//! 
+//!
 //! Implements intelligent message classification using machine learning techniques,
 //! pattern recognition, and adaptive learning for optimal QoS determination.
 
+use chrono::{DateTime, Datelike, Timelike, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::info;
-use chrono::{DateTime, Utc, Datelike, Timelike};
 
 use crate::core::networking::valkyrie::adapters::*;
 use crate::error::{Result, ValkyrieError};
@@ -82,17 +82,30 @@ pub enum ClassificationCondition {
     /// Priority condition
     Priority(MessagePriority),
     /// Metadata condition
-    Metadata { key: String, value: String, operator: ComparisonOperator },
+    Metadata {
+        key: String,
+        value: String,
+        operator: ComparisonOperator,
+    },
     /// Payload size condition
-    PayloadSize { min: Option<usize>, max: Option<usize> },
+    PayloadSize {
+        min: Option<usize>,
+        max: Option<usize>,
+    },
     /// Source adapter condition
     SourceAdapter(AdapterId),
     /// Destination condition
     Destination(String),
     /// Timestamp condition
-    Timestamp { before: Option<DateTime<Utc>>, after: Option<DateTime<Utc>> },
+    Timestamp {
+        before: Option<DateTime<Utc>>,
+        after: Option<DateTime<Utc>>,
+    },
     /// Composite condition (AND/OR)
-    Composite { operator: LogicalOperator, conditions: Vec<ClassificationCondition> },
+    Composite {
+        operator: LogicalOperator,
+        conditions: Vec<ClassificationCondition>,
+    },
     /// Pattern-based condition
     Pattern(String),
     /// ML-based condition
@@ -400,19 +413,24 @@ impl MessageClassifier {
         }
 
         // Combine results using weighted voting
-        let final_result = self.combine_classification_results(classification_results).await?;
+        let final_result = self
+            .combine_classification_results(classification_results)
+            .await?;
 
         // Cache the result
         if self.config.enable_caching {
-            self.cache_classification(&message_hash, &final_result).await;
+            self.cache_classification(&message_hash, &final_result)
+                .await;
         }
 
         // Update metrics
-        self.update_metrics(final_result.qos_class, start_time.elapsed()).await;
+        self.update_metrics(final_result.qos_class, start_time.elapsed())
+            .await;
 
         // Store for learning if adaptive learning is enabled
         if self.config.adaptive_learning {
-            self.store_for_learning(features, final_result.qos_class).await;
+            self.store_for_learning(features, final_result.qos_class)
+                .await;
         }
 
         Ok(final_result.qos_class)
@@ -430,7 +448,10 @@ impl MessageClassifier {
                 continue;
             }
 
-            if self.evaluate_condition(&rule.condition, message, qos, features).await? {
+            if self
+                .evaluate_condition(&rule.condition, message, qos, features)
+                .await?
+            {
                 return Ok(Some(ClassificationResult {
                     qos_class: rule.target_class,
                     confidence: rule.weight,
@@ -449,11 +470,15 @@ impl MessageClassifier {
         message: &AdapterMessage,
         features: &MessageFeatures,
     ) -> Result<Option<ClassificationResult>> {
-        let matches = self.pattern_recognizer.find_matches(message, features).await?;
-        
-        if let Some(best_match) = matches.into_iter()
-            .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap()) {
-            
+        let matches = self
+            .pattern_recognizer
+            .find_matches(message, features)
+            .await?;
+
+        if let Some(best_match) = matches
+            .into_iter()
+            .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap())
+        {
             if best_match.confidence >= self.config.pattern_threshold {
                 let patterns = self.pattern_recognizer.patterns.read().await;
                 if let Some(pattern) = patterns.iter().find(|p| p.id == best_match.pattern_id) {
@@ -476,13 +501,16 @@ impl MessageClassifier {
         features: &MessageFeatures,
     ) -> Result<Option<ClassificationResult>> {
         let prediction = self.learning_engine.predict(features).await?;
-        
+
         if prediction.confidence >= self.config.ml_threshold {
             return Ok(Some(ClassificationResult {
                 qos_class: prediction.qos_class,
                 confidence: prediction.confidence,
                 method: ClassificationMethod::MachineLearning,
-                details: format!("ML prediction with confidence: {:.2}", prediction.confidence),
+                details: format!(
+                    "ML prediction with confidence: {:.2}",
+                    prediction.confidence
+                ),
             }));
         }
 
@@ -505,7 +533,7 @@ impl MessageClassifier {
 
         // Weighted voting based on confidence and method priority
         let mut class_scores: HashMap<QoSClass, f64> = HashMap::new();
-        
+
         for result in &results {
             let method_weight = match result.method {
                 ClassificationMethod::Rules => 1.0,
@@ -514,13 +542,14 @@ impl MessageClassifier {
                 ClassificationMethod::Default => 0.1,
                 ClassificationMethod::Combined => 0.8,
             };
-            
+
             let weighted_confidence = result.confidence * method_weight;
             *class_scores.entry(result.qos_class).or_insert(0.0) += weighted_confidence;
         }
 
         // Find the class with highest score
-        let (best_class, best_score) = class_scores.into_iter()
+        let (best_class, best_score) = class_scores
+            .into_iter()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
             .unwrap();
 
@@ -533,9 +562,13 @@ impl MessageClassifier {
     }
 
     /// Extract features from message
-    async fn extract_features(&self, message: &AdapterMessage, qos: &QoSParams) -> Result<MessageFeatures> {
+    async fn extract_features(
+        &self,
+        message: &AdapterMessage,
+        qos: &QoSParams,
+    ) -> Result<MessageFeatures> {
         let now = Utc::now();
-        
+
         Ok(MessageFeatures {
             message_type: message.message_type.clone(),
             priority: message.priority,
@@ -550,8 +583,8 @@ impl MessageClassifier {
             },
             content_features: ContentFeatures {
                 keywords: self.extract_keywords(&message.payload),
-                language: None, // Would use language detection
-                encoding: None, // Would detect encoding
+                language: None,          // Would use language detection
+                encoding: None,          // Would detect encoding
                 compression_ratio: None, // Would calculate if compressed
             },
         })
@@ -575,12 +608,12 @@ impl MessageClassifier {
     fn calculate_message_hash(&self, message: &AdapterMessage) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         message.message_type.hash(&mut hasher);
         message.priority.hash(&mut hasher);
         message.payload.hash(&mut hasher);
-        
+
         format!("{:x}", hasher.finish())
     }
 
@@ -598,25 +631,29 @@ impl MessageClassifier {
     /// Cache classification result
     async fn cache_classification(&self, message_hash: &str, result: &ClassificationResult) {
         let mut cache = self.classification_cache.write().await;
-        
+
         // Cleanup old entries if cache is full
         if cache.len() >= self.config.max_cache_size {
-            let oldest_key = cache.iter()
+            let oldest_key = cache
+                .iter()
                 .min_by_key(|(_, v)| v.cached_at)
                 .map(|(k, _)| k.clone());
-            
+
             if let Some(key) = oldest_key {
                 cache.remove(&key);
             }
         }
 
-        cache.insert(message_hash.to_string(), CachedClassification {
-            qos_class: result.qos_class,
-            confidence: result.confidence,
-            cached_at: Instant::now(),
-            ttl: self.config.cache_ttl,
-            hit_count: 0,
-        });
+        cache.insert(
+            message_hash.to_string(),
+            CachedClassification {
+                qos_class: result.qos_class,
+                confidence: result.confidence,
+                cached_at: Instant::now(),
+                ttl: self.config.cache_ttl,
+                hit_count: 0,
+            },
+        );
     }
 
     /// Evaluate classification condition
@@ -627,29 +664,37 @@ impl MessageClassifier {
         qos: &'a QoSParams,
         features: &'a MessageFeatures,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<bool>> + Send + 'a>> {
-        match condition {
-            ClassificationCondition::MessageType(msg_type) => {
-                Ok(message.message_type == *msg_type)
-            }
-            ClassificationCondition::Priority(priority) => {
-                Ok(message.priority == *priority)
-            }
-            ClassificationCondition::Metadata { key, value, operator } => {
-                if let Some(msg_value) = message.metadata.get(key) {
-                    Ok(self.compare_values(msg_value, value, operator))
-                } else {
-                    Ok(false)
+        Box::pin(async move {
+            match condition {
+                ClassificationCondition::MessageType(msg_type) => {
+                    Ok(message.message_type == *msg_type)
                 }
+                ClassificationCondition::Priority(priority) => Ok(message.priority == *priority),
+                ClassificationCondition::Metadata {
+                    key,
+                    value,
+                    operator,
+                } => {
+                    if let Some(msg_value) = message.metadata.get(key) {
+                        Ok(self.compare_values(msg_value, value, operator))
+                    } else {
+                        Ok(false)
+                    }
+                }
+                ClassificationCondition::PayloadSize { min, max } => {
+                    let size = message.payload.len();
+                    Ok(min.map_or(true, |m| size >= m) && max.map_or(true, |m| size <= m))
+                }
+                ClassificationCondition::Composite {
+                    operator,
+                    conditions,
+                } => {
+                    self.evaluate_composite_condition(operator, conditions, message, qos, features)
+                        .await
+                }
+                _ => Ok(false), // Placeholder for other conditions
             }
-            ClassificationCondition::PayloadSize { min, max } => {
-                let size = message.payload.len();
-                Ok(min.map_or(true, |m| size >= m) && max.map_or(true, |m| size <= m))
-            }
-            ClassificationCondition::Composite { operator, conditions } => {
-                self.evaluate_composite_condition(operator, conditions, message, qos, features).await
-            }
-            _ => Ok(false), // Placeholder for other conditions
-        }
+        })
     }
 
     /// Evaluate composite condition
@@ -664,7 +709,10 @@ impl MessageClassifier {
         match operator {
             LogicalOperator::And => {
                 for condition in conditions {
-                    if !self.evaluate_condition(condition, message, qos, features).await? {
+                    if !self
+                        .evaluate_condition(condition, message, qos, features)
+                        .await?
+                    {
                         return Ok(false);
                     }
                 }
@@ -672,7 +720,10 @@ impl MessageClassifier {
             }
             LogicalOperator::Or => {
                 for condition in conditions {
-                    if self.evaluate_condition(condition, message, qos, features).await? {
+                    if self
+                        .evaluate_condition(condition, message, qos, features)
+                        .await?
+                    {
                         return Ok(true);
                     }
                 }
@@ -681,10 +732,12 @@ impl MessageClassifier {
             LogicalOperator::Not => {
                 if conditions.len() != 1 {
                     return Err(ValkyrieError::InvalidCondition(
-                        "NOT operator requires exactly one condition".to_string()
+                        "NOT operator requires exactly one condition".to_string(),
                     ));
                 }
-                let result = self.evaluate_condition(&conditions[0], message, qos, features).await?;
+                let result = self
+                    .evaluate_condition(&conditions[0], message, qos, features)
+                    .await?;
                 Ok(!result)
             }
         }
@@ -708,12 +761,14 @@ impl MessageClassifier {
 
     /// Store classification for learning
     async fn store_for_learning(&self, features: MessageFeatures, qos_class: QoSClass) {
-        self.learning_engine.add_training_example(TrainingExample {
-            features,
-            correct_class: qos_class,
-            timestamp: Instant::now(),
-            feedback_score: 1.0, // Would be updated based on feedback
-        }).await;
+        self.learning_engine
+            .add_training_example(TrainingExample {
+                features,
+                correct_class: qos_class,
+                timestamp: Instant::now(),
+                feedback_score: 1.0, // Would be updated based on feedback
+            })
+            .await;
     }
 
     /// Update classification metrics
@@ -721,26 +776,31 @@ impl MessageClassifier {
         let mut metrics = self.metrics.write().await;
         metrics.total_classifications += 1;
         *metrics.by_class.entry(qos_class).or_insert(0) += 1;
-        
+
         // Update average classification time
-        let total_time = metrics.avg_classification_time.as_nanos() * (metrics.total_classifications - 1) as u128
+        let total_time = metrics.avg_classification_time.as_nanos()
+            * (metrics.total_classifications - 1) as u128
             + latency.as_nanos();
-        metrics.avg_classification_time = Duration::from_nanos((total_time / metrics.total_classifications as u128) as u64);
+        metrics.avg_classification_time =
+            Duration::from_nanos((total_time / metrics.total_classifications as u128) as u64);
     }
 
     /// Update cache hit metrics
     async fn update_metrics_cache_hit(&self, latency: Duration) {
         let mut metrics = self.metrics.write().await;
         metrics.total_classifications += 1;
-        
+
         // Update cache hit rate
-        let cache_hits = (metrics.cache_hit_rate * (metrics.total_classifications - 1) as f64) + 1.0;
+        let cache_hits =
+            (metrics.cache_hit_rate * (metrics.total_classifications - 1) as f64) + 1.0;
         metrics.cache_hit_rate = cache_hits / metrics.total_classifications as f64;
-        
+
         // Update average time
-        let total_time = metrics.avg_classification_time.as_nanos() * (metrics.total_classifications - 1) as u128
+        let total_time = metrics.avg_classification_time.as_nanos()
+            * (metrics.total_classifications - 1) as u128
             + latency.as_nanos();
-        metrics.avg_classification_time = Duration::from_nanos((total_time / metrics.total_classifications as u128) as u64);
+        metrics.avg_classification_time =
+            Duration::from_nanos((total_time / metrics.total_classifications as u128) as u64);
     }
 
     /// Default classification rules
@@ -779,9 +839,9 @@ impl MessageClassifier {
             ClassificationRule {
                 id: "large-data".to_string(),
                 name: "Large Data Transfers".to_string(),
-                condition: ClassificationCondition::PayloadSize { 
+                condition: ClassificationCondition::PayloadSize {
                     min: Some(1024 * 1024), // 1MB
-                    max: None 
+                    max: None,
                 },
                 target_class: QoSClass::DataTransfer,
                 weight: 0.7,
@@ -845,7 +905,7 @@ impl LearningEngine {
     pub async fn add_training_example(&self, example: TrainingExample) {
         let mut data = self.training_data.write().await;
         data.push(example);
-        
+
         // Trigger retraining if we have enough examples
         if data.len() % 100 == 0 {
             self.retrain().await;
@@ -855,16 +915,21 @@ impl LearningEngine {
     /// Predict QoS class using ML model
     pub async fn predict(&self, features: &MessageFeatures) -> Result<MLPrediction> {
         let weights = self.model_weights.read().await;
-        
+
         // Simple linear model for demonstration
         let mut scores: HashMap<QoSClass, f64> = HashMap::new();
-        
+
         // Calculate scores for each QoS class
-        for qos_class in [QoSClass::Critical, QoSClass::System, QoSClass::JobExecution, 
-                         QoSClass::DataTransfer, QoSClass::LogsMetrics] {
+        for qos_class in [
+            QoSClass::Critical,
+            QoSClass::System,
+            QoSClass::JobExecution,
+            QoSClass::DataTransfer,
+            QoSClass::LogsMetrics,
+        ] {
             let class_key = format!("{:?}", qos_class);
             let weight = weights.get(&class_key).unwrap_or(&0.0);
-            
+
             // Simple feature scoring
             let mut score = *weight;
             score += match features.priority {
@@ -874,14 +939,15 @@ impl LearningEngine {
                 MessagePriority::Low => 0.3,
                 MessagePriority::Background => 0.1,
             };
-            
+
             score += (features.payload_size as f64).log10() * 0.1;
-            
+
             scores.insert(qos_class, score);
         }
 
         // Find best prediction
-        let (best_class, best_score) = scores.into_iter()
+        let (best_class, best_score) = scores
+            .into_iter()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
             .unwrap_or((QoSClass::DataTransfer, 0.5));
 
@@ -898,24 +964,32 @@ impl LearningEngine {
     async fn retrain(&self) {
         let data = self.training_data.read().await;
         let mut weights = self.model_weights.write().await;
-        
+
         // Simple gradient descent training
         for example in data.iter() {
             let prediction = self.predict_internal(&example.features, &weights);
-            let error = if prediction.qos_class == example.correct_class { 0.0 } else { 1.0 };
-            
+            let error = if prediction.qos_class == example.correct_class {
+                0.0
+            } else {
+                1.0
+            };
+
             // Update weights based on error
             let class_key = format!("{:?}", example.correct_class);
             let current_weight = weights.get(&class_key).unwrap_or(&0.0);
             let new_weight = current_weight + (self.learning_rate * error);
             weights.insert(class_key, new_weight);
         }
-        
+
         info!("Retrained ML model with {} examples", data.len());
     }
 
     /// Internal prediction for training
-    fn predict_internal(&self, features: &MessageFeatures, weights: &HashMap<String, f64>) -> MLPrediction {
+    fn predict_internal(
+        &self,
+        features: &MessageFeatures,
+        weights: &HashMap<String, f64>,
+    ) -> MLPrediction {
         // Simplified prediction logic
         MLPrediction {
             qos_class: QoSClass::DataTransfer,
@@ -963,7 +1037,11 @@ impl PatternRecognizer {
         let confidence = match pattern.pattern_type {
             PatternType::Size => {
                 let size_ratio = features.payload_size as f64 / 1024.0; // Normalize to KB
-                if size_ratio > 1000.0 { 0.9 } else { 0.3 }
+                if size_ratio > 1000.0 {
+                    0.9
+                } else {
+                    0.3
+                }
             }
             PatternType::Frequency => 0.5, // Would analyze message frequency
             PatternType::Content => 0.6,   // Would analyze content patterns

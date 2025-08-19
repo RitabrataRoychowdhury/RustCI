@@ -1,19 +1,19 @@
 //! QoS-Aware Stream Router Implementation
-//! 
+//!
 //! Implements intelligent message routing with QoS guarantees, priority-based
 //! classification, and adaptive flow control for optimal performance.
 
+use dashmap::DashMap;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, Semaphore};
-use dashmap::DashMap;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
+use super::bandwidth::{BandwidthAllocation, BandwidthAllocator};
 use super::classifier::MessageClassifier;
-use super::QoSClass;
 use super::flow_control::FlowControlManager;
-use super::bandwidth::{BandwidthAllocator, BandwidthAllocation};
+use super::QoSClass;
 use crate::core::networking::valkyrie::adapters::*;
 use crate::error::{Result, ValkyrieError};
 
@@ -209,7 +209,10 @@ pub enum ClassificationCondition {
     /// Metadata condition
     Metadata { key: String, value: String },
     /// Payload size condition
-    PayloadSize { min: Option<usize>, max: Option<usize> },
+    PayloadSize {
+        min: Option<usize>,
+        max: Option<usize>,
+    },
     /// Source adapter condition
     SourceAdapter(AdapterId),
     /// Custom condition function
@@ -256,15 +259,22 @@ impl QoSStreamRouter {
     /// Create new QoS stream router
     pub fn new(config: QoSRouterConfig) -> Self {
         let priority_queues = Arc::new(DashMap::new());
-        
+
         // Initialize priority queues for each QoS class
-        for qos_class in [QoSClass::Critical, QoSClass::System, QoSClass::JobExecution, 
-                         QoSClass::DataTransfer, QoSClass::LogsMetrics] {
+        for qos_class in [
+            QoSClass::Critical,
+            QoSClass::System,
+            QoSClass::JobExecution,
+            QoSClass::DataTransfer,
+            QoSClass::LogsMetrics,
+        ] {
             priority_queues.insert(qos_class, Arc::new(RwLock::new(VecDeque::new())));
         }
 
         Self {
-            classifier: Arc::new(super::classifier::MessageClassifier::new()),
+            classifier: Arc::new(
+                crate::core::networking::valkyrie::streaming::classifier::MessageClassifier::new(),
+            ),
             flow_control: Arc::new(FlowControlManager::new()),
             bandwidth_allocator: Arc::new(BandwidthAllocator::new()),
             priority_queues,
@@ -284,10 +294,10 @@ impl QoSStreamRouter {
         destination: RouteDestination,
     ) -> Result<RoutingResult> {
         let start_time = Instant::now();
-        
+
         // Classify message for QoS
-        let qos_class = self.classifier.classify(&message, &qos).await?;
-        
+        let qos_class = MessageClassifier::classify(&*self.classifier, &message, &qos).await?;
+
         // Create queued message
         let queued_message = QueuedMessage {
             message: message.clone(),
@@ -308,7 +318,8 @@ impl QoSStreamRouter {
         self.enqueue_message(queued_message).await?;
 
         // Update metrics
-        self.update_routing_metrics(qos_class, start_time.elapsed()).await;
+        self.update_routing_metrics(qos_class, start_time.elapsed())
+            .await;
 
         Ok(RoutingResult {
             success: true,
@@ -321,8 +332,13 @@ impl QoSStreamRouter {
     /// Process priority queues
     pub async fn process_queues(&self) -> Result<()> {
         // Process queues in priority order
-        for qos_class in [QoSClass::Critical, QoSClass::System, QoSClass::JobExecution, 
-                         QoSClass::DataTransfer, QoSClass::LogsMetrics] {
+        for qos_class in [
+            QoSClass::Critical,
+            QoSClass::System,
+            QoSClass::JobExecution,
+            QoSClass::DataTransfer,
+            QoSClass::LogsMetrics,
+        ] {
             self.process_queue(qos_class).await?;
         }
         Ok(())
@@ -332,7 +348,7 @@ impl QoSStreamRouter {
     async fn process_queue(&self, qos_class: QoSClass) -> Result<()> {
         if let Some(queue_ref) = self.priority_queues.get(&qos_class) {
             let mut queue = queue_ref.write().await;
-            
+
             while let Some(queued_message) = queue.pop_front() {
                 // Check deadline
                 if let Some(deadline) = queued_message.deadline {
@@ -366,18 +382,26 @@ impl QoSStreamRouter {
     async fn route_to_destination(&self, queued_message: &QueuedMessage) -> Result<()> {
         match &queued_message.destination {
             RouteDestination::Direct(adapter_id) => {
-                self.send_to_adapter(*adapter_id, &queued_message.message, &queued_message.qos).await
+                self.send_to_adapter(*adapter_id, &queued_message.message, &queued_message.qos)
+                    .await
             }
             RouteDestination::LoadBalanced(adapter_ids) => {
                 let selected_adapter = self.select_best_adapter(adapter_ids).await?;
-                self.send_to_adapter(selected_adapter, &queued_message.message, &queued_message.qos).await
+                self.send_to_adapter(
+                    selected_adapter,
+                    &queued_message.message,
+                    &queued_message.qos,
+                )
+                .await
             }
             RouteDestination::Service(service_name) => {
                 let adapter_id = self.resolve_service(service_name).await?;
-                self.send_to_adapter(adapter_id, &queued_message.message, &queued_message.qos).await
+                self.send_to_adapter(adapter_id, &queued_message.message, &queued_message.qos)
+                    .await
             }
             RouteDestination::Broadcast => {
-                self.broadcast_message(&queued_message.message, &queued_message.qos).await
+                self.broadcast_message(&queued_message.message, &queued_message.qos)
+                    .await
             }
         }
     }
@@ -398,7 +422,7 @@ impl QoSStreamRouter {
     /// Select best adapter from list based on performance metrics
     async fn select_best_adapter(&self, adapter_ids: &[AdapterId]) -> Result<AdapterId> {
         let route_table = self.route_table.read().await;
-        
+
         let mut best_adapter = adapter_ids[0];
         let mut best_score = 0.0;
 
@@ -428,7 +452,10 @@ impl QoSStreamRouter {
         let utilization_score = 1.0 - route_entry.metrics.bandwidth_utilization;
 
         // Weighted score calculation
-        (health_score * 0.4) + (latency_score * 0.3) + (success_score * 0.2) + (utilization_score * 0.1)
+        (health_score * 0.4)
+            + (latency_score * 0.3)
+            + (success_score * 0.2)
+            + (utilization_score * 0.1)
     }
 
     /// Resolve service name to adapter ID
@@ -447,7 +474,8 @@ impl QoSStreamRouter {
 
     /// Check if router is congested
     async fn is_congested(&self) -> Result<bool> {
-        let total_queue_size: usize = self.priority_queues
+        let total_queue_size: usize = self
+            .priority_queues
             .iter()
             .map(|entry| {
                 // This is a simplified check - in practice we'd use try_read
@@ -455,8 +483,8 @@ impl QoSStreamRouter {
             })
             .sum();
 
-        let congestion_ratio = total_queue_size as f64 / 
-            (self.config.max_queue_size * self.priority_queues.len()) as f64;
+        let congestion_ratio = total_queue_size as f64
+            / (self.config.max_queue_size * self.priority_queues.len()) as f64;
 
         Ok(congestion_ratio > self.config.congestion_threshold)
     }
@@ -464,11 +492,22 @@ impl QoSStreamRouter {
     /// Apply congestion control
     async fn apply_congestion_control(&self, message: &QueuedMessage) -> Result<()> {
         // Acquire congestion control permit
-        let _permit = self.congestion_semaphore.acquire().await
-            .map_err(|e| ValkyrieError::CongestionControl(format!("Failed to acquire permit: {}", e)))?;
+        let _permit = self.congestion_semaphore.acquire().await.map_err(|e| {
+            ValkyrieError::CongestionControl(format!("Failed to acquire permit: {}", e))
+        })?;
 
         // Apply flow control based on QoS class
-        self.flow_control.apply_flow_control(message.qos_class, &message.qos).await?;
+        // Create a stream_id from message id for flow control
+        let stream_id = message.message.id;
+        if !self
+            .flow_control
+            .can_send(&stream_id, message.message.payload.len() as u32)
+        {
+            self.flow_control.apply_backpressure(stream_id)?;
+        } else {
+            self.flow_control
+                .consume_window(&stream_id, message.message.payload.len() as u32)?;
+        }
 
         Ok(())
     }
@@ -477,18 +516,20 @@ impl QoSStreamRouter {
     async fn enqueue_message(&self, message: QueuedMessage) -> Result<()> {
         if let Some(queue_ref) = self.priority_queues.get(&message.qos_class) {
             let mut queue = queue_ref.write().await;
-            
+
             if queue.len() >= self.config.max_queue_size {
                 return Err(ValkyrieError::QueueFull(format!(
-                    "Queue full for QoS class {:?}", message.qos_class
+                    "Queue full for QoS class {:?}",
+                    message.qos_class
                 )));
             }
-            
+
             queue.push_back(message);
             Ok(())
         } else {
             Err(ValkyrieError::InvalidQoSClass(format!(
-                "Unknown QoS class: {:?}", message.qos_class
+                "Unknown QoS class: {:?}",
+                message.qos_class
             )))
         }
     }
@@ -508,11 +549,10 @@ impl QoSStreamRouter {
         let mut metrics = self.metrics.write().await;
         metrics.total_messages += 1;
         *metrics.messages_by_class.entry(qos_class).or_insert(0) += 1;
-        
+
         // Update average latency (simplified)
-        metrics.avg_routing_latency = Duration::from_nanos(
-            (metrics.avg_routing_latency.as_nanos() + latency.as_nanos()) / 2
-        );
+        metrics.avg_routing_latency =
+            Duration::from_nanos((metrics.avg_routing_latency.as_nanos() + latency.as_nanos()) / 2);
     }
 
     /// Get router metrics
@@ -534,118 +574,7 @@ pub struct RoutingResult {
     pub queue_position: usize,
 }
 
-impl MessageClassifier {
-    /// Create new message classifier
-    pub fn new() -> Self {
-        Self {
-            rules: Self::default_rules(),
-            default_class: QoSClass::DataTransfer,
-            classification_metrics: Arc::new(RwLock::new(ClassificationMetrics::default())),
-        }
-    }
-
-    /// Classify message for QoS
-    pub async fn classify(&self, message: &AdapterMessage, qos: &QoSParams) -> Result<QoSClass> {
-        let start_time = Instant::now();
-        
-        // Apply classification rules in priority order
-        for rule in &self.rules {
-            if !rule.enabled {
-                continue;
-            }
-            
-            if self.matches_condition(&rule.condition, message, qos) {
-                self.update_classification_metrics(rule.target_class, start_time.elapsed()).await;
-                return Ok(rule.target_class);
-            }
-        }
-
-        // Use default class if no rules match
-        self.update_classification_metrics(self.default_class, start_time.elapsed()).await;
-        Ok(self.default_class)
-    }
-
-    /// Check if message matches classification condition
-    fn matches_condition(
-        &self,
-        condition: &ClassificationCondition,
-        message: &AdapterMessage,
-        qos: &QoSParams,
-    ) -> bool {
-        match condition {
-            ClassificationCondition::MessageType(msg_type) => {
-                message.message_type == *msg_type
-            }
-            ClassificationCondition::Priority(priority) => {
-                message.priority == *priority
-            }
-            ClassificationCondition::Metadata { key, value } => {
-                message.metadata.get(key).map_or(false, |v| v == value)
-            }
-            ClassificationCondition::PayloadSize { min, max } => {
-                let size = message.payload.len();
-                min.map_or(true, |m| size >= m) && max.map_or(true, |m| size <= m)
-            }
-            ClassificationCondition::SourceAdapter(adapter_id) => {
-                // Would need source adapter info in message
-                false // Placeholder
-            }
-            ClassificationCondition::Custom(_function_name) => {
-                // Would execute custom classification function
-                false // Placeholder
-            }
-        }
-    }
-
-    /// Default classification rules
-    fn default_rules() -> Vec<ClassificationRule> {
-        vec![
-            ClassificationRule {
-                name: "Critical Health Checks".to_string(),
-                condition: ClassificationCondition::MessageType(AdapterMessageType::HealthCheck),
-                target_class: QoSClass::Critical,
-                priority: 0,
-                enabled: true,
-            },
-            ClassificationRule {
-                name: "High Priority Messages".to_string(),
-                condition: ClassificationCondition::Priority(MessagePriority::Critical),
-                target_class: QoSClass::System,
-                priority: 1,
-                enabled: true,
-            },
-            ClassificationRule {
-                name: "Job Execution".to_string(),
-                condition: ClassificationCondition::MessageType(AdapterMessageType::Request),
-                target_class: QoSClass::JobExecution,
-                priority: 2,
-                enabled: true,
-            },
-            ClassificationRule {
-                name: "Large Data Transfers".to_string(),
-                condition: ClassificationCondition::PayloadSize { 
-                    min: Some(1024 * 1024), // 1MB
-                    max: None 
-                },
-                target_class: QoSClass::DataTransfer,
-                priority: 3,
-                enabled: true,
-            },
-        ]
-    }
-
-    /// Update classification metrics
-    async fn update_classification_metrics(&self, qos_class: QoSClass, latency: Duration) {
-        let mut metrics = self.classification_metrics.write().await;
-        metrics.total_classifications += 1;
-        *metrics.by_class.entry(qos_class).or_insert(0) += 1;
-        
-        // Update average classification time
-        metrics.avg_classification_time = Duration::from_nanos(
-            (metrics.avg_classification_time.as_nanos() + latency.as_nanos()) / 2
-        );
-    }
-}
+// Removed duplicate MessageClassifier implementation - using the one from classifier.rs
 
 impl Default for RouterMetrics {
     fn default() -> Self {

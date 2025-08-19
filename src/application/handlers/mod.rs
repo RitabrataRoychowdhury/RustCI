@@ -11,8 +11,8 @@ pub mod oauth;
 pub mod pr;
 pub mod repository;
 pub mod runner;
-pub mod workspace;
 pub mod valkyrie_control_plane;
+pub mod workspace;
 
 // Re-export all public items from the modules
 // Individual imports are preferred over wildcard imports for better clarity

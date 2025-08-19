@@ -6,8 +6,8 @@
 use crate::{
     core::networking::security::{Permission, SecurityContext},
     domain::entities::runner::{
-        Job, JobId, JobPriority, JobStatus, JobStep, RunnerId, RunnerEntity,
-        RunnerStatus, RunnerType,
+        Job, JobId, JobPriority, JobStatus, JobStep, RunnerEntity, RunnerId, RunnerStatus,
+        RunnerType,
     },
     error::{AppError, Result},
     AppState,
@@ -226,7 +226,10 @@ pub async fn trigger_job_on_runner(
     let runner_id = Uuid::parse_str(&runner_id)
         .map_err(|_| AppError::ValidationError("Invalid runner ID format".to_string()))?;
 
-    info!("🚀 Triggering job '{}' on runner: {}", request.name, runner_id);
+    info!(
+        "🚀 Triggering job '{}' on runner: {}",
+        request.name, runner_id
+    );
 
     // Validate job trigger permissions
     security_ctx.require_permission(&Permission::ExecutePipelines)?;
@@ -317,7 +320,10 @@ pub async fn fetch_job_logs(
     let job_id = Uuid::parse_str(&job_id)
         .map_err(|_| AppError::ValidationError("Invalid job ID format".to_string()))?;
 
-    debug!("📋 Fetching logs for job {} on runner {}", job_id, runner_id);
+    debug!(
+        "📋 Fetching logs for job {} on runner {}",
+        job_id, runner_id
+    );
 
     // Validate log access permissions
     security_ctx.require_permission(&Permission::ReadPipelines)?;
@@ -379,7 +385,10 @@ pub async fn fetch_job_artifacts(
     let job_id = Uuid::parse_str(&job_id)
         .map_err(|_| AppError::ValidationError("Invalid job ID format".to_string()))?;
 
-    debug!("📦 Fetching artifacts for job {} on runner {}", job_id, runner_id);
+    debug!(
+        "📦 Fetching artifacts for job {} on runner {}",
+        job_id, runner_id
+    );
 
     // Validate artifact access permissions
     security_ctx.require_permission(&Permission::ReadPipelines)?;

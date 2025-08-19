@@ -1,5 +1,5 @@
 //! Valkyrie Protocol Configuration Management
-//! 
+//!
 //! This module provides comprehensive configuration management for Valkyrie Protocol
 //! with support for environment-specific overrides, validation, and hot reloading.
 
@@ -410,73 +410,64 @@ impl ValkyrieConfig {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         info!("Loading Valkyrie configuration from: {}", path.display());
-        
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| AppError::ConfigurationError(format!("Failed to read config file: {}", e)))?;
-        
-        let config = match path.extension().and_then(|s| s.to_str()) {
-            Some("yaml") | Some("yml") => {
-                serde_yaml::from_str(&content)
-                    .map_err(|e| AppError::ConfigurationError(format!("Failed to parse YAML config: {}", e)))?
-            }
-            Some("json") => {
-                serde_json::from_str(&content)
-                    .map_err(|e| AppError::ConfigurationError(format!("Failed to parse JSON config: {}", e)))?
-            }
-            Some("toml") => {
-                toml::from_str(&content)
-                    .map_err(|e| AppError::ConfigurationError(format!("Failed to parse TOML config: {}", e)))?
-            }
+
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            AppError::ConfigurationError(format!("Failed to read config file: {}", e))
+        })?;
+
+        let config: Self = match path.extension().and_then(|s| s.to_str()) {
+            Some("yaml") | Some("yml") => serde_yaml::from_str(&content).map_err(|e| {
+                AppError::ConfigurationError(format!("Failed to parse YAML config: {}", e))
+            })?,
+            Some("json") => serde_json::from_str(&content).map_err(|e| {
+                AppError::ConfigurationError(format!("Failed to parse JSON config: {}", e))
+            })?,
             _ => {
                 return Err(AppError::ConfigurationError(
-                    "Unsupported config file format. Use .yaml, .json, or .toml".to_string()
+                    "Unsupported config file format. Use .yaml or .json".to_string(),
                 ));
             }
         };
-        
+
         debug!("Configuration loaded successfully");
         Ok(config)
     }
-    
+
     /// Save configuration to a file
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let path = path.as_ref();
         info!("Saving Valkyrie configuration to: {}", path.display());
-        
+
         let content = match path.extension().and_then(|s| s.to_str()) {
-            Some("yaml") | Some("yml") => {
-                serde_yaml::to_string(self)
-                    .map_err(|e| AppError::ConfigurationError(format!("Failed to serialize to YAML: {}", e)))?
-            }
-            Some("json") => {
-                serde_json::to_string_pretty(self)
-                    .map_err(|e| AppError::ConfigurationError(format!("Failed to serialize to JSON: {}", e)))?
-            }
-            Some("toml") => {
-                toml::to_string(self)
-                    .map_err(|e| AppError::ConfigurationError(format!("Failed to serialize to TOML: {}", e)))?
-            }
+            Some("yaml") | Some("yml") => serde_yaml::to_string(self).map_err(|e| {
+                AppError::ConfigurationError(format!("Failed to serialize to YAML: {}", e))
+            })?,
+            Some("json") => serde_json::to_string_pretty(self).map_err(|e| {
+                AppError::ConfigurationError(format!("Failed to serialize to JSON: {}", e))
+            })?,
             _ => {
                 return Err(AppError::ConfigurationError(
-                    "Unsupported config file format. Use .yaml, .json, or .toml".to_string()
+                    "Unsupported config file format. Use .yaml or .json".to_string(),
                 ));
             }
         };
-        
-        std::fs::write(path, content)
-            .map_err(|e| AppError::ConfigurationError(format!("Failed to write config file: {}", e)))?;
-        
+
+        std::fs::write(path, content).map_err(|e| {
+            AppError::ConfigurationError(format!("Failed to write config file: {}", e))
+        })?;
+
         debug!("Configuration saved successfully");
         Ok(())
     }
-    
+
     /// Load configuration from environment variables
     pub fn from_env() -> Result<Self> {
         info!("Loading Valkyrie configuration from environment variables");
-        
-        let environment = std::env::var("VALKYRIE_ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
+
+        let environment =
+            std::env::var("VALKYRIE_ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
         let log_level = std::env::var("VALKYRIE_LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
-        
+
         let global = GlobalConfig {
             environment,
             log_level,
@@ -488,10 +479,11 @@ impl ValkyrieConfig {
                 .ok()
                 .and_then(|v| v.parse().ok()),
         };
-        
+
         let server = if std::env::var("VALKYRIE_SERVER_ENABLED").unwrap_or_default() == "true" {
             Some(ServerConfig {
-                bind_address: std::env::var("VALKYRIE_SERVER_BIND").unwrap_or_else(|_| "0.0.0.0".to_string()),
+                bind_address: std::env::var("VALKYRIE_SERVER_BIND")
+                    .unwrap_or_else(|_| "0.0.0.0".to_string()),
                 port: std::env::var("VALKYRIE_SERVER_PORT")
                     .ok()
                     .and_then(|v| v.parse().ok())
@@ -515,7 +507,7 @@ impl ValkyrieConfig {
         } else {
             None
         };
-        
+
         let client = if std::env::var("VALKYRIE_CLIENT_ENABLED").unwrap_or_default() == "true" {
             Some(ClientConfig {
                 endpoint: std::env::var("VALKYRIE_CLIENT_ENDPOINT")
@@ -542,7 +534,7 @@ impl ValkyrieConfig {
         } else {
             None
         };
-        
+
         Ok(ValkyrieConfig {
             global,
             server,
@@ -556,22 +548,22 @@ impl ValkyrieConfig {
             overrides: None,
         })
     }
-    
+
     /// Apply environment-specific overrides
     pub fn apply_environment_overrides(&mut self) -> Result<()> {
-        let environment = &self.global.environment;
+        let environment = self.global.environment.clone();
         debug!("Applying environment overrides for: {}", environment);
-        
-        if let Some(overrides) = &self.overrides {
-            if let Some(env_overrides) = overrides.get(environment) {
+
+        if let Some(overrides) = self.overrides.clone() {
+            if let Some(env_overrides) = overrides.get(&environment) {
                 info!("Applying {} environment overrides", environment);
                 self.merge_overrides(env_overrides)?;
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Merge configuration overrides
     fn merge_overrides(&mut self, overrides: &serde_json::Value) -> Result<()> {
         // This is a simplified merge implementation
@@ -580,17 +572,23 @@ impl ValkyrieConfig {
             for (key, value) in override_map {
                 match key.as_str() {
                     "global" => {
-                        if let Ok(global_overrides) = serde_json::from_value::<GlobalConfig>(value.clone()) {
+                        if let Ok(global_overrides) =
+                            serde_json::from_value::<GlobalConfig>(value.clone())
+                        {
                             self.merge_global_config(global_overrides);
                         }
                     }
                     "server" => {
-                        if let Ok(server_overrides) = serde_json::from_value::<ServerConfig>(value.clone()) {
+                        if let Ok(server_overrides) =
+                            serde_json::from_value::<ServerConfig>(value.clone())
+                        {
                             self.server = Some(server_overrides);
                         }
                     }
                     "client" => {
-                        if let Ok(client_overrides) = serde_json::from_value::<ClientConfig>(value.clone()) {
+                        if let Ok(client_overrides) =
+                            serde_json::from_value::<ClientConfig>(value.clone())
+                        {
                             self.client = Some(client_overrides);
                         }
                     }
@@ -600,10 +598,10 @@ impl ValkyrieConfig {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Merge global configuration
     fn merge_global_config(&mut self, overrides: GlobalConfig) {
         if !overrides.environment.is_empty() {
@@ -620,11 +618,11 @@ impl ValkyrieConfig {
             self.global.config_reload_interval = overrides.config_reload_interval;
         }
     }
-    
+
     /// Expand environment variables in configuration
     pub fn expand_env_vars(&mut self) -> Result<()> {
         debug!("Expanding environment variables in configuration");
-        
+
         // This is a simplified implementation
         // In a real system, you'd recursively traverse all string fields
         if let Some(ref mut server) = self.server {
@@ -635,33 +633,36 @@ impl ValkyrieConfig {
                 *key_path = expand_env_var(key_path);
             }
         }
-        
+
         if let Some(ref mut client) = self.client {
             client.endpoint = expand_env_var(&client.endpoint);
         }
-        
+
         if let Some(ref mut security) = self.security {
             if let Some(ref mut jwt) = security.jwt {
                 jwt.secret_key = expand_env_var(&jwt.secret_key);
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Get configuration as Duration
     pub fn get_duration(&self, path: &str) -> Option<Duration> {
         // Helper method to convert millisecond values to Duration
         match path {
-            "server.connection_timeout_ms" => {
-                self.server.as_ref().map(|s| Duration::from_millis(s.connection_timeout_ms))
-            }
-            "client.connect_timeout_ms" => {
-                self.client.as_ref().map(|c| Duration::from_millis(c.connect_timeout_ms))
-            }
-            "client.request_timeout_ms" => {
-                self.client.as_ref().map(|c| Duration::from_millis(c.request_timeout_ms))
-            }
+            "server.connection_timeout_ms" => self
+                .server
+                .as_ref()
+                .map(|s| Duration::from_millis(s.connection_timeout_ms)),
+            "client.connect_timeout_ms" => self
+                .client
+                .as_ref()
+                .map(|c| Duration::from_millis(c.connect_timeout_ms)),
+            "client.request_timeout_ms" => self
+                .client
+                .as_ref()
+                .map(|c| Duration::from_millis(c.request_timeout_ms)),
             _ => None,
         }
     }
@@ -694,7 +695,7 @@ impl Default for ValkyrieConfig {
 fn expand_env_var(input: &str) -> String {
     if input.starts_with("${") && input.ends_with('}') {
         let var_spec = &input[2..input.len() - 1];
-        
+
         // Handle default values: ${VAR_NAME:default_value}
         if let Some(colon_pos) = var_spec.find(':') {
             let var_name = &var_spec[..colon_pos];

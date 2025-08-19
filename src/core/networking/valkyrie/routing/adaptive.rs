@@ -109,7 +109,7 @@ pub trait FeatureExtractorTrait: Send + Sync {
         topology: &NetworkTopology,
         historical_data: &HistoricalData,
     ) -> Vec<f64>;
-    
+
     fn get_feature_names(&self) -> Vec<String>;
     fn get_feature_type(&self) -> FeatureType;
 }
@@ -255,7 +255,10 @@ pub struct ActualMetrics {
 /// Trait for processing feedback
 #[async_trait::async_trait]
 pub trait FeedbackProcessor: Send + Sync {
-    async fn process_feedback(&self, feedback: &FeedbackData) -> Result<ProcessedFeedback, AdaptiveError>;
+    async fn process_feedback(
+        &self,
+        feedback: &FeedbackData,
+    ) -> Result<ProcessedFeedback, AdaptiveError>;
     fn get_processor_type(&self) -> FeedbackProcessorType;
 }
 
@@ -407,19 +410,23 @@ pub struct AvailableResources {
 pub enum AdaptiveError {
     #[error("Model training failed: {model:?} - {error}")]
     TrainingFailed { model: ModelType, error: String },
-    
+
     #[error("Prediction failed: {model:?} - {error}")]
     PredictionFailed { model: ModelType, error: String },
-    
+
     #[error("Feature extraction failed: {feature:?} - {error}")]
     FeatureExtractionFailed { feature: FeatureType, error: String },
-    
+
     #[error("Insufficient training data: {model:?} - need {required}, have {available}")]
-    InsufficientTrainingData { model: ModelType, required: usize, available: usize },
-    
+    InsufficientTrainingData {
+        model: ModelType,
+        required: usize,
+        available: usize,
+    },
+
     #[error("Resource allocation failed: {resource} - {error}")]
     ResourceAllocationFailed { resource: String, error: String },
-    
+
     #[error("Model evaluation failed: {model:?} - {error}")]
     ModelEvaluationFailed { model: ModelType, error: String },
 }
@@ -444,17 +451,20 @@ impl AdaptiveRoutingEngine {
         topology: &NetworkTopology,
     ) -> Result<RouteQualityPrediction, AdaptiveError> {
         // Extract features
-        let features = self.feature_extractor
+        let features = self
+            .feature_extractor
             .extract_route_features(route, context, topology)
             .await?;
 
         // Get prediction from ensemble
-        let prediction = self.prediction_engine
+        let prediction = self
+            .prediction_engine
             .predict_route_quality(&features)
             .await?;
 
         // Estimate confidence
-        let confidence = self.prediction_engine
+        let confidence = self
+            .prediction_engine
             .estimate_confidence(&prediction, &features)
             .await?;
 
@@ -475,15 +485,11 @@ impl AdaptiveRoutingEngine {
         self.feedback_collector.add_feedback(feedback.clone()).await;
 
         // Process feedback
-        let processed = self.feedback_collector
-            .process_feedback(&feedback)
-            .await?;
+        let processed = self.feedback_collector.process_feedback(&feedback).await?;
 
         // Update models with processed feedback
         for update in processed.model_updates {
-            self.model_manager
-                .apply_model_update(update)
-                .await?;
+            self.model_manager.apply_model_update(update).await?;
         }
 
         // Schedule retraining if needed
@@ -509,13 +515,9 @@ impl AdaptiveRoutingEngine {
 
     /// Get adaptive routing insights
     pub async fn get_insights(&self) -> Result<Vec<Insight>, AdaptiveError> {
-        let feedback_insights = self.feedback_collector
-            .get_insights()
-            .await?;
+        let feedback_insights = self.feedback_collector.get_insights().await?;
 
-        let pattern_insights = self.pattern_recognizer
-            .get_pattern_insights()
-            .await?;
+        let pattern_insights = self.pattern_recognizer.get_pattern_insights().await?;
 
         let mut all_insights = feedback_insights;
         all_insights.extend(pattern_insights);
@@ -563,14 +565,16 @@ impl AdaptiveRoutingEngine {
 
     fn calculate_prediction_error(&self, feedback: &FeedbackData) -> f64 {
         // Calculate error between predicted and actual metrics
-        let latency_error = (feedback.predicted_metrics.latency.as_secs_f64() - 
-                           feedback.actual_metrics.latency.as_secs_f64()).abs() /
-                          feedback.predicted_metrics.latency.as_secs_f64();
-        
-        let throughput_error = (feedback.predicted_metrics.throughput as f64 - 
-                              feedback.actual_metrics.throughput as f64).abs() /
-                             feedback.predicted_metrics.throughput as f64;
-        
+        let latency_error = (feedback.predicted_metrics.latency.as_secs_f64()
+            - feedback.actual_metrics.latency.as_secs_f64())
+        .abs()
+            / feedback.predicted_metrics.latency.as_secs_f64();
+
+        let throughput_error = (feedback.predicted_metrics.throughput as f64
+            - feedback.actual_metrics.throughput as f64)
+            .abs()
+            / feedback.predicted_metrics.throughput as f64;
+
         (latency_error + throughput_error) / 2.0
     }
 }
@@ -678,7 +682,11 @@ impl FeatureExtractor {
         // Extract features for route prediction
         Ok(FeatureVector {
             features: vec![1.0, 2.0, 3.0], // Placeholder
-            feature_names: vec!["feature1".to_string(), "feature2".to_string(), "feature3".to_string()],
+            feature_names: vec![
+                "feature1".to_string(),
+                "feature2".to_string(),
+                "feature3".to_string(),
+            ],
         })
     }
 }
@@ -692,7 +700,10 @@ impl PredictionEngine {
         }
     }
 
-    pub async fn predict_route_quality(&self, features: &FeatureVector) -> Result<Prediction, AdaptiveError> {
+    pub async fn predict_route_quality(
+        &self,
+        features: &FeatureVector,
+    ) -> Result<Prediction, AdaptiveError> {
         Ok(Prediction {
             quality_score: 0.8,
             latency: Duration::from_millis(100),
@@ -702,7 +713,11 @@ impl PredictionEngine {
         })
     }
 
-    pub async fn estimate_confidence(&self, prediction: &Prediction, features: &FeatureVector) -> Result<f64, AdaptiveError> {
+    pub async fn estimate_confidence(
+        &self,
+        prediction: &Prediction,
+        features: &FeatureVector,
+    ) -> Result<f64, AdaptiveError> {
         Ok(0.85)
     }
 }
@@ -721,7 +736,10 @@ impl FeedbackCollector {
         buffer.push_back(feedback);
     }
 
-    pub async fn process_feedback(&self, feedback: &FeedbackData) -> Result<ProcessedFeedback, AdaptiveError> {
+    pub async fn process_feedback(
+        &self,
+        feedback: &FeedbackData,
+    ) -> Result<ProcessedFeedback, AdaptiveError> {
         Ok(ProcessedFeedback {
             training_examples: Vec::new(),
             model_updates: Vec::new(),
@@ -795,32 +813,44 @@ impl ResourceManager {
 // Placeholder implementations for supporting types
 pub struct TrainingScheduler;
 impl TrainingScheduler {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 pub struct ModelEvaluator;
 impl ModelEvaluator {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 // EnsemblePredictor and ConfidenceEstimator are defined above
 
 pub struct FeedbackAggregator;
 impl FeedbackAggregator {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 pub struct PatternDetector;
 impl PatternDetector {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 pub struct AnomalyDetector;
 impl AnomalyDetector {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 pub struct TrendAnalyzer;
 impl TrendAnalyzer {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }

@@ -227,7 +227,8 @@ impl ComprehensiveMiddlewarePipeline {
             },
             per_api_key_limit: Some(state.env.security.rate_limiting.requests_per_minute * 5),
         };
-        let _rate_limiter = crate::presentation::middleware::rate_limit::RateLimiter::new(rate_limit_config);
+        let _rate_limiter =
+            crate::presentation::middleware::rate_limit::RateLimiter::new(rate_limit_config);
 
         let _ip = client_ip.as_deref().unwrap_or("unknown");
         let _path = req.uri().path();

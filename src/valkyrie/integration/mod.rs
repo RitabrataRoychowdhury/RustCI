@@ -3,12 +3,11 @@
 //! This module provides integration adapters and bridges for connecting
 //! the Valkyrie Protocol with external systems, particularly RustCI.
 
-pub mod rustci;
 pub mod adapters;
 pub mod bridge;
+pub mod rustci;
 
 // Re-export integration components
-pub use rustci::{RustCIIntegration, RustCIAdapter, RustCIConfig};
-pub use adapters::{IntegrationAdapter, AdapterConfig};
-pub use bridge::{ProtocolBridge, BridgeConfig};
-
+pub use adapters::{AdapterConfig, IntegrationAdapter};
+pub use bridge::{BridgeConfig, ProtocolBridge};
+pub use rustci::{RustCIAdapter, RustCIConfig, RustCIIntegration};

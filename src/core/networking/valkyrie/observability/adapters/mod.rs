@@ -1,21 +1,21 @@
 // Valkyrie Protocol Observability Adapters - Plug-and-Play Network-Level Integration
 // Competing with Jenkins' pluggability at the network level with 100μs performance
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 use super::ObservabilityError;
 
-pub mod prometheus_adapter;
-pub mod opentelemetry_adapter;
-pub mod jaeger_adapter;
-pub mod grafana_adapter;
 pub mod custom_adapter;
+pub mod grafana_adapter;
+pub mod jaeger_adapter;
 pub mod network_server;
+pub mod opentelemetry_adapter;
+pub mod prometheus_adapter;
 
 /// Plug-and-play observability adapter trait
 /// External systems implement this to connect directly to Valkyrie
@@ -23,52 +23,58 @@ pub mod network_server;
 pub trait ObservabilityAdapter: Send + Sync {
     /// Adapter unique identifier
     fn id(&self) -> &str;
-    
+
     /// Adapter name for display
     fn name(&self) -> &str;
-    
+
     /// Adapter version
     fn version(&self) -> &str;
-    
+
     /// Supported protocols (HTTP, gRPC, TCP, WebSocket, etc.)
     fn supported_protocols(&self) -> Vec<AdapterProtocol>;
-    
+
     /// Adapter capabilities
     fn capabilities(&self) -> AdapterCapabilities;
-    
+
     /// Initialize the adapter
     async fn initialize(&mut self, config: AdapterConfig) -> Result<(), ObservabilityError>;
-    
+
     /// Start the adapter (begin accepting connections)
     async fn start(&mut self) -> Result<(), ObservabilityError>;
-    
+
     /// Stop the adapter
     async fn stop(&mut self) -> Result<(), ObservabilityError>;
-    
+
     /// Handle incoming connection from external system
-    async fn handle_connection(&self, connection: AdapterConnection) -> Result<(), ObservabilityError>;
-    
+    async fn handle_connection(
+        &self,
+        connection: AdapterConnection,
+    ) -> Result<(), ObservabilityError>;
+
     /// Export metrics (push model)
     async fn export_metrics(&self, metrics: &[MetricData]) -> Result<(), ObservabilityError>;
-    
+
     /// Export logs (push model)
     async fn export_logs(&self, logs: &[LogData]) -> Result<(), ObservabilityError>;
-    
+
     /// Export traces (push model)
     async fn export_traces(&self, traces: &[TraceData]) -> Result<(), ObservabilityError>;
-    
+
     /// Handle metrics query (pull model)
-    async fn query_metrics(&self, query: MetricsQuery) -> Result<Vec<MetricData>, ObservabilityError>;
-    
+    async fn query_metrics(
+        &self,
+        query: MetricsQuery,
+    ) -> Result<Vec<MetricData>, ObservabilityError>;
+
     /// Handle logs query (pull model)
     async fn query_logs(&self, query: LogsQuery) -> Result<Vec<LogData>, ObservabilityError>;
-    
+
     /// Handle traces query (pull model)
     async fn query_traces(&self, query: TracesQuery) -> Result<Vec<TraceData>, ObservabilityError>;
-    
+
     /// Get adapter health status
     async fn health(&self) -> AdapterHealth;
-    
+
     /// Get adapter performance metrics
     async fn performance_metrics(&self) -> AdapterPerformanceMetrics;
 }
@@ -195,10 +201,10 @@ pub struct PerformanceRequirements {
 impl Default for PerformanceRequirements {
     fn default() -> Self {
         Self {
-            max_latency_us: 100, // 100 microseconds
-            min_throughput_ops: 100000, // 100k ops/sec
+            max_latency_us: 100,                 // 100 microseconds
+            min_throughput_ops: 100000,          // 100k ops/sec
             max_memory_bytes: 100 * 1024 * 1024, // 100MB
-            max_cpu_percent: 10.0, // 10% CPU
+            max_cpu_percent: 10.0,               // 10% CPU
         }
     }
 }
@@ -333,7 +339,7 @@ impl PerformanceTracker {
     pub fn get_metrics(&self) -> AdapterPerformanceMetrics {
         let mut sorted_latencies = self.latency_samples.clone();
         sorted_latencies.sort_unstable();
-        
+
         let avg_latency = if !sorted_latencies.is_empty() {
             sorted_latencies.iter().sum::<u64>() as f64 / sorted_latencies.len() as f64
         } else {
@@ -360,7 +366,7 @@ impl PerformanceTracker {
             throughput_ops: throughput,
             memory_usage_bytes: self.memory_samples.last().copied().unwrap_or(0),
             cpu_usage_percent: self.cpu_samples.last().copied().unwrap_or(0.0),
-            network_bytes_sent: 0, // Would be tracked separately
+            network_bytes_sent: 0,     // Would be tracked separately
             network_bytes_received: 0, // Would be tracked separately
         }
     }
@@ -506,13 +512,17 @@ impl ObservabilityAdapterRegistry {
     }
 
     /// Register a new adapter
-    pub async fn register_adapter(&self, adapter: Box<dyn ObservabilityAdapter>) -> Result<(), ObservabilityError> {
+    pub async fn register_adapter(
+        &self,
+        adapter: Box<dyn ObservabilityAdapter>,
+    ) -> Result<(), ObservabilityError> {
         let adapter_id = adapter.id().to_string();
         let mut adapters = self.adapters.write().await;
-        
+
         if adapters.contains_key(&adapter_id) {
             return Err(ObservabilityError::Internal(format!(
-                "Adapter with ID '{}' is already registered", adapter_id
+                "Adapter with ID '{}' is already registered",
+                adapter_id
             )));
         }
 
@@ -523,7 +533,7 @@ impl ObservabilityAdapterRegistry {
     /// Unregister an adapter
     pub async fn unregister_adapter(&self, adapter_id: &str) -> Result<(), ObservabilityError> {
         let mut adapters = self.adapters.write().await;
-        
+
         if let Some(mut adapter) = adapters.remove(adapter_id) {
             adapter.stop().await?;
         }
@@ -585,9 +595,15 @@ impl ObservabilityAdapterRegistry {
             adapter_healths.insert(id.clone(), adapter.health().await);
         }
 
-        let overall_status = if adapter_healths.values().all(|h| h.status == HealthStatus::Healthy) {
+        let overall_status = if adapter_healths
+            .values()
+            .all(|h| h.status == HealthStatus::Healthy)
+        {
             HealthStatus::Healthy
-        } else if adapter_healths.values().any(|h| h.status == HealthStatus::Unhealthy) {
+        } else if adapter_healths
+            .values()
+            .any(|h| h.status == HealthStatus::Unhealthy)
+        {
             HealthStatus::Unhealthy
         } else {
             HealthStatus::Degraded

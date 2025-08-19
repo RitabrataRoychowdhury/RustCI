@@ -233,10 +233,7 @@ impl ValidationFramework {
     }
 
     pub fn add_rule(&mut self, endpoint: String, rule: ValidationRule) {
-        self.rules
-            .entry(endpoint)
-            .or_default()
-            .push(rule);
+        self.rules.entry(endpoint).or_default().push(rule);
     }
 
     pub async fn validate(

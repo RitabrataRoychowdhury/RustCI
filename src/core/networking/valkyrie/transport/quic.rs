@@ -1,18 +1,18 @@
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use async_trait::async_trait;
-use tokio::sync::{mpsc, RwLock, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use uuid::Uuid;
 
+use crate::core::networking::node_communication::{ProtocolError, ProtocolMessage};
 use crate::core::networking::transport::{
-    Transport, Connection, Listener, TransportType, TransportConfig, 
-    TransportEndpoint, TransportMetrics, NetworkConditions, ConnectionMetadata
+    Connection, ConnectionMetadata, Listener, NetworkConditions, Transport, TransportConfig,
+    TransportEndpoint, TransportMetrics, TransportType,
 };
-use crate::core::networking::valkyrie::types::TransportCapabilities;
 use crate::core::networking::valkyrie::transport::ConnectionPool;
-use crate::core::networking::node_communication::{ProtocolMessage, ProtocolError};
+use crate::core::networking::valkyrie::types::TransportCapabilities;
 use crate::error::Result;
 
 /// QUIC transport implementation for modern networking
@@ -88,7 +88,7 @@ impl QuicTransport {
             quic_config,
         }
     }
-    
+
     /// Create QUIC endpoint configuration
     fn create_endpoint_config(&self) -> QuicEndpointConfig {
         QuicEndpointConfig {
@@ -100,7 +100,7 @@ impl QuicTransport {
             enable_0rtt: self.quic_config.enable_0rtt,
         }
     }
-    
+
     /// Update connection metrics
     async fn update_metrics(&self, bytes_sent: u64, bytes_received: u64) {
         let mut metrics = self.metrics.write().await;
@@ -120,41 +120,41 @@ impl Transport for QuicTransport {
     fn transport_type(&self) -> TransportType {
         TransportType::Quic
     }
-    
+
     async fn listen(&self, config: &TransportConfig) -> Result<Box<dyn Listener>> {
         let addr: SocketAddr = format!("{}:{}", config.bind_address, config.port.unwrap_or(8443))
             .parse()
             .map_err(|e| ProtocolError::ConnectionError {
-                message: format!("Invalid bind address: {}", e)
+                message: format!("Invalid bind address: {}", e),
             })?;
-        
+
         // Create QUIC listener (simplified implementation)
         // In a real implementation, this would use a QUIC library like quinn
         let listener = QuicListener::new(addr, self.create_endpoint_config())?;
-        
+
         Ok(Box::new(listener))
     }
-    
+
     async fn connect(&self, endpoint: &TransportEndpoint) -> Result<Box<dyn Connection>> {
         let addr: SocketAddr = format!("{}:{}", endpoint.address, endpoint.port.unwrap_or(8443))
             .parse()
             .map_err(|e| ProtocolError::ConnectionError {
-                message: format!("Invalid endpoint address: {}", e)
+                message: format!("Invalid endpoint address: {}", e),
             })?;
-        
+
         // Create QUIC connection (simplified implementation)
         let connection = QuicConnection::connect(addr, self.create_endpoint_config()).await?;
         let connection_id = connection.metadata().connection_id;
-        
+
         // Register connection
         let mut connections = self.connections.write().await;
         connections.insert(connection_id, Arc::new(Mutex::new(connection)));
-        
+
         // Update metrics
         let mut metrics = self.metrics.write().await;
         metrics.active_connections += 1;
         metrics.total_connections += 1;
-        
+
         // Return a wrapper that implements the Connection trait
         Ok(Box::new(QuicConnectionWrapper {
             connection_id,
@@ -162,35 +162,39 @@ impl Transport for QuicTransport {
             metrics: self.metrics.clone(),
         }))
     }
-    
+
     async fn shutdown(&self) -> Result<()> {
         // Send shutdown signal
         if let Some(tx) = &self.shutdown_tx {
             let _ = tx.send(()).await;
         }
-        
+
         // Close all active connections
         let mut connections = self.connections.write().await;
         for (_, connection) in connections.drain() {
             let mut conn = connection.lock().await;
             let _ = conn.close().await;
         }
-        
+
         // Reset metrics
         let mut metrics = self.metrics.write().await;
         metrics.active_connections = 0;
-        
+
         Ok(())
     }
-    
+
     async fn get_metrics(&self) -> TransportMetrics {
         self.metrics.read().await.clone()
     }
-    
+
     fn capabilities(&self) -> TransportCapabilities {
         TransportCapabilities {
             max_message_size: 64 * 1024 * 1024, // 64MB
-            compression_algorithms: vec!["gzip".to_string(), "brotli".to_string(), "zstd".to_string()],
+            compression_algorithms: vec![
+                "gzip".to_string(),
+                "brotli".to_string(),
+                "zstd".to_string(),
+            ],
             encryption_algorithms: vec!["aes-256-gcm".to_string(), "chacha20-poly1305".to_string()],
             supports_streaming: true,
             supports_multiplexing: true,
@@ -205,33 +209,33 @@ impl Transport for QuicTransport {
             supports_failover: true,
         }
     }
-    
+
     async fn configure(&mut self, config: TransportConfig) -> Result<()> {
         let mut current_config = self.config.write().await;
         *current_config = config;
         Ok(())
     }
-    
+
     fn supports_endpoint(&self, endpoint: &TransportEndpoint) -> bool {
         matches!(endpoint.transport_type, TransportType::Quic)
     }
-    
+
     async fn optimize_for_conditions(&self, conditions: &NetworkConditions) -> TransportConfig {
         let mut config = TransportConfig::default();
         config.transport_type = TransportType::Quic;
-        
+
         // Optimize for high-bandwidth, low-latency scenarios
         if conditions.bandwidth_mbps > 100.0 && conditions.latency_ms < 50.0 {
             config.buffer_sizes.read_buffer_size = 128 * 1024; // 128KB
             config.buffer_sizes.write_buffer_size = 128 * 1024;
         }
-        
+
         // Adjust timeouts for mobile networks
         if conditions.is_mobile {
             config.timeouts.connect_timeout = Duration::from_secs(45);
             config.timeouts.read_timeout = Duration::from_secs(90);
         }
-        
+
         config
     }
 }
@@ -265,14 +269,15 @@ impl Listener for QuicListener {
         // Simplified implementation - in reality, this would use a QUIC library
         // to accept incoming connections
         Err(ProtocolError::ConnectionError {
-            message: "QUIC listener not fully implemented".to_string()
-        }.into())
+            message: "QUIC listener not fully implemented".to_string(),
+        }
+        .into())
     }
-    
+
     fn local_addr(&self) -> Result<SocketAddr> {
         Ok(self.addr)
     }
-    
+
     async fn close(&mut self) -> Result<()> {
         Ok(())
     }
@@ -294,7 +299,7 @@ impl QuicConnection {
         // Simplified implementation - in reality, this would establish a QUIC connection
         let connection_id = Uuid::new_v4();
         let local_addr = "0.0.0.0:0".parse().unwrap(); // Placeholder
-        
+
         Ok(Self {
             connection_id,
             remote_addr: addr,
@@ -315,40 +320,40 @@ impl QuicConnection {
             next_stream_id: 0,
         })
     }
-    
+
     pub fn metadata(&self) -> ConnectionMetadata {
         self.metadata.clone()
     }
-    
+
     async fn send_internal(&mut self, message: &ProtocolMessage) -> Result<()> {
         // In a real implementation, this would send the message over a QUIC stream
         // For now, we'll simulate the operation
-        
-        let serialized = serde_json::to_vec(message)
-            .map_err(ProtocolError::SerializationError)?;
-        
+
+        let serialized = serde_json::to_vec(message).map_err(ProtocolError::SerializationError)?;
+
         // Simulate sending over QUIC stream
         let stream_id = self.next_stream_id;
         self.next_stream_id += 1;
-        
+
         let stream = QuicStream::new(stream_id);
         self.streams.insert(stream_id, stream);
-        
+
         // Update metadata
         self.metadata.bytes_sent += serialized.len() as u64;
         self.metadata.messages_sent += 1;
-        
+
         Ok(())
     }
-    
+
     async fn receive_internal(&mut self) -> Result<ProtocolMessage> {
         // In a real implementation, this would receive from a QUIC stream
         // For now, we'll return an error indicating incomplete implementation
         Err(ProtocolError::ConnectionError {
-            message: "QUIC receive not fully implemented".to_string()
-        }.into())
+            message: "QUIC receive not fully implemented".to_string(),
+        }
+        .into())
     }
-    
+
     async fn close(&mut self) -> Result<()> {
         self.connected = false;
         self.streams.clear();
@@ -395,11 +400,12 @@ impl Connection for QuicConnectionWrapper {
             conn.send_internal(message).await
         } else {
             Err(ProtocolError::ConnectionError {
-                message: "Connection not found".to_string()
-            }.into())
+                message: "Connection not found".to_string(),
+            }
+            .into())
         }
     }
-    
+
     async fn receive(&mut self) -> Result<ProtocolMessage> {
         let connections = self.connections.read().await;
         if let Some(connection) = connections.get(&self.connection_id) {
@@ -407,30 +413,31 @@ impl Connection for QuicConnectionWrapper {
             conn.receive_internal().await
         } else {
             Err(ProtocolError::ConnectionError {
-                message: "Connection not found".to_string()
-            }.into())
+                message: "Connection not found".to_string(),
+            }
+            .into())
         }
     }
-    
+
     async fn close(&mut self) -> Result<()> {
         let connections = self.connections.read().await;
         if let Some(connection) = connections.get(&self.connection_id) {
             let mut conn = connection.lock().await;
             conn.close().await?;
         }
-        
+
         // Remove from connections registry
         drop(connections);
         let mut connections = self.connections.write().await;
         connections.remove(&self.connection_id);
-        
+
         Ok(())
     }
-    
+
     fn is_connected(&self) -> bool {
         true // Simplified implementation
     }
-    
+
     fn metadata(&self) -> ConnectionMetadata {
         ConnectionMetadata {
             connection_id: self.connection_id,
@@ -465,4 +472,3 @@ impl Default for QuicConfig {
         }
     }
 }
-

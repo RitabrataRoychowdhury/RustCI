@@ -72,7 +72,7 @@ pub enum FallbackStrategy {
 }
 
 /// Fallback system state
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FallbackState {
     /// Primary system is active
     Primary,
@@ -100,16 +100,16 @@ impl FallbackSystem {
             attempt_count: Arc::new(RwLock::new(0)),
         }
     }
-    
+
     /// Initialize the fallback system
     pub async fn initialize(&self) -> Result<()> {
         if !self.config.enabled {
             info!("Fallback system is disabled");
             return Ok();
         }
-        
+
         info!("Initializing fallback system");
-        
+
         // Initialize HTTP fallback system
         let http_config = crate::infrastructure::runners::http_fallback::HttpFallbackConfig {
             request_timeout: std::time::Duration::from_millis(self.config.http_config.timeout_ms),
@@ -120,7 +120,7 @@ impl FallbackSystem {
             circuit_breaker_timeout: std::time::Duration::from_secs(60),
             max_concurrent_requests: 100,
         };
-        
+
         match HttpFallbackSystem::new(http_config).await {
             Ok(runner) => {
                 let mut http_runner = self.http_runner.write().await;
@@ -132,26 +132,26 @@ impl FallbackSystem {
                 // Continue without HTTP fallback
             }
         }
-        
+
         info!("Fallback system initialized");
         Ok(())
     }
-    
+
     /// Activate fallback mode
     pub async fn activate_fallback(&self, strategy: FallbackStrategy) -> Result<()> {
         info!("Activating fallback mode with strategy: {:?}", strategy);
-        
+
         {
             let mut state = self.state.write().await;
             *state = FallbackState::Fallback(strategy.clone());
         }
-        
+
         // Increment attempt count
         {
             let mut attempts = self.attempt_count.write().await;
             *attempts += 1;
         }
-        
+
         match strategy {
             FallbackStrategy::Http => {
                 self.activate_http_fallback().await?;
@@ -167,84 +167,86 @@ impl FallbackSystem {
                 warn!("No fallback strategy specified");
             }
         }
-        
+
         info!("Fallback mode activated successfully");
         Ok(())
     }
-    
+
     /// Deactivate fallback mode and return to primary
     pub async fn deactivate_fallback(&self) -> Result<()> {
         info!("Deactivating fallback mode");
-        
+
         {
             let mut state = self.state.write().await;
             *state = FallbackState::Primary;
         }
-        
+
         // Reset attempt count
         {
             let mut attempts = self.attempt_count.write().await;
             *attempts = 0;
         }
-        
+
         info!("Fallback mode deactivated");
         Ok(())
     }
-    
+
     /// Check if fallback is active
     pub async fn is_fallback_active(&self) -> bool {
         let state = self.state.read().await;
         matches!(*state, FallbackState::Fallback(_))
     }
-    
+
     /// Get current fallback state
     pub async fn get_state(&self) -> FallbackState {
         let state = self.state.read().await;
         state.clone()
     }
-    
+
     /// Check if we should attempt fallback
     pub async fn should_attempt_fallback(&self) -> bool {
         if !self.config.enabled {
             return false;
         }
-        
+
         let attempts = self.attempt_count.read().await;
         *attempts < self.config.max_attempts
     }
-    
+
     /// Get HTTP fallback system if available
     pub async fn get_http_runner(&self) -> Option<HttpFallbackSystem> {
         let runner = self.http_runner.read().await;
         runner.clone()
     }
-    
+
     /// Activate HTTP fallback
     async fn activate_http_fallback(&self) -> Result<()> {
         debug!("Activating HTTP fallback");
-        
+
         let runner = self.http_runner.read().await;
         if runner.is_none() {
-            return Err(AppError::ConfigurationError("HTTP fallback system not available".to_string()));
+            return Err(AppError::ConfigurationError(
+                "HTTP fallback system not available".to_string(),
+            ));
         }
-        
+
         info!("HTTP fallback activated");
         Ok(())
     }
-    
+
     /// Activate local fallback
     async fn activate_local_fallback(&self) -> Result<()> {
         debug!("Activating local fallback");
-        
+
         // Local fallback would use existing HTTP-based runners
         info!("Local fallback activated");
         Ok(())
     }
-    
+
     /// Test fallback connectivity
     pub async fn test_fallback(&self, strategy: FallbackStrategy) -> Result<bool> {
         debug!("Testing fallback connectivity for strategy: {:?}", strategy);
-        
+
         match strategy {
             FallbackStrategy::Http => {
                 let runner = self.http_runner.read().await;
@@ -267,12 +269,12 @@ impl FallbackSystem {
             FallbackStrategy::None => Ok(false),
         }
     }
-    
+
     /// Get fallback statistics
     pub async fn get_stats(&self) -> FallbackStats {
         let state = self.state.read().await;
         let attempts = self.attempt_count.read().await;
-        
+
         FallbackStats {
             enabled: self.config.enabled,
             current_state: state.clone(),
@@ -313,46 +315,56 @@ impl FallbackManager {
             systems: Arc::new(RwLock::new(std::collections::HashMap::new())),
         }
     }
-    
+
     /// Register a fallback system
     pub async fn register_system(&self, name: String, system: Arc<FallbackSystem>) {
         let mut systems = self.systems.write().await;
         systems.insert(name, system);
     }
-    
+
     /// Get a fallback system by name
     pub async fn get_system(&self, name: &str) -> Option<Arc<FallbackSystem>> {
         let systems = self.systems.read().await;
         systems.get(name).cloned()
     }
-    
+
     /// Activate fallback for a specific system
-    pub async fn activate_fallback(&self, system_name: &str, strategy: FallbackStrategy) -> Result<()> {
+    pub async fn activate_fallback(
+        &self,
+        system_name: &str,
+        strategy: FallbackStrategy,
+    ) -> Result<()> {
         if let Some(system) = self.get_system(system_name).await {
             system.activate_fallback(strategy).await
         } else {
-            Err(AppError::NotFound(format!("Fallback system {} not found", system_name)))
+            Err(AppError::NotFound(format!(
+                "Fallback system {} not found",
+                system_name
+            )))
         }
     }
-    
+
     /// Deactivate fallback for a specific system
     pub async fn deactivate_fallback(&self, system_name: &str) -> Result<()> {
         if let Some(system) = self.get_system(system_name).await {
             system.deactivate_fallback().await
         } else {
-            Err(AppError::NotFound(format!("Fallback system {} not found", system_name)))
+            Err(AppError::NotFound(format!(
+                "Fallback system {} not found",
+                system_name
+            )))
         }
     }
-    
+
     /// Get status of all fallback systems
     pub async fn get_all_stats(&self) -> std::collections::HashMap<String, FallbackStats> {
         let systems = self.systems.read().await;
         let mut stats = std::collections::HashMap::new();
-        
+
         for (name, system) in systems.iter() {
             stats.insert(name.clone(), system.get_stats().await);
         }
-        
+
         stats
     }
 }

@@ -23,12 +23,12 @@ impl ProtocolBridge {
     pub fn new(config: BridgeConfig) -> Self {
         Self { config }
     }
-    
+
     /// Start the bridge
     pub async fn start(&self) -> Result<()> {
         Ok(())
     }
-    
+
     /// Stop the bridge
     pub async fn stop(&self) -> Result<()> {
         Ok(())

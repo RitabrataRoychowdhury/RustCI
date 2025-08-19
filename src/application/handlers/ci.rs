@@ -1,5 +1,4 @@
 use crate::{
-    AppState,
     ci::{
         config::CIPipeline,
         engine::CIEngineOrchestrator,
@@ -8,6 +7,7 @@ use crate::{
     core::networking::security::{Permission, SecurityContext},
     error::{AppError, Result},
     upload::create_upload_handler,
+    AppState,
 };
 use axum::{
     extract::{Multipart, Path, Query, State},
@@ -173,7 +173,10 @@ async fn create_pipeline_from_yaml(
             )));
         }
         pipeline.pipeline_type = Some(pipeline_type.clone());
-        info!("🔧 Overriding auto-detected type with explicit type: {:?}", pipeline_type);
+        info!(
+            "🔧 Overriding auto-detected type with explicit type: {:?}",
+            pipeline_type
+        );
     }
 
     // Validate pipeline based on its type
@@ -598,20 +601,20 @@ fn is_pipeline_type_compatible(
     auto_detected: &crate::ci::config::PipelineType,
 ) -> bool {
     use crate::ci::config::PipelineType;
-    
+
     match (explicit_type, auto_detected) {
         // Exact matches are always compatible
         (a, b) if a == b => true,
-        
+
         // Advanced can be downgraded to any type (user knows what they're doing)
         (_, PipelineType::Advanced) => true,
-        
+
         // Standard can be downgraded to Simple or Minimal
         (PipelineType::Simple | PipelineType::Minimal, PipelineType::Standard) => true,
-        
+
         // Simple can be downgraded to Minimal
         (PipelineType::Minimal, PipelineType::Simple) => true,
-        
+
         // Cannot upgrade types (would require features not present in YAML)
         _ => false,
     }

@@ -3,10 +3,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
 
-use super::{ObservabilityError, MetricsCollector, StructuredLogger, CorrelationId};
+use super::{CorrelationId, MetricsCollector, ObservabilityError, StructuredLogger};
 
 /// External observability integration manager
 pub struct ExternalObservabilityIntegration {
@@ -149,7 +149,10 @@ impl ExternalObservabilityIntegration {
     }
 
     /// Export metrics to external systems
-    pub async fn export_metrics(&self, metrics_collector: &MetricsCollector) -> Result<(), ObservabilityError> {
+    pub async fn export_metrics(
+        &self,
+        metrics_collector: &MetricsCollector,
+    ) -> Result<(), ObservabilityError> {
         if let Some(ref prometheus) = self.prometheus {
             prometheus.export_metrics(metrics_collector).await?;
         }
@@ -162,7 +165,11 @@ impl ExternalObservabilityIntegration {
     }
 
     /// Export traces to external systems
-    pub async fn export_traces(&self, correlation_id: CorrelationId, spans: &[TraceSpan]) -> Result<(), ObservabilityError> {
+    pub async fn export_traces(
+        &self,
+        correlation_id: CorrelationId,
+        spans: &[TraceSpan],
+    ) -> Result<(), ObservabilityError> {
         if let Some(ref jaeger) = self.jaeger {
             jaeger.export_traces(correlation_id, spans).await?;
         }
@@ -265,11 +272,12 @@ impl PrometheusIntegration {
             let export_interval = self.export_interval_seconds;
 
             let handle = tokio::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(export_interval));
+                let mut interval =
+                    tokio::time::interval(std::time::Duration::from_secs(export_interval));
 
                 while *running_flag.read().await {
                     interval.tick().await;
-                    
+
                     // Export metrics to push gateway
                     if let Err(e) = Self::push_metrics_to_gateway(&push_gateway).await {
                         eprintln!("Failed to push metrics to Prometheus gateway: {}", e);
@@ -297,15 +305,19 @@ impl PrometheusIntegration {
     }
 
     /// Export metrics to Prometheus
-    pub async fn export_metrics(&self, metrics_collector: &MetricsCollector) -> Result<(), ObservabilityError> {
+    pub async fn export_metrics(
+        &self,
+        metrics_collector: &MetricsCollector,
+    ) -> Result<(), ObservabilityError> {
         let summary = metrics_collector.summary().await;
-        
+
         // Convert Valkyrie metrics to Prometheus format
         let prometheus_metrics = self.convert_to_prometheus_format(&summary).await?;
-        
+
         // Send to Prometheus (implementation depends on whether using push gateway or pull model)
         if let Some(ref push_gateway) = self.push_gateway {
-            self.push_to_gateway(push_gateway, &prometheus_metrics).await?;
+            self.push_to_gateway(push_gateway, &prometheus_metrics)
+                .await?;
         }
 
         Ok(())
@@ -326,9 +338,12 @@ impl PrometheusIntegration {
     }
 
     /// Convert metrics to Prometheus format
-    async fn convert_to_prometheus_format(&self, summary: &super::metrics::MetricsSummary) -> Result<String, ObservabilityError> {
+    async fn convert_to_prometheus_format(
+        &self,
+        summary: &super::metrics::MetricsSummary,
+    ) -> Result<String, ObservabilityError> {
         let mut prometheus_output = String::new();
-        
+
         // Add Valkyrie-specific metrics
         prometheus_output.push_str(&format!(
             "# HELP valkyrie_total_metrics Total number of Valkyrie metrics\n\
@@ -355,18 +370,24 @@ impl PrometheusIntegration {
     }
 
     /// Push metrics to Prometheus push gateway
-    async fn push_to_gateway(&self, gateway_url: &str, metrics: &str) -> Result<(), ObservabilityError> {
+    async fn push_to_gateway(
+        &self,
+        gateway_url: &str,
+        metrics: &str,
+    ) -> Result<(), ObservabilityError> {
         // Simplified implementation - in practice, use prometheus client library
         let client = reqwest::Client::new();
         let url = format!("{}/metrics/job/valkyrie", gateway_url);
-        
+
         let response = client
             .post(&url)
             .header("Content-Type", "text/plain")
             .body(metrics.to_string())
             .send()
             .await
-            .map_err(|e| ObservabilityError::Internal(format!("Failed to push to Prometheus: {}", e)))?;
+            .map_err(|e| {
+                ObservabilityError::Internal(format!("Failed to push to Prometheus: {}", e))
+            })?;
 
         if !response.status().is_success() {
             return Err(ObservabilityError::Internal(format!(
@@ -391,7 +412,11 @@ impl PrometheusIntegration {
             .timeout(std::time::Duration::from_secs(5))
             .build()
         {
-            if let Ok(response) = client.get(&format!("{}/api/v1/status/config", self.endpoint)).send().await {
+            if let Ok(response) = client
+                .get(&format!("{}/api/v1/status/config", self.endpoint))
+                .send()
+                .await
+            {
                 response.status().is_success()
             } else {
                 false
@@ -437,14 +462,21 @@ impl OpenTelemetryIntegration {
     }
 
     /// Export metrics to OpenTelemetry
-    pub async fn export_metrics(&self, _metrics_collector: &MetricsCollector) -> Result<(), ObservabilityError> {
+    pub async fn export_metrics(
+        &self,
+        _metrics_collector: &MetricsCollector,
+    ) -> Result<(), ObservabilityError> {
         // Convert Valkyrie metrics to OpenTelemetry format and export
         // This would use the OpenTelemetry SDK in a real implementation
         Ok(())
     }
 
     /// Export traces to OpenTelemetry
-    pub async fn export_traces(&self, _correlation_id: CorrelationId, _spans: &[TraceSpan]) -> Result<(), ObservabilityError> {
+    pub async fn export_traces(
+        &self,
+        _correlation_id: CorrelationId,
+        _spans: &[TraceSpan],
+    ) -> Result<(), ObservabilityError> {
         // Convert Valkyrie traces to OpenTelemetry format and export
         // This would use the OpenTelemetry SDK in a real implementation
         Ok(())
@@ -499,7 +531,11 @@ impl JaegerIntegration {
     }
 
     /// Export traces to Jaeger
-    pub async fn export_traces(&self, _correlation_id: CorrelationId, _spans: &[TraceSpan]) -> Result<(), ObservabilityError> {
+    pub async fn export_traces(
+        &self,
+        _correlation_id: CorrelationId,
+        _spans: &[TraceSpan],
+    ) -> Result<(), ObservabilityError> {
         // Convert Valkyrie traces to Jaeger format and export
         // This would use the Jaeger client library in a real implementation
         Ok(())

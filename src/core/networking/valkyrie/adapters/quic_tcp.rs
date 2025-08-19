@@ -1,9 +1,9 @@
 //! QUIC+TCP Fallback Adapter Implementation
-//! 
+//!
 //! Provides QUIC transport with automatic TCP fallback for optimal performance.
 
-use super::*;
 use super::factory::AdapterBuilder;
+use super::*;
 use crate::error::{Result, ValkyrieError};
 
 /// QUIC+TCP Fallback Adapter (placeholder implementation)
@@ -24,7 +24,7 @@ impl QuicTcpAdapter {
             capabilities: Self::create_capabilities(),
         })
     }
-    
+
     fn create_capabilities() -> AdapterCapabilities {
         AdapterCapabilities {
             adapter_type: AdapterType::QuicTcp,
@@ -84,40 +84,40 @@ impl UniversalAdapter for QuicTcpAdapter {
             response: None,
         })
     }
-    
+
     async fn receive(&self, _timeout: Option<Duration>) -> Result<Option<AdapterMessage>> {
         Ok(None)
     }
-    
+
     fn capabilities(&self) -> &AdapterCapabilities {
         &self.capabilities
     }
-    
+
     async fn health_check(&self) -> HealthStatus {
         HealthStatus::Healthy
     }
-    
+
     async fn metrics(&self) -> AdapterMetrics {
         AdapterMetrics::default()
     }
-    
+
     async fn initialize(&mut self) -> Result<()> {
         Ok(())
     }
-    
+
     async fn shutdown(&mut self) -> Result<()> {
         Ok(())
     }
-    
+
     async fn update_config(&mut self, config: &AdapterConfig) -> Result<()> {
         self.config = config.clone();
         Ok(())
     }
-    
+
     fn adapter_type(&self) -> AdapterType {
         AdapterType::QuicTcp
     }
-    
+
     fn adapter_id(&self) -> &AdapterId {
         &self.id
     }
@@ -129,20 +129,20 @@ impl AdapterBuilder for QuicTcpAdapterBuilder {
         let adapter = QuicTcpAdapter::new(config.clone()).await?;
         Ok(Box::new(adapter))
     }
-    
+
     fn adapter_type(&self) -> AdapterType {
         AdapterType::QuicTcp
     }
-    
+
     fn validate_config(&self, config: &AdapterConfig) -> Result<()> {
         if config.adapter_type != AdapterType::QuicTcp {
             return Err(ValkyrieError::InvalidConfiguration(
-                "Adapter type must be QuicTcp".to_string()
+                "Adapter type must be QuicTcp".to_string(),
             ));
         }
         Ok(())
     }
-    
+
     fn default_config(&self) -> AdapterConfig {
         AdapterConfig {
             adapter_type: AdapterType::QuicTcp,

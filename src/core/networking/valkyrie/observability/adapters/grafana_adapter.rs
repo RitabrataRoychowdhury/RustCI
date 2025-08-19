@@ -1,20 +1,21 @@
 // Grafana Adapter - Direct connection for Grafana dashboards
 // Enables Grafana to query Valkyrie metrics and logs with 100μs performance
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
-use super::{
-    ObservabilityAdapter, AdapterProtocol, AdapterCapabilities, AdapterConfig,
-    AdapterConnection, AdapterHealth, AdapterPerformanceMetrics, HealthStatus,
-    MetricData, LogData, TraceData, MetricsQuery, LogsQuery, TracesQuery,
-    DataFormat, ObservabilityError,
+use super::network_server::{
+    ProtocolCapabilities, ProtocolHandler, ProtocolRequest, ProtocolResponse,
 };
-use super::network_server::{ProtocolHandler, ProtocolRequest, ProtocolResponse, ProtocolCapabilities};
+use super::{
+    AdapterCapabilities, AdapterConfig, AdapterConnection, AdapterHealth,
+    AdapterPerformanceMetrics, AdapterProtocol, DataFormat, HealthStatus, LogData, LogsQuery,
+    MetricData, MetricsQuery, ObservabilityAdapter, ObservabilityError, TraceData, TracesQuery,
+};
 
 /// Grafana adapter for direct Grafana integration
 pub struct GrafanaAdapter {
@@ -110,7 +111,10 @@ impl ObservabilityAdapter for GrafanaAdapter {
         Ok(())
     }
 
-    async fn handle_connection(&self, connection: AdapterConnection) -> Result<(), ObservabilityError> {
+    async fn handle_connection(
+        &self,
+        connection: AdapterConnection,
+    ) -> Result<(), ObservabilityError> {
         let mut connections = self.active_connections.write().await;
         connections.insert(connection.id, connection);
         Ok(())
@@ -131,7 +135,10 @@ impl ObservabilityAdapter for GrafanaAdapter {
         Ok(())
     }
 
-    async fn query_metrics(&self, _query: MetricsQuery) -> Result<Vec<MetricData>, ObservabilityError> {
+    async fn query_metrics(
+        &self,
+        _query: MetricsQuery,
+    ) -> Result<Vec<MetricData>, ObservabilityError> {
         // Return metrics for Grafana queries
         Ok(vec![])
     }
@@ -141,7 +148,10 @@ impl ObservabilityAdapter for GrafanaAdapter {
         Ok(vec![])
     }
 
-    async fn query_traces(&self, _query: TracesQuery) -> Result<Vec<TraceData>, ObservabilityError> {
+    async fn query_traces(
+        &self,
+        _query: TracesQuery,
+    ) -> Result<Vec<TraceData>, ObservabilityError> {
         // Return traces for Grafana queries
         Ok(vec![])
     }
@@ -159,7 +169,10 @@ impl ObservabilityAdapter for GrafanaAdapter {
         AdapterHealth {
             status,
             message: format!("Grafana adapter - {} connections", connections.len()),
-            last_check: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            last_check: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             active_connections: connections.len(),
             error_count: 0,
             performance: AdapterPerformanceMetrics {
@@ -202,9 +215,12 @@ impl GrafanaProtocolHandler {
 
 #[async_trait::async_trait]
 impl ProtocolHandler for GrafanaProtocolHandler {
-    async fn handle_request(&self, _request: ProtocolRequest) -> Result<ProtocolResponse, ObservabilityError> {
+    async fn handle_request(
+        &self,
+        _request: ProtocolRequest,
+    ) -> Result<ProtocolResponse, ObservabilityError> {
         let start_time = Instant::now();
-        
+
         Ok(ProtocolResponse {
             status_code: 200,
             headers: HashMap::new(),
@@ -215,11 +231,8 @@ impl ProtocolHandler for GrafanaProtocolHandler {
 
     fn capabilities(&self) -> ProtocolCapabilities {
         ProtocolCapabilities {
-            supported_operations: vec![
-                "POST /query".to_string(),
-                "POST /annotations".to_string(),
-            ],
-            max_request_size: 1024 * 1024, // 1MB
+            supported_operations: vec!["POST /query".to_string(), "POST /annotations".to_string()],
+            max_request_size: 1024 * 1024,       // 1MB
             max_response_size: 10 * 1024 * 1024, // 10MB
             supports_streaming: true,
             supports_compression: true,

@@ -7,8 +7,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use wide::*;
 // bytemuck imports removed as unused
-use crate::core::networking::valkyrie::types::{ValkyrieMessage, MessagePayload, MessageType, DestinationType};
-use crate::core::networking::valkyrie::zero_copy::{SimdBuffer, ZeroCopyBufferPool, SimdDataProcessor};
+use crate::core::networking::valkyrie::types::{
+    DestinationType, MessagePayload, MessageType, ValkyrieMessage,
+};
+use crate::core::networking::valkyrie::zero_copy::{
+    SimdBuffer, SimdDataProcessor, ZeroCopyBufferPool,
+};
 use crate::error::{AppError, Result};
 
 /// SIMD-optimized message processor for Valkyrie Protocol
@@ -50,7 +54,7 @@ impl SimdMessageProcessor {
     /// Create a new SIMD message processor
     pub fn new(buffer_pool: Arc<ZeroCopyBufferPool>) -> Self {
         let data_processor = Arc::new(SimdDataProcessor::new(Arc::clone(&buffer_pool)));
-        
+
         Self {
             buffer_pool,
             data_processor,
@@ -63,7 +67,7 @@ impl SimdMessageProcessor {
     /// Process message payload with SIMD optimizations
     pub fn process_payload(&self, payload: &MessagePayload) -> Result<SimdBuffer> {
         let start_time = Instant::now();
-        
+
         let result = match payload {
             MessagePayload::Binary(data) => self.process_binary_data(data),
             MessagePayload::Json(value) => self.process_json_data(value),
@@ -74,19 +78,20 @@ impl SimdMessageProcessor {
                 } else {
                     self.create_empty_buffer()
                 }
-            },
+            }
             MessagePayload::FileTransfer(file_payload) => {
                 if let Some(data) = &file_payload.chunk_data {
                     self.process_binary_data(data)
                 } else {
                     self.create_empty_buffer()
                 }
-            },
+            }
             MessagePayload::Structured(structured) => {
-                let json_bytes = serde_json::to_vec(&structured.data)
-                    .map_err(|e| AppError::InternalServerError(format!("JSON serialization failed: {}", e)))?;
+                let json_bytes = serde_json::to_vec(&structured.data).map_err(|e| {
+                    AppError::InternalServerError(format!("JSON serialization failed: {}", e))
+                })?;
                 self.process_binary_data(&json_bytes)
-            },
+            }
             MessagePayload::Empty => self.create_empty_buffer(),
         };
 
@@ -94,16 +99,20 @@ impl SimdMessageProcessor {
         let processing_time = start_time.elapsed();
         let mut stats = self.stats.lock().unwrap();
         stats.messages_processed += 1;
-        
+
         if let Ok(ref buffer) = result {
             stats.bytes_processed += buffer.len() as u64;
-            let speed_mbps = (buffer.len() as f64 / processing_time.as_secs_f64()) / (1024.0 * 1024.0);
+            let speed_mbps =
+                (buffer.len() as f64 / processing_time.as_secs_f64()) / (1024.0 * 1024.0);
             stats.current_speed_mbps = speed_mbps;
             stats.peak_speed_mbps = stats.peak_speed_mbps.max(speed_mbps);
         }
-        
+
         let processing_time_us = processing_time.as_micros() as f64;
-        stats.avg_processing_time_us = (stats.avg_processing_time_us * (stats.messages_processed - 1) as f64 + processing_time_us) / stats.messages_processed as f64;
+        stats.avg_processing_time_us = (stats.avg_processing_time_us
+            * (stats.messages_processed - 1) as f64
+            + processing_time_us)
+            / stats.messages_processed as f64;
 
         result
     }
@@ -111,21 +120,22 @@ impl SimdMessageProcessor {
     /// Process binary data with SIMD optimizations
     fn process_binary_data(&self, data: &[u8]) -> Result<SimdBuffer> {
         let mut buffer = self.buffer_pool.get_buffer(data.len() * 2)?; // Extra space for compression/encryption
-        
+
         // Step 1: Copy data using SIMD
         let mut working_data = self.buffer_pool.get_buffer(data.len())?;
-        self.data_processor.simd_copy(data, &mut working_data.as_mut_slice()[..data.len()])?;
+        self.data_processor
+            .simd_copy(data, &mut working_data.as_mut_slice()[..data.len()])?;
         working_data.set_length(data.len());
 
         // Step 2: Apply compression if data is large enough
         let compressed_data = if data.len() >= self.compression_threshold {
             let compressed = self.simd_compress(&working_data)?;
             self.buffer_pool.return_buffer(working_data);
-            
+
             let mut stats = self.stats.lock().unwrap();
             stats.compression_ops += 1;
             stats.simd_operations += 1;
-            
+
             compressed
         } else {
             working_data
@@ -135,11 +145,11 @@ impl SimdMessageProcessor {
         let final_data = if self.encryption_enabled {
             let encrypted = self.simd_encrypt(&compressed_data)?;
             self.buffer_pool.return_buffer(compressed_data);
-            
+
             let mut stats = self.stats.lock().unwrap();
             stats.encryption_ops += 1;
             stats.simd_operations += 1;
-            
+
             encrypted
         } else {
             compressed_data
@@ -148,7 +158,10 @@ impl SimdMessageProcessor {
         // Copy final data to output buffer
         let final_len = final_data.len();
         if final_len <= buffer.capacity() {
-            self.data_processor.simd_copy(final_data.as_slice(), &mut buffer.as_mut_slice()[..final_len])?;
+            self.data_processor.simd_copy(
+                final_data.as_slice(),
+                &mut buffer.as_mut_slice()[..final_len],
+            )?;
             buffer.set_length(final_len);
         } else {
             buffer = final_data;
@@ -160,9 +173,10 @@ impl SimdMessageProcessor {
     /// Process JSON data with SIMD optimizations
     fn process_json_data(&self, value: &serde_json::Value) -> Result<SimdBuffer> {
         // Use simd-json for faster processing
-        let json_bytes = simd_json::to_vec(value)
-            .map_err(|e| AppError::InternalServerError(format!("SIMD JSON serialization failed: {}", e)))?;
-        
+        let json_bytes = simd_json::to_vec(value).map_err(|e| {
+            AppError::InternalServerError(format!("SIMD JSON serialization failed: {}", e))
+        })?;
+
         // Apply SIMD optimizations to the serialized data
         self.process_binary_data(&json_bytes)
     }
@@ -170,7 +184,7 @@ impl SimdMessageProcessor {
     /// Process text data with SIMD optimizations
     fn process_text_data(&self, text: &str) -> Result<SimdBuffer> {
         let text_bytes = text.as_bytes();
-        
+
         // Apply text-specific SIMD optimizations
         let optimized_text = self.simd_text_optimize(text_bytes)?;
         self.process_binary_data(optimized_text.as_slice())
@@ -180,16 +194,16 @@ impl SimdMessageProcessor {
     fn simd_text_optimize(&self, text: &[u8]) -> Result<SimdBuffer> {
         let mut buffer = self.buffer_pool.get_buffer(text.len())?;
         let output_slice = buffer.as_mut_slice();
-        
+
         // Convert to lowercase using SIMD
         let len = text.len();
         let simd_len = len & !31; // Process in 32-byte chunks
-        
+
         for i in (0..simd_len).step_by(32) {
             let mut chunk_array = [0u8; 32];
-            chunk_array.copy_from_slice(&text[i..i+32]);
+            chunk_array.copy_from_slice(&text[i..i + 32]);
             let chunk = u8x32::new(chunk_array);
-            
+
             // Convert to lowercase using scalar operations for compatibility
             let mut result_array = [0u8; 32];
             for j in 0..32 {
@@ -200,10 +214,10 @@ impl SimdMessageProcessor {
                     byte
                 };
             }
-            
-            output_slice[i..i+32].copy_from_slice(&result_array);
+
+            output_slice[i..i + 32].copy_from_slice(&result_array);
         }
-        
+
         // Handle remaining bytes
         for i in simd_len..len {
             output_slice[i] = if text[i] >= 0x41 && text[i] <= 0x5A {
@@ -212,12 +226,12 @@ impl SimdMessageProcessor {
                 text[i]
             };
         }
-        
+
         buffer.set_length(len);
-        
+
         let mut stats = self.stats.lock().unwrap();
         stats.simd_operations += (simd_len / 32) as u64;
-        
+
         Ok(buffer)
     }
 
@@ -231,11 +245,15 @@ impl SimdMessageProcessor {
     fn simd_encrypt(&self, input: &SimdBuffer) -> Result<SimdBuffer> {
         let key = self.generate_simd_key(input.len())?;
         let mut output = self.buffer_pool.get_buffer(input.len())?;
-        
+
         // XOR encryption using SIMD
-        self.data_processor.simd_xor(input.as_slice(), key.as_slice(), &mut output.as_mut_slice()[..input.len()])?;
+        self.data_processor.simd_xor(
+            input.as_slice(),
+            key.as_slice(),
+            &mut output.as_mut_slice()[..input.len()],
+        )?;
         output.set_length(input.len());
-        
+
         self.buffer_pool.return_buffer(key);
         Ok(output)
     }
@@ -244,12 +262,12 @@ impl SimdMessageProcessor {
     fn generate_simd_key(&self, length: usize) -> Result<SimdBuffer> {
         let mut key = self.buffer_pool.get_buffer(length)?;
         let key_slice = key.as_mut_slice();
-        
+
         // Generate pseudo-random key using SIMD
         let mut seed = 0x12345678u32;
         let len = length;
         let simd_len = len & !31;
-        
+
         for i in (0..simd_len).step_by(32) {
             // Generate 32 bytes of key data using simple PRNG
             let mut key_chunk = [0u8; 32];
@@ -257,16 +275,16 @@ impl SimdMessageProcessor {
                 seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
                 key_chunk[j] = (seed >> 16) as u8;
             }
-            
-            key_slice[i..i+32].copy_from_slice(&key_chunk);
+
+            key_slice[i..i + 32].copy_from_slice(&key_chunk);
         }
-        
+
         // Handle remaining bytes
         for i in simd_len..len {
             seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
             key_slice[i] = (seed >> 16) as u8;
         }
-        
+
         key.set_length(length);
         Ok(key)
     }
@@ -293,21 +311,21 @@ impl SimdMessageProcessor {
     pub fn batch_process(&self, messages: &[ValkyrieMessage]) -> Result<Vec<SimdBuffer>> {
         let mut results = Vec::with_capacity(messages.len());
         let start_time = Instant::now();
-        
+
         for message in messages {
             let processed = self.process_payload(&message.payload)?;
             results.push(processed);
         }
-        
+
         // Update batch processing statistics
         let processing_time = start_time.elapsed();
         let total_bytes: usize = results.iter().map(|b| b.len()).sum();
         let speed_mbps = (total_bytes as f64 / processing_time.as_secs_f64()) / (1024.0 * 1024.0);
-        
+
         let mut stats = self.stats.lock().unwrap();
         stats.current_speed_mbps = speed_mbps;
         stats.peak_speed_mbps = stats.peak_speed_mbps.max(speed_mbps);
-        
+
         Ok(results)
     }
 
@@ -376,8 +394,10 @@ impl SimdPatternMatcher {
 
     /// Add a pattern for matching
     pub fn add_pattern(&mut self, pattern: &[u8], mask: Option<&[u8]>, id: u32) {
-        let pattern_mask = mask.map(|m| m.to_vec()).unwrap_or_else(|| vec![0xFF; pattern.len()]);
-        
+        let pattern_mask = mask
+            .map(|m| m.to_vec())
+            .unwrap_or_else(|| vec![0xFF; pattern.len()]);
+
         self.patterns.push(SimdPattern {
             pattern: pattern.to_vec(),
             mask: pattern_mask,
@@ -389,22 +409,24 @@ impl SimdPatternMatcher {
     pub fn match_patterns(&self, data: &[u8]) -> Vec<u32> {
         let start_time = Instant::now();
         let mut matches = Vec::new();
-        
+
         for pattern in &self.patterns {
             if self.simd_match_pattern(data, pattern) {
                 matches.push(pattern.id);
             }
         }
-        
+
         // Update statistics
         let match_time = start_time.elapsed();
         let mut stats = self.stats.lock().unwrap();
         stats.matches_performed += 1;
         stats.patterns_matched += matches.len() as u64;
-        
+
         let match_time_ns = match_time.as_nanos() as f64;
-        stats.avg_match_time_ns = (stats.avg_match_time_ns * (stats.matches_performed - 1) as f64 + match_time_ns) / stats.matches_performed as f64;
-        
+        stats.avg_match_time_ns = (stats.avg_match_time_ns * (stats.matches_performed - 1) as f64
+            + match_time_ns)
+            / stats.matches_performed as f64;
+
         matches
     }
 
@@ -413,10 +435,10 @@ impl SimdPatternMatcher {
         if data.len() < pattern.pattern.len() {
             return false;
         }
-        
+
         let pattern_len = pattern.pattern.len();
         let search_len = data.len() - pattern_len + 1;
-        
+
         // Use SIMD for pattern matching when pattern is large enough
         if pattern_len >= 32 {
             let mut pattern_array = [0u8; 32];
@@ -425,26 +447,26 @@ impl SimdPatternMatcher {
             mask_array.copy_from_slice(&pattern.mask[..32]);
             let pattern_simd = u8x32::new(pattern_array);
             let mask_simd = u8x32::new(mask_array);
-            
+
             for i in 0..search_len {
                 if i + 32 <= data.len() {
                     let mut data_array = [0u8; 32];
-                    data_array.copy_from_slice(&data[i..i+32]);
+                    data_array.copy_from_slice(&data[i..i + 32]);
                     let data_simd = u8x32::new(data_array);
                     let masked_data = data_simd & mask_simd;
                     let masked_pattern = pattern_simd & mask_simd;
-                    
+
                     let eq_mask = masked_data.cmp_eq(masked_pattern);
                     let eq_array: [u8; 32] = eq_mask.into();
                     let all_match = eq_array.iter().all(|&b| b == 0xFF);
-                    
+
                     if all_match {
                         // Check remaining bytes if pattern is longer than 32
                         if pattern_len > 32 {
                             let remaining_match = self.match_remaining_bytes(
-                                &data[i+32..],
+                                &data[i + 32..],
                                 &pattern.pattern[32..],
-                                &pattern.mask[32..]
+                                &pattern.mask[32..],
                             );
                             if remaining_match {
                                 let mut stats = self.stats.lock().unwrap();
@@ -462,12 +484,12 @@ impl SimdPatternMatcher {
         } else {
             // Use regular matching for small patterns
             for i in 0..search_len {
-                if self.match_bytes(&data[i..i+pattern_len], &pattern.pattern, &pattern.mask) {
+                if self.match_bytes(&data[i..i + pattern_len], &pattern.pattern, &pattern.mask) {
                     return true;
                 }
             }
         }
-        
+
         false
     }
 
@@ -476,7 +498,7 @@ impl SimdPatternMatcher {
         if data.len() < pattern.len() {
             return false;
         }
-        
+
         self.match_bytes(&data[..pattern.len()], pattern, mask)
     }
 
@@ -503,10 +525,10 @@ mod tests {
     fn test_simd_message_processor() {
         let pool = Arc::new(ZeroCopyBufferPool::new());
         let processor = SimdMessageProcessor::new(pool);
-        
+
         let payload = MessagePayload::Binary(vec![1, 2, 3, 4, 5]);
         let result = processor.process_payload(&payload).unwrap();
-        
+
         assert!(!result.is_empty());
         let stats = processor.get_stats();
         assert_eq!(stats.messages_processed, 1);
@@ -516,11 +538,11 @@ mod tests {
     fn test_simd_text_optimization() {
         let pool = Arc::new(ZeroCopyBufferPool::new());
         let processor = SimdMessageProcessor::new(pool);
-        
+
         let text = "HELLO WORLD";
         let result = processor.simd_text_optimize(text.as_bytes()).unwrap();
         let result_str = std::str::from_utf8(result.as_slice()).unwrap();
-        
+
         assert_eq!(result_str, "hello world");
     }
 
@@ -529,10 +551,10 @@ mod tests {
         let mut matcher = SimdPatternMatcher::new();
         matcher.add_pattern(b"test", None, 1);
         matcher.add_pattern(b"pattern", None, 2);
-        
+
         let data = b"this is a test pattern matching";
         let matches = matcher.match_patterns(data);
-        
+
         assert_eq!(matches.len(), 2);
         assert!(matches.contains(&1));
         assert!(matches.contains(&2));
@@ -542,25 +564,25 @@ mod tests {
     fn test_batch_processing() {
         let pool = Arc::new(ZeroCopyBufferPool::new());
         let processor = SimdMessageProcessor::new(pool);
-        
+
         let messages = vec![
             ValkyrieMessage::new(
                 MessageType::Data,
                 "source".to_string(),
                 DestinationType::Unicast("dest".to_string()),
-                MessagePayload::Binary(vec![1, 2, 3])
+                MessagePayload::Binary(vec![1, 2, 3]),
             ),
             ValkyrieMessage::new(
                 MessageType::Data,
                 "source".to_string(),
                 DestinationType::Unicast("dest".to_string()),
-                MessagePayload::Text("hello".to_string())
+                MessagePayload::Text("hello".to_string()),
             ),
         ];
-        
+
         let results = processor.batch_process(&messages).unwrap();
         assert_eq!(results.len(), 2);
-        
+
         let stats = processor.get_stats();
         assert_eq!(stats.messages_processed, 2);
     }

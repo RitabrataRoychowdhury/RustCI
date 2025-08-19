@@ -3,14 +3,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
+use crate::core::networking::node_communication::ProtocolError;
 use crate::core::networking::transport::{
-    Transport, TransportType, TransportEndpoint, NetworkConditions
+    NetworkConditions, Transport, TransportEndpoint, TransportType,
 };
 use crate::core::networking::valkyrie::transport::{
-    TransportSelectionStrategy, FailoverConfig, BackoffStrategy
+    BackoffStrategy, FailoverConfig, TransportSelectionStrategy,
 };
 use crate::error::Result;
-use crate::core::networking::node_communication::ProtocolError;
 
 /// Transport selector with failover capabilities
 pub struct TransportSelector {
@@ -56,10 +56,7 @@ pub struct SelectionState {
 
 impl TransportSelector {
     /// Create a new transport selector
-    pub fn new(
-        strategy: TransportSelectionStrategy,
-        failover_config: FailoverConfig,
-    ) -> Self {
+    pub fn new(strategy: TransportSelectionStrategy, failover_config: FailoverConfig) -> Self {
         Self {
             transports: HashMap::new(),
             strategy,
@@ -68,12 +65,12 @@ impl TransportSelector {
             selection_state: Arc::new(RwLock::new(SelectionState::default())),
         }
     }
-    
+
     /// Register a transport
     pub fn register_transport(&mut self, transport: Arc<dyn Transport>) {
         let transport_type = transport.transport_type();
         self.transports.insert(transport_type.clone(), transport);
-        
+
         // Initialize health status
         let health = TransportHealth {
             is_healthy: true,
@@ -83,7 +80,7 @@ impl TransportSelector {
             avg_response_time: Duration::from_millis(0),
             last_error: None,
         };
-        
+
         tokio::spawn({
             let health_status = self.health_status.clone();
             async move {
@@ -92,7 +89,7 @@ impl TransportSelector {
             }
         });
     }
-    
+
     /// Select optimal transport for endpoint
     pub async fn select_transport(
         &self,
@@ -101,30 +98,29 @@ impl TransportSelector {
     ) -> Result<Arc<dyn Transport>> {
         // Get healthy transports that support the endpoint
         let candidates = self.get_healthy_candidates(endpoint).await;
-        
+
         if candidates.is_empty() {
             return Err(ProtocolError::ConnectionError {
-                message: "No healthy transports available".to_string()
-            }.into());
+                message: "No healthy transports available".to_string(),
+            }
+            .into());
         }
-        
+
         // Apply selection strategy
         let selected = match &self.strategy {
-            TransportSelectionStrategy::FirstAvailable => {
-                self.select_first_available(&candidates)
-            }
+            TransportSelectionStrategy::FirstAvailable => self.select_first_available(&candidates),
             TransportSelectionStrategy::LatencyOptimized => {
                 self.select_latency_optimized(&candidates, conditions).await
             }
             TransportSelectionStrategy::ThroughputOptimized => {
-                self.select_throughput_optimized(&candidates, conditions).await
+                self.select_throughput_optimized(&candidates, conditions)
+                    .await
             }
             TransportSelectionStrategy::ReliabilityOptimized => {
-                self.select_reliability_optimized(&candidates, conditions).await
+                self.select_reliability_optimized(&candidates, conditions)
+                    .await
             }
-            TransportSelectionStrategy::RoundRobin => {
-                self.select_round_robin(&candidates).await
-            }
+            TransportSelectionStrategy::RoundRobin => self.select_round_robin(&candidates).await,
             TransportSelectionStrategy::Weighted(weights) => {
                 self.select_weighted(&candidates, weights).await
             }
@@ -133,37 +129,45 @@ impl TransportSelector {
                 self.select_first_available(&candidates)
             }
         };
-        
+
         selected
     }
-    
+
     /// Attempt connection with failover
     pub async fn connect_with_failover(
         &self,
         endpoint: &TransportEndpoint,
         conditions: &NetworkConditions,
-    ) -> Result<(Arc<dyn Transport>, Box<dyn crate::core::networking::transport::Connection>)> {
+    ) -> Result<(
+        Arc<dyn Transport>,
+        Box<dyn crate::core::networking::transport::Connection>,
+    )> {
         if !self.failover_config.enabled {
             let transport = self.select_transport(endpoint, conditions).await?;
             let connection = transport.connect(endpoint).await?;
             return Ok((transport, connection));
         }
-        
+
         let mut attempts = 0;
         let mut last_error = None;
-        
+
         while attempts < self.failover_config.max_attempts {
             match self.select_transport(endpoint, conditions).await {
                 Ok(transport) => {
                     match transport.connect(endpoint).await {
                         Ok(connection) => {
                             // Mark transport as healthy
-                            self.mark_transport_healthy(transport.transport_type()).await;
+                            self.mark_transport_healthy(transport.transport_type())
+                                .await;
                             return Ok((transport, connection));
                         }
                         Err(e) => {
                             // Mark transport as unhealthy
-                            self.mark_transport_unhealthy(transport.transport_type(), &e.to_string()).await;
+                            self.mark_transport_unhealthy(
+                                transport.transport_type(),
+                                &e.to_string(),
+                            )
+                            .await;
                             last_error = Some(e);
                         }
                     }
@@ -172,21 +176,24 @@ impl TransportSelector {
                     last_error = Some(e);
                 }
             }
-            
+
             attempts += 1;
-            
+
             if attempts < self.failover_config.max_attempts {
                 // Apply backoff strategy
                 let delay = self.calculate_backoff_delay(attempts);
                 tokio::time::sleep(delay).await;
             }
         }
-        
-        Err(last_error.unwrap_or_else(|| ProtocolError::ConnectionError {
-            message: "All failover attempts exhausted".to_string()
-        }.into()))
+
+        Err(last_error.unwrap_or_else(|| {
+            ProtocolError::ConnectionError {
+                message: "All failover attempts exhausted".to_string(),
+            }
+            .into()
+        }))
     }
-    
+
     /// Get healthy transport candidates
     async fn get_healthy_candidates(
         &self,
@@ -194,13 +201,13 @@ impl TransportSelector {
     ) -> Vec<(TransportType, Arc<dyn Transport>)> {
         let health_status = self.health_status.read().await;
         let mut candidates = Vec::new();
-        
+
         for (transport_type, transport) in &self.transports {
             // Check if transport supports the endpoint
             if !transport.supports_endpoint(endpoint) {
                 continue;
             }
-            
+
             // Check health status
             if let Some(health) = health_status.get(transport_type) {
                 if health.is_healthy {
@@ -211,22 +218,26 @@ impl TransportSelector {
                 candidates.push((transport_type.clone(), transport.clone()));
             }
         }
-        
+
         candidates
     }
-    
+
     /// Select first available transport
     fn select_first_available(
         &self,
         candidates: &[(TransportType, Arc<dyn Transport>)],
     ) -> Result<Arc<dyn Transport>> {
-        candidates.first()
+        candidates
+            .first()
             .map(|(_, transport)| transport.clone())
-            .ok_or_else(|| ProtocolError::ConnectionError {
-                message: "No candidates available".to_string()
-            }.into())
+            .ok_or_else(|| {
+                ProtocolError::ConnectionError {
+                    message: "No candidates available".to_string(),
+                }
+                .into()
+            })
     }
-    
+
     /// Select transport optimized for latency
     async fn select_latency_optimized(
         &self,
@@ -235,20 +246,28 @@ impl TransportSelector {
     ) -> Result<Arc<dyn Transport>> {
         // Prefer transports with lower latency characteristics
         let preferred_order = if conditions.latency_ms < 10.0 {
-            vec![TransportType::Quic, TransportType::Tcp, TransportType::WebSocket]
+            vec![
+                TransportType::Quic,
+                TransportType::Tcp,
+                TransportType::WebSocket,
+            ]
         } else {
-            vec![TransportType::Tcp, TransportType::Quic, TransportType::WebSocket]
+            vec![
+                TransportType::Tcp,
+                TransportType::Quic,
+                TransportType::WebSocket,
+            ]
         };
-        
+
         for preferred_type in preferred_order {
             if let Some((_, transport)) = candidates.iter().find(|(t, _)| *t == preferred_type) {
                 return Ok(transport.clone());
             }
         }
-        
+
         self.select_first_available(candidates)
     }
-    
+
     /// Select transport optimized for throughput
     async fn select_throughput_optimized(
         &self,
@@ -257,20 +276,28 @@ impl TransportSelector {
     ) -> Result<Arc<dyn Transport>> {
         // Prefer transports with multiplexing for high throughput
         let preferred_order = if conditions.bandwidth_mbps > 100.0 {
-            vec![TransportType::Quic, TransportType::SecureTcp, TransportType::Tcp]
+            vec![
+                TransportType::Quic,
+                TransportType::SecureTcp,
+                TransportType::Tcp,
+            ]
         } else {
-            vec![TransportType::Tcp, TransportType::Quic, TransportType::WebSocket]
+            vec![
+                TransportType::Tcp,
+                TransportType::Quic,
+                TransportType::WebSocket,
+            ]
         };
-        
+
         for preferred_type in preferred_order {
             if let Some((_, transport)) = candidates.iter().find(|(t, _)| *t == preferred_type) {
                 return Ok(transport.clone());
             }
         }
-        
+
         self.select_first_available(candidates)
     }
-    
+
     /// Select transport optimized for reliability
     async fn select_reliability_optimized(
         &self,
@@ -278,38 +305,46 @@ impl TransportSelector {
         _conditions: &NetworkConditions,
     ) -> Result<Arc<dyn Transport>> {
         let health_status = self.health_status.read().await;
-        
+
         // Sort by reliability metrics
-        let mut scored_candidates: Vec<_> = candidates.iter()
+        let mut scored_candidates: Vec<_> = candidates
+            .iter()
             .map(|(transport_type, transport)| {
                 let reliability_score = if let Some(health) = health_status.get(transport_type) {
                     // Calculate reliability score based on success rate and response time
                     let success_rate = if health.success_count + health.failure_count > 0 {
-                        health.success_count as f64 / (health.success_count + health.failure_count) as f64
+                        health.success_count as f64
+                            / (health.success_count + health.failure_count) as f64
                     } else {
                         1.0
                     };
-                    
-                    let response_time_score = 1.0 / (1.0 + health.avg_response_time.as_millis() as f64 / 1000.0);
-                    
+
+                    let response_time_score =
+                        1.0 / (1.0 + health.avg_response_time.as_millis() as f64 / 1000.0);
+
                     success_rate * 0.7 + response_time_score * 0.3
                 } else {
                     0.5 // Default score for unknown health
                 };
-                
+
                 (transport_type, transport, reliability_score)
             })
             .collect();
-        
-        scored_candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
-        
-        scored_candidates.first()
+
+        scored_candidates
+            .sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+
+        scored_candidates
+            .first()
             .map(|(_, transport, _)| transport.clone().clone())
-            .ok_or_else(|| ProtocolError::ConnectionError {
-                message: "No reliable candidates available".to_string()
-            }.into())
+            .ok_or_else(|| {
+                ProtocolError::ConnectionError {
+                    message: "No reliable candidates available".to_string(),
+                }
+                .into()
+            })
     }
-    
+
     /// Select transport using round-robin
     async fn select_round_robin(
         &self,
@@ -318,10 +353,10 @@ impl TransportSelector {
         let mut state = self.selection_state.write().await;
         let index = state.round_robin_index % candidates.len();
         state.round_robin_index = (state.round_robin_index + 1) % candidates.len();
-        
+
         Ok(candidates[index].1.clone())
     }
-    
+
     /// Select transport using weighted selection
     async fn select_weighted(
         &self,
@@ -329,28 +364,29 @@ impl TransportSelector {
         weights: &HashMap<TransportType, f64>,
     ) -> Result<Arc<dyn Transport>> {
         // Calculate weighted selection
-        let total_weight: f64 = candidates.iter()
+        let total_weight: f64 = candidates
+            .iter()
             .map(|(transport_type, _)| weights.get(transport_type).unwrap_or(&1.0))
             .sum();
-        
+
         if total_weight <= 0.0 {
             return self.select_first_available(candidates);
         }
-        
+
         let random_value = fastrand::f64() * total_weight;
         let mut cumulative_weight = 0.0;
-        
+
         for (transport_type, transport) in candidates {
             cumulative_weight += weights.get(transport_type).unwrap_or(&1.0);
             if random_value <= cumulative_weight {
                 return Ok(transport.clone());
             }
         }
-        
+
         // Fallback to first available
         self.select_first_available(candidates)
     }
-    
+
     /// Mark transport as healthy
     async fn mark_transport_healthy(&self, transport_type: TransportType) {
         let mut health_status = self.health_status.write().await;
@@ -362,7 +398,7 @@ impl TransportSelector {
             health.last_error = None;
         }
     }
-    
+
     /// Mark transport as unhealthy
     async fn mark_transport_unhealthy(&self, transport_type: TransportType, error: &str) {
         let mut health_status = self.health_status.write().await;
@@ -371,58 +407,66 @@ impl TransportSelector {
             health.success_count = 0;
             health.last_check = Instant::now();
             health.last_error = Some(error.to_string());
-            
+
             // Mark as unhealthy if failure threshold is reached
             if health.failure_count >= self.failover_config.health_check.failure_threshold {
                 health.is_healthy = false;
             }
         }
     }
-    
+
     /// Calculate backoff delay for failover attempts
     fn calculate_backoff_delay(&self, attempt: u32) -> Duration {
         match &self.failover_config.backoff_strategy {
             BackoffStrategy::Fixed(delay) => *delay,
-            BackoffStrategy::Exponential { initial_delay, max_delay, multiplier } => {
+            BackoffStrategy::Exponential {
+                initial_delay,
+                max_delay,
+                multiplier,
+            } => {
                 let delay = Duration::from_millis(
-                    (initial_delay.as_millis() as f64 * multiplier.powi(attempt as i32 - 1)) as u64
+                    (initial_delay.as_millis() as f64 * multiplier.powi(attempt as i32 - 1)) as u64,
                 );
                 std::cmp::min(delay, *max_delay)
             }
-            BackoffStrategy::Linear { initial_delay, increment } => {
-                Duration::from_millis(
-                    initial_delay.as_millis() as u64 + (increment.as_millis() as u64 * (attempt - 1) as u64)
-                )
-            }
+            BackoffStrategy::Linear {
+                initial_delay,
+                increment,
+            } => Duration::from_millis(
+                initial_delay.as_millis() as u64
+                    + (increment.as_millis() as u64 * (attempt - 1) as u64),
+            ),
         }
     }
-    
+
     /// Perform health checks on all transports
     pub async fn perform_health_checks(&self) {
         if !self.failover_config.health_check.enabled {
             return;
         }
-        
-        let health_check_tasks: Vec<_> = self.transports.iter()
+
+        let health_check_tasks: Vec<_> = self
+            .transports
+            .iter()
             .map(|(transport_type, transport)| {
                 let transport_type = transport_type.clone();
                 let transport = transport.clone();
                 let health_status = self.health_status.clone();
                 let health_config = self.failover_config.health_check.clone();
-                
+
                 tokio::spawn(async move {
                     let start_time = Instant::now();
-                    
+
                     // Perform health check (simplified - in reality, this would ping the transport)
                     let health_result = transport.get_metrics().await;
                     let response_time = start_time.elapsed();
-                    
+
                     // Update health status
                     let mut health_map = health_status.write().await;
                     if let Some(health) = health_map.get_mut(&transport_type) {
                         health.last_check = Instant::now();
                         health.avg_response_time = (health.avg_response_time + response_time) / 2;
-                        
+
                         // Simple health check based on metrics availability
                         if health_result.connection_errors > 0 {
                             health.failure_count += 1;
@@ -440,13 +484,13 @@ impl TransportSelector {
                 })
             })
             .collect();
-        
+
         // Wait for all health checks to complete
         for task in health_check_tasks {
             let _ = task.await;
         }
     }
-    
+
     /// Get current health status of all transports
     pub async fn get_health_status(&self) -> HashMap<TransportType, TransportHealth> {
         self.health_status.read().await.clone()

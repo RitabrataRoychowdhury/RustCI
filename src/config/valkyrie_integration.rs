@@ -12,7 +12,7 @@ pub struct ValkyrieIntegrationConfig {
     pub integration_mode: IntegrationMode,
     pub backward_compatibility_enabled: bool,
     pub performance_enhancement_enabled: bool,
-    
+
     // Valkyrie engine configuration
     pub valkyrie_listen_address: String,
     pub max_connections: u32,
@@ -21,51 +21,51 @@ pub struct ValkyrieIntegrationConfig {
     pub enable_tls: bool,
     pub tls_cert_path: Option<String>,
     pub tls_key_path: Option<String>,
-    
+
     // Runner adapter configuration
     pub max_concurrent_jobs: u32,
     #[serde(with = "duration_serde")]
     pub dispatch_timeout: Duration,
     pub queue_capacity: usize,
     pub intelligent_routing_enabled: bool,
-    
+
     // Fallback configuration
     pub fallback_mode_enabled: bool,
     #[serde(with = "duration_serde")]
     pub fallback_timeout: Duration,
     pub fallback_retry_attempts: u32,
-    
+
     // Health monitoring
     #[serde(with = "duration_serde")]
     pub health_check_interval: Duration,
     pub health_check_timeout: Duration,
     pub failure_threshold: u32,
     pub recovery_threshold: u32,
-    
+
     // Performance settings
     pub enable_zero_copy: bool,
     pub enable_simd_optimization: bool,
     pub memory_pool_size: usize,
     pub buffer_pool_sizes: Vec<usize>,
-    
+
     // Observability
     pub metrics_enabled: bool,
     #[serde(with = "duration_serde")]
     pub metrics_interval: Duration,
     pub tracing_enabled: bool,
     pub logging_level: LogLevel,
-    
+
     // Configuration management
     pub hot_reload_enabled: bool,
     pub config_validation_strict: bool,
     pub config_backup_enabled: bool,
-    
+
     // Security settings
     pub authentication_required: bool,
     pub authorization_enabled: bool,
     pub audit_logging_enabled: bool,
     pub rate_limiting_enabled: bool,
-    
+
     // Advanced features
     pub adaptive_routing_enabled: bool,
     pub machine_learning_enabled: bool,
@@ -151,7 +151,7 @@ impl Default for ValkyrieIntegrationConfig {
             integration_mode: IntegrationMode::Disabled,
             backward_compatibility_enabled: true,
             performance_enhancement_enabled: false,
-            
+
             // Valkyrie engine configuration
             valkyrie_listen_address: "127.0.0.1:8080".to_string(),
             max_connections: 1000,
@@ -159,47 +159,47 @@ impl Default for ValkyrieIntegrationConfig {
             enable_tls: false,
             tls_cert_path: None,
             tls_key_path: None,
-            
+
             // Runner adapter configuration
             max_concurrent_jobs: 1000,
             dispatch_timeout: Duration::from_micros(100),
             queue_capacity: 10000,
             intelligent_routing_enabled: true,
-            
+
             // Fallback configuration
             fallback_mode_enabled: true,
             fallback_timeout: Duration::from_millis(5000),
             fallback_retry_attempts: 3,
-            
+
             // Health monitoring
             health_check_interval: Duration::from_secs(30),
             health_check_timeout: Duration::from_secs(5),
             failure_threshold: 3,
             recovery_threshold: 2,
-            
+
             // Performance settings
             enable_zero_copy: true,
             enable_simd_optimization: true,
             memory_pool_size: 1024 * 1024 * 512, // 512MB
             buffer_pool_sizes: vec![1024, 4096, 16384, 65536], // Various buffer sizes
-            
+
             // Observability
             metrics_enabled: true,
             metrics_interval: Duration::from_secs(10),
             tracing_enabled: true,
             logging_level: LogLevel::Info,
-            
+
             // Configuration management
             hot_reload_enabled: false,
             config_validation_strict: true,
             config_backup_enabled: true,
-            
+
             // Security settings
             authentication_required: false,
             authorization_enabled: false,
             audit_logging_enabled: false,
             rate_limiting_enabled: false,
-            
+
             // Advanced features
             adaptive_routing_enabled: false,
             machine_learning_enabled: false,
@@ -223,7 +223,7 @@ impl ValkyrieIntegrationConfig {
             ..Default::default()
         }
     }
-    
+
     /// Create configuration for testing environment
     pub fn testing() -> Self {
         Self {
@@ -237,7 +237,7 @@ impl ValkyrieIntegrationConfig {
             ..Default::default()
         }
     }
-    
+
     /// Create configuration for staging environment
     pub fn staging() -> Self {
         Self {
@@ -253,7 +253,7 @@ impl ValkyrieIntegrationConfig {
             ..Default::default()
         }
     }
-    
+
     /// Create configuration for production environment
     pub fn production() -> Self {
         Self {
@@ -276,7 +276,7 @@ impl ValkyrieIntegrationConfig {
             ..Default::default()
         }
     }
-    
+
     /// Validate configuration consistency
     pub fn validate(&self) -> Result<(), String> {
         // Validate Valkyrie-specific settings
@@ -284,64 +284,69 @@ impl ValkyrieIntegrationConfig {
             if self.valkyrie_listen_address.is_empty() {
                 return Err("Valkyrie listen address cannot be empty when enabled".to_string());
             }
-            
+
             if self.max_connections == 0 {
                 return Err("Max connections must be greater than 0".to_string());
             }
-            
+
             if self.max_concurrent_jobs == 0 {
                 return Err("Max concurrent jobs must be greater than 0".to_string());
             }
-            
+
             if self.dispatch_timeout.as_millis() == 0 {
                 return Err("Dispatch timeout must be greater than 0".to_string());
             }
         }
-        
+
         // Validate TLS settings
         if self.enable_tls {
             if self.tls_cert_path.is_none() || self.tls_key_path.is_none() {
-                return Err("TLS certificate and key paths must be specified when TLS is enabled".to_string());
+                return Err(
+                    "TLS certificate and key paths must be specified when TLS is enabled"
+                        .to_string(),
+                );
             }
         }
-        
+
         // Validate fallback settings
         if self.fallback_mode_enabled {
             if self.fallback_timeout.as_millis() == 0 {
                 return Err("Fallback timeout must be greater than 0".to_string());
             }
-            
+
             if self.fallback_retry_attempts == 0 {
                 return Err("Fallback retry attempts must be greater than 0".to_string());
             }
         }
-        
+
         // Validate health monitoring settings
         if self.health_check_interval.as_millis() == 0 {
             return Err("Health check interval must be greater than 0".to_string());
         }
-        
+
         if self.failure_threshold == 0 || self.recovery_threshold == 0 {
             return Err("Failure and recovery thresholds must be greater than 0".to_string());
         }
-        
+
         // Validate performance settings
         if self.memory_pool_size == 0 {
             return Err("Memory pool size must be greater than 0".to_string());
         }
-        
+
         if self.buffer_pool_sizes.is_empty() {
             return Err("Buffer pool sizes cannot be empty".to_string());
         }
-        
+
         // Validate observability settings
         if self.metrics_enabled && self.metrics_interval.as_millis() == 0 {
-            return Err("Metrics interval must be greater than 0 when metrics are enabled".to_string());
+            return Err(
+                "Metrics interval must be greater than 0 when metrics are enabled".to_string(),
+            );
         }
-        
+
         Ok(())
     }
-    
+
     /// Apply environment-specific overrides
     pub fn apply_environment_overrides(&mut self, env_config: &EnvironmentConfig) {
         // Apply overrides based on environment
@@ -371,7 +376,7 @@ impl ValkyrieIntegrationConfig {
                 self.hot_reload_enabled = false;
             }
         }
-        
+
         // Apply specific overrides
         // This would merge the override config with the current config
         // For now, we'll just update a few key fields as an example
@@ -379,12 +384,12 @@ impl ValkyrieIntegrationConfig {
             self.valkyrie_enabled = env_config.overrides.valkyrie_enabled;
         }
     }
-    
+
     /// Get configuration for specific integration mode
     pub fn for_integration_mode(mode: IntegrationMode) -> Self {
         let mut config = Self::default();
         config.integration_mode = mode.clone();
-        
+
         match mode {
             IntegrationMode::Full => {
                 config.valkyrie_enabled = true;
@@ -411,27 +416,26 @@ impl ValkyrieIntegrationConfig {
                 config.valkyrie_enabled = false;
             }
         }
-        
+
         config
     }
-    
+
     /// Check if zero-downtime updates are supported
     pub fn supports_zero_downtime_updates(&self) -> bool {
-        self.valkyrie_enabled && 
-        self.hot_reload_enabled && 
-        self.fallback_mode_enabled
+        self.valkyrie_enabled && self.hot_reload_enabled && self.fallback_mode_enabled
     }
-    
+
     /// Get performance optimization level
     pub fn get_performance_level(&self) -> PerformanceLevel {
         if !self.valkyrie_enabled {
             return PerformanceLevel::Disabled;
         }
-        
-        if self.performance_enhancement_enabled && 
-           self.enable_zero_copy && 
-           self.enable_simd_optimization &&
-           self.adaptive_routing_enabled {
+
+        if self.performance_enhancement_enabled
+            && self.enable_zero_copy
+            && self.enable_simd_optimization
+            && self.adaptive_routing_enabled
+        {
             PerformanceLevel::Maximum
         } else if self.performance_enhancement_enabled {
             PerformanceLevel::Enhanced
@@ -529,7 +533,7 @@ mod tests {
         let mut config = ValkyrieIntegrationConfig::default();
         config.valkyrie_enabled = true;
         config.valkyrie_listen_address = "".to_string();
-        
+
         assert!(config.validate().is_err());
     }
 
@@ -537,7 +541,7 @@ mod tests {
     fn test_performance_level() {
         let config = ValkyrieIntegrationConfig::production();
         assert_eq!(config.get_performance_level(), PerformanceLevel::Maximum);
-        
+
         let config = ValkyrieIntegrationConfig::default();
         assert_eq!(config.get_performance_level(), PerformanceLevel::Disabled);
     }
@@ -548,7 +552,7 @@ mod tests {
         config.valkyrie_enabled = true;
         config.hot_reload_enabled = true;
         config.fallback_mode_enabled = true;
-        
+
         assert!(config.supports_zero_downtime_updates());
     }
 }

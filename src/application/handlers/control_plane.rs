@@ -482,7 +482,7 @@ pub struct SystemMetricsData {
 }
 
 /// Schedule a job to be executed on available runner
-/// 
+///
 /// This endpoint accepts job scheduling requests and distributes them
 /// to available runners based on resource requirements and affinity rules.
 pub async fn schedule_job(
@@ -497,7 +497,7 @@ pub async fn schedule_job(
 
     // Create control plane job from request
     let job_id = Uuid::new_v4();
-    
+
     // Convert control plane job request to domain job
     let _job = Job {
         id: job_id,
@@ -515,19 +515,33 @@ pub async fn schedule_job(
                 }
             }),
             runner_type: None,
-            node_affinity: request.node_affinity.as_ref()
+            node_affinity: request
+                .node_affinity
+                .as_ref()
                 .map(|a| a.required_labels.keys().cloned().collect())
                 .unwrap_or_default(),
         },
         priority: request.priority.clone(),
         timeout: Duration::from_secs(request.timeout_seconds.unwrap_or(3600)),
         retry_policy: RetryPolicy {
-            max_retries: request.retry_config.as_ref().map(|r| r.max_attempts).unwrap_or(3),
+            max_retries: request
+                .retry_config
+                .as_ref()
+                .map(|r| r.max_attempts)
+                .unwrap_or(3),
             retry_delay: Duration::from_secs(
-                request.retry_config.as_ref().map(|r| r.initial_delay_seconds).unwrap_or(30)
+                request
+                    .retry_config
+                    .as_ref()
+                    .map(|r| r.initial_delay_seconds)
+                    .unwrap_or(30),
             ),
-            backoff_strategy: BackoffStrategy::Exponential { 
-                multiplier: request.retry_config.as_ref().map(|r| r.backoff_multiplier).unwrap_or(2.0)
+            backoff_strategy: BackoffStrategy::Exponential {
+                multiplier: request
+                    .retry_config
+                    .as_ref()
+                    .map(|r| r.backoff_multiplier)
+                    .unwrap_or(2.0),
             },
         },
         metadata: request.metadata.clone(),
@@ -560,8 +574,14 @@ pub async fn schedule_job(
             Some(security_context.session_id.clone()),
         )
         .with_resource_id(job_id.to_string())
-        .with_details("job_name".to_string(), serde_json::Value::String(request.name.clone()))
-        .with_details("job_type".to_string(), serde_json::Value::String(request.job_type.clone()));
+        .with_details(
+            "job_name".to_string(),
+            serde_json::Value::String(request.name.clone()),
+        )
+        .with_details(
+            "job_type".to_string(),
+            serde_json::Value::String(request.job_type.clone()),
+        );
 
         let audit_logger_clone = std::sync::Arc::clone(audit_logger);
         tokio::spawn(async move {
@@ -583,7 +603,7 @@ pub async fn schedule_job(
 }
 
 /// Register a new runner node
-/// 
+///
 /// This endpoint allows runner nodes to register themselves with the control plane
 /// and receive configuration for job execution.
 pub async fn register_node(
@@ -610,9 +630,10 @@ pub async fn register_node(
         node_id,
         status: "registered".to_string(),
         config: NodeConfiguration {
-            control_plane_endpoints: vec![
-                format!("http://{}:{}", state.env.server.host, state.env.server.port)
-            ],
+            control_plane_endpoints: vec![format!(
+                "http://{}:{}",
+                state.env.server.host, state.env.server.port
+            )],
             job_polling_interval: 30,
             max_concurrent_jobs: 10,
             settings: HashMap::new(),
@@ -630,8 +651,14 @@ pub async fn register_node(
             Some(security_context.session_id.clone()),
         )
         .with_resource_id(node_id.to_string())
-        .with_details("node_name".to_string(), serde_json::Value::String(request.name.clone()))
-        .with_details("node_type".to_string(), serde_json::Value::String(request.node_type.clone()));
+        .with_details(
+            "node_name".to_string(),
+            serde_json::Value::String(request.name.clone()),
+        )
+        .with_details(
+            "node_type".to_string(),
+            serde_json::Value::String(request.node_type.clone()),
+        );
 
         let audit_logger_clone = std::sync::Arc::clone(audit_logger);
         tokio::spawn(async move {
@@ -653,7 +680,7 @@ pub async fn register_node(
 }
 
 /// Get status/heartbeat of nodes
-/// 
+///
 /// This endpoint provides information about all registered nodes,
 /// their current status, and resource utilization.
 pub async fn get_node_status(
@@ -670,34 +697,32 @@ pub async fn get_node_status(
     // For now, return a mock response
     let response = NodeStatusResponse {
         total_nodes: 3,
-        nodes: vec![
-            NodeStatusInfo {
-                node_id: Uuid::new_v4(),
-                name: "worker-node-1".to_string(),
-                node_type: "native".to_string(),
-                status: DomainNodeStatus::Active,
-                capabilities: NodeCapabilities {
-                    cpu_cores: 4.0,
-                    memory_mb: 8192,
-                    disk_mb: 102400,
-                    gpu_units: 0,
-                    supported_job_types: vec!["build".to_string(), "test".to_string()],
-                    labels: HashMap::new(),
-                    custom: HashMap::new(),
-                },
-                resource_usage: Some(ResourceUsage {
-                    cpu_usage_percent: 45.2,
-                    memory_usage_mb: 3072,
-                    disk_usage_mb: 25600,
-                    gpu_usage_percent: 0.0,
-                    network_io: None,
-                }),
-                last_heartbeat: Some(Utc::now() - chrono::Duration::seconds(15)),
-                running_jobs: 2,
-                uptime_seconds: 86400,
-                metadata: HashMap::new(),
+        nodes: vec![NodeStatusInfo {
+            node_id: Uuid::new_v4(),
+            name: "worker-node-1".to_string(),
+            node_type: "native".to_string(),
+            status: DomainNodeStatus::Active,
+            capabilities: NodeCapabilities {
+                cpu_cores: 4.0,
+                memory_mb: 8192,
+                disk_mb: 102400,
+                gpu_units: 0,
+                supported_job_types: vec!["build".to_string(), "test".to_string()],
+                labels: HashMap::new(),
+                custom: HashMap::new(),
             },
-        ],
+            resource_usage: Some(ResourceUsage {
+                cpu_usage_percent: 45.2,
+                memory_usage_mb: 3072,
+                disk_usage_mb: 25600,
+                gpu_usage_percent: 0.0,
+                network_io: None,
+            }),
+            last_heartbeat: Some(Utc::now() - chrono::Duration::seconds(15)),
+            running_jobs: 2,
+            uptime_seconds: 86400,
+            metadata: HashMap::new(),
+        }],
         statistics: NodeStatistics {
             active_nodes: 3,
             failed_nodes: 0,
@@ -717,8 +742,14 @@ pub async fn get_node_status(
             Some(security_context.user_id),
             Some(security_context.session_id.clone()),
         )
-        .with_details("include_metrics".to_string(), serde_json::Value::Bool(query.include_metrics))
-        .with_details("include_heartbeats".to_string(), serde_json::Value::Bool(query.include_heartbeats));
+        .with_details(
+            "include_metrics".to_string(),
+            serde_json::Value::Bool(query.include_metrics),
+        )
+        .with_details(
+            "include_heartbeats".to_string(),
+            serde_json::Value::Bool(query.include_heartbeats),
+        );
 
         let audit_logger_clone = std::sync::Arc::clone(audit_logger);
         tokio::spawn(async move {
@@ -737,7 +768,7 @@ pub async fn get_node_status(
 }
 
 /// Fetch job execution status
-/// 
+///
 /// This endpoint provides detailed information about job execution status,
 /// including history and logs if requested.
 pub async fn get_job_status(
@@ -766,29 +797,25 @@ pub async fn get_job_status(
         duration_seconds: Some(120),
         result: None,
         execution_history: if query.include_history {
-            Some(vec![
-                JobExecutionRecord {
-                    attempt: 1,
-                    node_id: Uuid::new_v4(),
-                    started_at: Utc::now() - chrono::Duration::minutes(3),
-                    ended_at: None,
-                    status: JobStatus::Running,
-                    result: None,
-                    error_message: None,
-                },
-            ])
+            Some(vec![JobExecutionRecord {
+                attempt: 1,
+                node_id: Uuid::new_v4(),
+                started_at: Utc::now() - chrono::Duration::minutes(3),
+                ended_at: None,
+                status: JobStatus::Running,
+                result: None,
+                error_message: None,
+            }])
         } else {
             None
         },
         logs: if query.include_logs {
-            Some(vec![
-                JobLogEntry {
-                    timestamp: Utc::now() - chrono::Duration::minutes(2),
-                    level: "INFO".to_string(),
-                    message: "Job started successfully".to_string(),
-                    source: "system".to_string(),
-                },
-            ])
+            Some(vec![JobLogEntry {
+                timestamp: Utc::now() - chrono::Duration::minutes(2),
+                level: "INFO".to_string(),
+                message: "Job started successfully".to_string(),
+                source: "system".to_string(),
+            }])
         } else {
             None
         },
@@ -804,8 +831,14 @@ pub async fn get_job_status(
             Some(security_context.session_id.clone()),
         )
         .with_resource_id(job_id.to_string())
-        .with_details("include_history".to_string(), serde_json::Value::Bool(query.include_history))
-        .with_details("include_logs".to_string(), serde_json::Value::Bool(query.include_logs));
+        .with_details(
+            "include_history".to_string(),
+            serde_json::Value::Bool(query.include_history),
+        )
+        .with_details(
+            "include_logs".to_string(),
+            serde_json::Value::Bool(query.include_logs),
+        );
 
         let audit_logger_clone = std::sync::Arc::clone(audit_logger);
         tokio::spawn(async move {
@@ -825,7 +858,7 @@ pub async fn get_job_status(
 }
 
 /// Return Prometheus/JSON metrics for runners and jobs
-/// 
+///
 /// This endpoint provides comprehensive metrics about the control plane,
 /// nodes, jobs, and system performance in either JSON or Prometheus format.
 pub async fn get_metrics(
@@ -858,23 +891,21 @@ pub async fn get_metrics(
             None
         },
         nodes: if query.include_nodes {
-            Some(vec![
-                NodeMetricsData {
-                    node_id: Uuid::new_v4(),
-                    name: "worker-node-1".to_string(),
-                    node_type: "native".to_string(),
-                    resource_usage: ResourceUsage {
-                        cpu_usage_percent: 45.2,
-                        memory_usage_mb: 3072,
-                        disk_usage_mb: 25600,
-                        gpu_usage_percent: 0.0,
-                        network_io: None,
-                    },
-                    jobs_executed: 425,
-                    avg_job_duration_ms: 42000.0,
-                    uptime_seconds: 86400,
+            Some(vec![NodeMetricsData {
+                node_id: Uuid::new_v4(),
+                name: "worker-node-1".to_string(),
+                node_type: "native".to_string(),
+                resource_usage: ResourceUsage {
+                    cpu_usage_percent: 45.2,
+                    memory_usage_mb: 3072,
+                    disk_usage_mb: 25600,
+                    gpu_usage_percent: 0.0,
+                    network_io: None,
                 },
-            ])
+                jobs_executed: 425,
+                avg_job_duration_ms: 42000.0,
+                uptime_seconds: 86400,
+            }])
         } else {
             None
         },
@@ -920,10 +951,22 @@ pub async fn get_metrics(
             Some(security_context.user_id),
             Some(security_context.session_id.clone()),
         )
-        .with_details("format".to_string(), serde_json::Value::String(query.format.clone()))
-        .with_details("include_nodes".to_string(), serde_json::Value::Bool(query.include_nodes))
-        .with_details("include_jobs".to_string(), serde_json::Value::Bool(query.include_jobs))
-        .with_details("include_control_plane".to_string(), serde_json::Value::Bool(query.include_control_plane));
+        .with_details(
+            "format".to_string(),
+            serde_json::Value::String(query.format.clone()),
+        )
+        .with_details(
+            "include_nodes".to_string(),
+            serde_json::Value::Bool(query.include_nodes),
+        )
+        .with_details(
+            "include_jobs".to_string(),
+            serde_json::Value::Bool(query.include_jobs),
+        )
+        .with_details(
+            "include_control_plane".to_string(),
+            serde_json::Value::Bool(query.include_control_plane),
+        );
 
         let audit_logger_clone = std::sync::Arc::clone(audit_logger);
         tokio::spawn(async move {

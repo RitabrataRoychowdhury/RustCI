@@ -11,9 +11,9 @@ use std::sync::{Arc, Mutex};
 // bytes imports removed as unused
 // aligned_vec::AVec import removed as unused
 // bytemuck imports removed as unused
+use crate::error::{AppError, Result};
 use memmap2::{MmapMut, MmapOptions};
 use wide::*;
-use crate::error::{AppError, Result};
 
 /// SIMD-aligned buffer for zero-copy operations
 #[derive(Debug)]
@@ -37,11 +37,13 @@ impl SimdBuffer {
         let alignment = 64; // AVX-512 alignment
         let layout = Layout::from_size_align(capacity, alignment)
             .map_err(|e| AppError::InternalServerError(format!("Invalid layout: {}", e)))?;
-        
+
         let data = unsafe {
             let ptr = alloc(layout);
             if ptr.is_null() {
-                return Err(AppError::InternalServerError("Failed to allocate memory".to_string()));
+                return Err(AppError::InternalServerError(
+                    "Failed to allocate memory".to_string(),
+                ));
             }
             NonNull::new_unchecked(ptr)
         };
@@ -56,16 +58,12 @@ impl SimdBuffer {
 
     /// Get a slice of the buffer data
     pub fn as_slice(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(self.data.as_ptr(), self.length)
-        }
+        unsafe { std::slice::from_raw_parts(self.data.as_ptr(), self.length) }
     }
 
     /// Get a mutable slice of the buffer data
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        unsafe {
-            std::slice::from_raw_parts_mut(self.data.as_ptr(), self.capacity)
-        }
+        unsafe { std::slice::from_raw_parts_mut(self.data.as_ptr(), self.capacity) }
     }
 
     /// Set the length of valid data in the buffer
@@ -107,7 +105,9 @@ impl SimdBuffer {
         let new_data = unsafe {
             let ptr = alloc(new_layout);
             if ptr.is_null() {
-                return Err(AppError::InternalServerError("Failed to allocate memory".to_string()));
+                return Err(AppError::InternalServerError(
+                    "Failed to allocate memory".to_string(),
+                ));
             }
             NonNull::new_unchecked(ptr)
         };
@@ -116,11 +116,7 @@ impl SimdBuffer {
         if self.length > 0 {
             let copy_len = self.length.min(new_capacity);
             unsafe {
-                ptr::copy_nonoverlapping(
-                    self.data.as_ptr(),
-                    new_data.as_ptr(),
-                    copy_len
-                );
+                ptr::copy_nonoverlapping(self.data.as_ptr(), new_data.as_ptr(), copy_len);
             }
         }
 
@@ -178,11 +174,11 @@ impl ZeroCopyBufferPool {
     pub fn new() -> Self {
         // Size classes: 1KB, 2KB, 4KB, 8KB, 16KB, 32KB, 64KB, 128KB, 256KB, 512KB, 1MB
         let size_classes = vec![
-            1024, 2048, 4096, 8192, 16384, 32768, 65536,
-            131072, 262144, 524288, 1048576
+            1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576,
         ];
-        
-        let pools = size_classes.iter()
+
+        let pools = size_classes
+            .iter()
             .map(|_| Mutex::new(VecDeque::new()))
             .collect();
 
@@ -220,9 +216,9 @@ impl ZeroCopyBufferPool {
     /// Return a buffer to the pool
     pub fn return_buffer(&self, mut buffer: SimdBuffer) {
         buffer.clear(); // Reset buffer state
-        
+
         let size_class_idx = self.find_size_class(buffer.capacity());
-        
+
         if let Ok(mut pool) = self.pools[size_class_idx].lock() {
             // Limit pool size to prevent unbounded growth
             if pool.len() < 100 {
@@ -241,7 +237,8 @@ impl ZeroCopyBufferPool {
 
     /// Find the appropriate size class for a given size
     fn find_size_class(&self, size: usize) -> usize {
-        self.size_classes.iter()
+        self.size_classes
+            .iter()
             .position(|&class_size| class_size >= size)
             .unwrap_or(self.size_classes.len() - 1)
     }
@@ -288,7 +285,7 @@ impl SimdDataProcessor {
     pub fn simd_xor(&self, a: &[u8], b: &[u8], output: &mut [u8]) -> Result<()> {
         if a.len() != b.len() || a.len() != output.len() {
             return Err(AppError::InternalServerError(
-                "Input arrays must have the same length".to_string()
+                "Input arrays must have the same length".to_string(),
             ));
         }
 
@@ -307,15 +304,15 @@ impl SimdDataProcessor {
                 for j in (0..64).step_by(32) {
                     let mut a_array = [0u8; 32];
                     let mut b_array = [0u8; 32];
-                    a_array.copy_from_slice(&a_chunk[j..j+32]);
-                    b_array.copy_from_slice(&b_chunk[j..j+32]);
-                    
+                    a_array.copy_from_slice(&a_chunk[j..j + 32]);
+                    b_array.copy_from_slice(&b_chunk[j..j + 32]);
+
                     let a_simd = u8x32::new(a_array);
                     let b_simd = u8x32::new(b_array);
                     let result = a_simd ^ b_simd;
-                    
+
                     let result_array: [u8; 32] = result.into();
-                    out_chunk[j..j+32].copy_from_slice(&result_array);
+                    out_chunk[j..j + 32].copy_from_slice(&result_array);
                 }
             }
         }
@@ -338,36 +335,36 @@ impl SimdDataProcessor {
     pub fn simd_copy(&self, src: &[u8], dst: &mut [u8]) -> Result<()> {
         if src.len() != dst.len() {
             return Err(AppError::InternalServerError(
-                "Source and destination must have the same length".to_string()
+                "Source and destination must have the same length".to_string(),
             ));
         }
 
         let len = src.len();
-        
+
         // Use SIMD for large copies
         if len >= 64 {
             let simd_len = len & !63;
-            
+
             for i in (0..simd_len).step_by(64) {
                 unsafe {
                     // Copy 64 bytes at a time using SIMD
                     let src_chunk = std::slice::from_raw_parts(src.as_ptr().add(i), 64);
                     let dst_chunk = std::slice::from_raw_parts_mut(dst.as_mut_ptr().add(i), 64);
-                    
+
                     // Process in 32-byte chunks
                     for j in (0..64).step_by(32) {
                         let mut src_array = [0u8; 32];
-                        src_array.copy_from_slice(&src_chunk[j..j+32]);
+                        src_array.copy_from_slice(&src_chunk[j..j + 32]);
                         let data = u8x32::new(src_array);
                         let data_array: [u8; 32] = data.into();
-                        dst_chunk[j..j+32].copy_from_slice(&data_array);
+                        dst_chunk[j..j + 32].copy_from_slice(&data_array);
                     }
                 }
             }
-            
+
             // Copy remaining bytes
             dst[simd_len..].copy_from_slice(&src[simd_len..]);
-            
+
             let mut stats = self.stats.lock().unwrap();
             stats.simd_operations += (simd_len / 64) as u64;
         } else {
@@ -396,7 +393,7 @@ impl SimdDataProcessor {
                 let mut chunk_array = [0u8; 32];
                 chunk_array.copy_from_slice(chunk);
                 let data_simd = u8x32::new(chunk_array);
-                
+
                 // Sum all bytes in the SIMD register
                 // Use manual reduction since wide crate doesn't have reduce_add
                 let mut sum = 0u64;
@@ -437,13 +434,13 @@ impl SimdDataProcessor {
             if remaining >= 32 {
                 let current_simd = u8x32::splat(current_byte);
                 let chunk_size = (remaining / 32) * 32;
-                
+
                 for chunk_start in (input_pos + 1..input_pos + 1 + chunk_size).step_by(32) {
                     let mut chunk_array = [0u8; 32];
                     chunk_array.copy_from_slice(&input[chunk_start..chunk_start + 32]);
                     let chunk = u8x32::new(chunk_array);
                     let mask = current_simd.cmp_eq(chunk);
-                    
+
                     // Count consecutive matches - simplified approach
                     let mask_array: [u8; 32] = mask.into();
                     let all_match = mask_array.iter().all(|&b| b == 0xFF);
@@ -451,7 +448,8 @@ impl SimdDataProcessor {
                         run_length = run_length.saturating_add(32);
                     } else {
                         // Find first non-match
-                        let first_diff = mask_array.iter().position(|&b| b != 0xFF).unwrap_or(32) as u8;
+                        let first_diff =
+                            mask_array.iter().position(|&b| b != 0xFF).unwrap_or(32) as u8;
                         run_length = run_length.saturating_add(first_diff);
                         break;
                     }
@@ -459,9 +457,10 @@ impl SimdDataProcessor {
             }
 
             // Handle remaining bytes
-            while input_pos + (run_length as usize) < input.len() 
-                && input[input_pos + (run_length as usize)] == current_byte 
-                && run_length < 255 {
+            while input_pos + (run_length as usize) < input.len()
+                && input[input_pos + (run_length as usize)] == current_byte
+                && run_length < 255
+            {
                 run_length += 1;
             }
 
@@ -472,7 +471,9 @@ impl SimdDataProcessor {
                 output_slice[output_pos + 1] = current_byte;
                 output_pos += 2;
             } else {
-                return Err(AppError::InternalServerError("Output buffer too small".to_string()));
+                return Err(AppError::InternalServerError(
+                    "Output buffer too small".to_string(),
+                ));
             }
 
             input_pos += run_length as usize;
@@ -512,8 +513,9 @@ impl ZeroCopyFile {
             .open(path)
             .map_err(|e| AppError::InternalServerError(format!("Failed to open file: {}", e)))?;
 
-        file.set_len(size as u64)
-            .map_err(|e| AppError::InternalServerError(format!("Failed to set file size: {}", e)))?;
+        file.set_len(size as u64).map_err(|e| {
+            AppError::InternalServerError(format!("Failed to set file size: {}", e))
+        })?;
 
         let mmap = unsafe {
             MmapOptions::new()
@@ -536,7 +538,8 @@ impl ZeroCopyFile {
 
     /// Flush changes to disk
     pub fn flush(&self) -> Result<()> {
-        self.mmap.flush()
+        self.mmap
+            .flush()
             .map_err(|e| AppError::InternalServerError(format!("Failed to flush: {}", e)))
     }
 
@@ -558,7 +561,7 @@ impl ZeroCopySerializer {
     /// Create a new zero-copy serializer
     pub fn new(buffer_pool: Arc<ZeroCopyBufferPool>) -> Self {
         let processor = Arc::new(SimdDataProcessor::new(Arc::clone(&buffer_pool)));
-        
+
         Self {
             processor,
             buffer_pool,
@@ -572,7 +575,8 @@ impl ZeroCopySerializer {
             .map_err(|e| AppError::InternalServerError(format!("Serialization failed: {}", e)))?;
 
         let mut buffer = self.buffer_pool.get_buffer(json_bytes.len())?;
-        self.processor.simd_copy(&json_bytes, &mut buffer.as_mut_slice()[..json_bytes.len()])?;
+        self.processor
+            .simd_copy(&json_bytes, &mut buffer.as_mut_slice()[..json_bytes.len()])?;
         buffer.set_length(json_bytes.len());
 
         Ok(buffer)
@@ -581,7 +585,7 @@ impl ZeroCopySerializer {
     /// Deserialize data with zero-copy optimizations
     pub fn deserialize<T: serde::de::DeserializeOwned>(&self, buffer: &SimdBuffer) -> Result<T> {
         let mut json_bytes = buffer.as_slice().to_vec();
-        
+
         simd_json::from_slice(&mut json_bytes)
             .map_err(|e| AppError::InternalServerError(format!("Deserialization failed: {}", e)))
     }
@@ -604,7 +608,7 @@ mod tests {
         let pool = ZeroCopyBufferPool::new();
         let buffer = pool.get_buffer(1024).unwrap();
         assert!(buffer.capacity() >= 1024);
-        
+
         pool.return_buffer(buffer);
         let stats = pool.get_stats();
         assert_eq!(stats.total_allocations, 1);
@@ -614,11 +618,11 @@ mod tests {
     fn test_simd_xor() {
         let pool = Arc::new(ZeroCopyBufferPool::new());
         let processor = SimdDataProcessor::new(pool);
-        
+
         let a = vec![0xFF; 128];
         let b = vec![0x00; 128];
         let mut output = vec![0; 128];
-        
+
         processor.simd_xor(&a, &b, &mut output).unwrap();
         assert_eq!(output, vec![0xFF; 128]);
     }
@@ -627,7 +631,7 @@ mod tests {
     fn test_simd_checksum() {
         let pool = Arc::new(ZeroCopyBufferPool::new());
         let processor = SimdDataProcessor::new(pool);
-        
+
         let data = vec![1u8; 100];
         let checksum = processor.simd_checksum(&data);
         assert_eq!(checksum, 100);

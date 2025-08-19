@@ -510,7 +510,7 @@ pub struct RunnerPoolStats {
 }
 
 /// Performance snapshot for the adapter
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AdapterPerformanceSnapshot {
     pub total_jobs_submitted: u64,
     pub total_jobs_completed: u64,
@@ -556,6 +556,9 @@ pub enum ValkyrieAdapterError {
     
     #[error("Internal error: {0}")]
     Internal(String),
+    
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
 }
 
 impl ValkyrieRunnerAdapter {

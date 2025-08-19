@@ -43,10 +43,10 @@ pub struct FlowControlConfig {
 impl Default for FlowControlConfig {
     fn default() -> Self {
         Self {
-            initial_window_size: 65536,  // 64KB
-            max_window_size: 1048576,    // 1MB
-            min_window_size: 4096,       // 4KB
-            update_threshold: 0.5,       // Update when 50% consumed
+            initial_window_size: 65536, // 64KB
+            max_window_size: 1048576,   // 1MB
+            min_window_size: 4096,      // 4KB
+            update_threshold: 0.5,      // Update when 50% consumed
             adaptive_windowing: true,
             congestion_detection: true,
             timeout: Duration::from_secs(30),
@@ -130,21 +130,14 @@ pub enum WindowAdaptationAlgorithm {
         decrease_factor: f64,
     },
     /// TCP Cubic-like algorithm
-    Cubic {
-        c: f64,
-        beta: f64,
-    },
+    Cubic { c: f64, beta: f64 },
     /// Machine learning based adaptation
     MlBased {
         model_path: String,
         features: Vec<String>,
     },
     /// PID controller based adaptation
-    Pid {
-        kp: f64,
-        ki: f64,
-        kd: f64,
-    },
+    Pid { kp: f64, ki: f64, kd: f64 },
 }
 
 /// Performance sample for adaptation
@@ -194,14 +187,12 @@ impl FlowControlManager {
                 rtt_weight: 0.4,
                 loss_weight: 0.3,
                 bandwidth_weight: 0.3,
-            }
+            },
         ));
-        let window_adapter = Arc::new(WindowAdapter::new(
-            WindowAdaptationAlgorithm::Aimd {
-                increase_factor: 1.0,
-                decrease_factor: 0.5,
-            }
-        ));
+        let window_adapter = Arc::new(WindowAdapter::new(WindowAdaptationAlgorithm::Aimd {
+            increase_factor: 1.0,
+            decrease_factor: 0.5,
+        }));
 
         Self {
             global_config,
@@ -216,7 +207,7 @@ impl FlowControlManager {
     /// Initialize flow control for a stream
     pub fn initialize_stream(&self, stream_id: StreamId, config: &StreamConfig) -> Result<()> {
         let window = Arc::new(Mutex::new(FlowWindow::new(config.flow_window_size)));
-        
+
         {
             let mut windows = self.stream_windows.write().unwrap();
             windows.insert(stream_id, window);
@@ -254,8 +245,10 @@ impl FlowControlManager {
             } else {
                 Err(AppError::FlowControlViolation {
                     stream_id: *stream_id,
-                    details: format!("Insufficient window: need {}, available {}", 
-                                   data_size, window_guard.available),
+                    details: format!(
+                        "Insufficient window: need {}, available {}",
+                        data_size, window_guard.available
+                    ),
                 })
             }
         } else {
@@ -272,12 +265,12 @@ impl FlowControlManager {
         if let Some(window) = windows.get(stream_id) {
             let mut window_guard = window.lock().unwrap();
             window_guard.release(data_size);
-            
+
             // Check if window update is needed
             if window_guard.needs_update() {
                 self.send_window_update(*stream_id, window_guard.size)?;
             }
-            
+
             Ok(())
         } else {
             Err(AppError::StreamError {
@@ -313,14 +306,18 @@ impl FlowControlManager {
             window_guard.size = new_size;
             window_guard.available = new_size;
             window_guard.last_update = Instant::now();
-            
+
             // Update metrics
             {
                 let mut metrics = self.metrics.lock().unwrap();
                 metrics.window_updates_received += 1;
             }
-            
-            tracing::debug!("Received window update for stream {}: {}", stream_id, new_size);
+
+            tracing::debug!(
+                "Received window update for stream {}: {}",
+                stream_id,
+                new_size
+            );
             Ok(())
         } else {
             Err(AppError::StreamError {
@@ -394,12 +391,12 @@ impl CongestionDetector {
     pub fn add_rtt_measurement(&self, rtt: Duration) {
         let mut measurements = self.rtt_measurements.lock().unwrap();
         measurements.push_back(rtt);
-        
+
         // Keep only recent measurements (last 100)
         if measurements.len() > 100 {
             measurements.pop_front();
         }
-        
+
         self.detect_congestion();
     }
 
@@ -407,46 +404,59 @@ impl CongestionDetector {
     pub fn add_bandwidth_measurement(&self, bandwidth: f64) {
         let mut measurements = self.bandwidth_measurements.lock().unwrap();
         measurements.push_back(bandwidth);
-        
+
         // Keep only recent measurements (last 100)
         if measurements.len() > 100 {
             measurements.pop_front();
         }
-        
+
         self.detect_congestion();
     }
 
     /// Detect congestion based on current algorithm
     fn detect_congestion(&self) {
         let congestion_detected = match &self.algorithm {
-            CongestionDetectionAlgorithm::RttBased { baseline_rtt, threshold_multiplier } => {
+            CongestionDetectionAlgorithm::RttBased {
+                baseline_rtt,
+                threshold_multiplier,
+            } => {
                 let measurements = self.rtt_measurements.lock().unwrap();
                 if let Some(latest_rtt) = measurements.back() {
                     *latest_rtt > *baseline_rtt * (*threshold_multiplier as u32)
                 } else {
                     false
                 }
-            },
-            CongestionDetectionAlgorithm::LossBased { loss_threshold: _loss_threshold, window_size: _window_size } => {
+            }
+            CongestionDetectionAlgorithm::LossBased {
+                loss_threshold: _loss_threshold,
+                window_size: _window_size,
+            } => {
                 // Simplified loss detection - would need actual loss data
                 false
-            },
-            CongestionDetectionAlgorithm::BandwidthBased { baseline_bandwidth, threshold_multiplier } => {
+            }
+            CongestionDetectionAlgorithm::BandwidthBased {
+                baseline_bandwidth,
+                threshold_multiplier,
+            } => {
                 let measurements = self.bandwidth_measurements.lock().unwrap();
                 if let Some(latest_bandwidth) = measurements.back() {
                     *latest_bandwidth < *baseline_bandwidth * threshold_multiplier
                 } else {
                     false
                 }
-            },
-            CongestionDetectionAlgorithm::Hybrid { rtt_weight, loss_weight, bandwidth_weight } => {
+            }
+            CongestionDetectionAlgorithm::Hybrid {
+                rtt_weight,
+                loss_weight,
+                bandwidth_weight,
+            } => {
                 // Combine multiple signals
                 let rtt_signal = self.get_rtt_congestion_signal();
                 let bandwidth_signal = self.get_bandwidth_congestion_signal();
-                
+
                 let combined_signal = rtt_signal * rtt_weight + bandwidth_signal * bandwidth_weight;
                 combined_signal > 0.5 // Threshold for combined signal
-            },
+            }
         };
 
         let mut state = self.congestion_state.lock().unwrap();
@@ -467,13 +477,20 @@ impl CongestionDetector {
             return 0.0;
         }
 
-        let recent_avg = measurements.iter().rev().take(10)
+        let recent_avg = measurements
+            .iter()
+            .rev()
+            .take(10)
             .map(|d| d.as_millis() as f64)
-            .sum::<f64>() / 10.0;
-        
-        let baseline_avg = measurements.iter().take(10)
+            .sum::<f64>()
+            / 10.0;
+
+        let baseline_avg = measurements
+            .iter()
+            .take(10)
             .map(|d| d.as_millis() as f64)
-            .sum::<f64>() / 10.0;
+            .sum::<f64>()
+            / 10.0;
 
         if baseline_avg > 0.0 {
             ((recent_avg / baseline_avg) - 1.0).max(0.0).min(1.0)
@@ -525,12 +542,12 @@ impl WindowAdapter {
     pub fn add_sample(&self, sample: PerformanceSample) {
         let mut history = self.performance_history.lock().unwrap();
         history.push_back(sample);
-        
+
         // Keep only recent samples (last 1000)
         if history.len() > 1000 {
             history.pop_front();
         }
-        
+
         self.adapt_window();
     }
 
@@ -542,12 +559,15 @@ impl WindowAdapter {
         }
 
         let mut state = self.adaptation_state.lock().unwrap();
-        
+
         match &self.algorithm {
-            WindowAdaptationAlgorithm::Aimd { increase_factor, decrease_factor } => {
+            WindowAdaptationAlgorithm::Aimd {
+                increase_factor,
+                decrease_factor,
+            } => {
                 let recent_samples: Vec<_> = history.iter().rev().take(10).collect();
                 let congestion_detected = recent_samples.iter().any(|s| s.congestion);
-                
+
                 if congestion_detected {
                     // Multiplicative decrease
                     state.target_window = ((state.current_window as f64) * decrease_factor) as u32;
@@ -557,12 +577,12 @@ impl WindowAdapter {
                     state.target_window = state.current_window + (*increase_factor as u32);
                     state.direction = AdaptationDirection::Increase;
                 }
-            },
+            }
             WindowAdaptationAlgorithm::Cubic { c, beta } => {
                 // Simplified cubic adaptation
                 let recent_samples: Vec<_> = history.iter().rev().take(10).collect();
                 let congestion_detected = recent_samples.iter().any(|s| s.congestion);
-                
+
                 if congestion_detected {
                     state.target_window = ((state.current_window as f64) * beta) as u32;
                     state.direction = AdaptationDirection::Decrease;
@@ -573,25 +593,28 @@ impl WindowAdapter {
                     state.target_window = state.current_window + increase;
                     state.direction = AdaptationDirection::Increase;
                 }
-            },
+            }
             WindowAdaptationAlgorithm::MlBased { .. } => {
                 // ML-based adaptation would require actual ML model
                 // For now, use simple heuristic
                 state.direction = AdaptationDirection::Stable;
-            },
+            }
             WindowAdaptationAlgorithm::Pid { kp, ki, kd } => {
                 // PID controller adaptation
-                let recent_throughput = history.iter().rev().take(5)
+                let recent_throughput = history
+                    .iter()
+                    .rev()
+                    .take(5)
                     .map(|s| s.throughput)
-                    .sum::<f64>() / 5.0;
-                
-                let target_throughput = history.iter().take(10)
-                    .map(|s| s.throughput)
-                    .sum::<f64>() / 10.0;
-                
+                    .sum::<f64>()
+                    / 5.0;
+
+                let target_throughput =
+                    history.iter().take(10).map(|s| s.throughput).sum::<f64>() / 10.0;
+
                 let error = target_throughput - recent_throughput;
                 let adjustment = (error * kp) as i32;
-                
+
                 state.target_window = ((state.current_window as i32) + adjustment).max(4096) as u32;
                 state.direction = if adjustment > 0 {
                     AdaptationDirection::Increase
@@ -600,9 +623,9 @@ impl WindowAdapter {
                 } else {
                     AdaptationDirection::Stable
                 };
-            },
+            }
         }
-        
+
         state.last_adaptation = Instant::now();
     }
 

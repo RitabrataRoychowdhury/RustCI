@@ -7,20 +7,17 @@
 use std::collections::HashMap;
 use std::time::Duration;
 // async_trait removed as it's not used in this simplified version
-use uuid::Uuid;
+use crate::valkyrie::api::config::{ClientAuthMethod, ClientSecurityConfig};
 use crate::valkyrie::api::{
-    ClientConfig, ClientMessage, ClientMessageType,
-    ClientMessagePriority, ClientPayload,
-    ClientStats
+    ClientConfig, ClientMessage, ClientMessagePriority, ClientMessageType, ClientPayload,
+    ClientStats,
 };
-use crate::valkyrie::api::config::{ClientSecurityConfig, ClientAuthMethod};
+use uuid::Uuid;
 
 use crate::valkyrie::{
-    ValkyrieEngine, ValkyrieConfig, ValkyrieMessage as EngineMessage,
-    MessageType as EngineMessageType, MessagePriority as EnginePriority,
-    ConnectionId, 
-    EngineStats,
-    Endpoint
+    ConnectionId, Endpoint, EngineStats, MessagePriority as EnginePriority,
+    MessageType as EngineMessageType, ValkyrieConfig, ValkyrieEngine,
+    ValkyrieMessage as EngineMessage,
 };
 
 use crate::error::Result;
@@ -37,7 +34,7 @@ impl ValkyrieEngineAdapter {
         let engine_config = Self::convert_client_config_to_engine_config(config)?;
         let mut engine = ValkyrieEngine::new(engine_config)?;
         engine.start().await?;
-        
+
         Ok(Self { engine })
     }
 
@@ -120,7 +117,9 @@ impl ValkyrieEngineAdapter {
     }
 
     /// Convert ClientSecurityConfig to SecurityConfig
-    fn convert_security_config(config: ClientSecurityConfig) -> Result<crate::valkyrie::SecurityConfig> {
+    fn convert_security_config(
+        config: ClientSecurityConfig,
+    ) -> Result<crate::valkyrie::SecurityConfig> {
         use crate::valkyrie::*;
 
         let auth_methods = match config.auth_method {
@@ -189,15 +188,21 @@ impl ValkyrieEngineAdapter {
     }
 
     /// Broadcast a message
-    pub async fn broadcast(&self, connection_ids: &[String], message: ClientMessage) -> Result<crate::api::valkyrie::BroadcastResult> {
+    pub async fn broadcast(
+        &self,
+        connection_ids: &[String],
+        message: ClientMessage,
+    ) -> Result<crate::api::valkyrie::BroadcastResult> {
         let engine_message = Self::convert_client_message_to_engine_message(message)?;
         let conn_ids: Result<Vec<ConnectionId>> = connection_ids
             .iter()
             .map(|id| Self::parse_connection_id(id))
             .collect();
-        
+
         let result = self.engine.broadcast(conn_ids?, engine_message).await?;
-        Ok(Self::convert_engine_broadcast_result_to_client_result(result))
+        Ok(Self::convert_engine_broadcast_result_to_client_result(
+            result,
+        ))
     }
 
     // Message handler registration removed for simplicity - can be added back later if needed
@@ -226,13 +231,14 @@ impl ValkyrieEngineAdapter {
         if let Some(pos) = url.find("://") {
             let transport = &url[..pos];
             let address_part = &url[pos + 3..];
-            
+
             if let Some(colon_pos) = address_part.rfind(':') {
                 let address = &address_part[..colon_pos];
                 let port_str = &address_part[colon_pos + 1..];
-                let port: u16 = port_str.parse()
-                    .map_err(|e| crate::error::AppError::ValidationError(format!("Invalid port: {}", e)))?;
-                
+                let port: u16 = port_str.parse().map_err(|e| {
+                    crate::error::AppError::ValidationError(format!("Invalid port: {}", e))
+                })?;
+
                 Ok(Endpoint {
                     address: address.to_string(),
                     port,
@@ -240,16 +246,21 @@ impl ValkyrieEngineAdapter {
                     metadata: std::collections::HashMap::new(),
                 })
             } else {
-                Err(crate::error::AppError::ValidationError("Invalid endpoint URL format".to_string()))
+                Err(crate::error::AppError::ValidationError(
+                    "Invalid endpoint URL format".to_string(),
+                ))
             }
         } else {
-            Err(crate::error::AppError::ValidationError("Invalid endpoint URL format".to_string()))
+            Err(crate::error::AppError::ValidationError(
+                "Invalid endpoint URL format".to_string(),
+            ))
         }
     }
 
     fn parse_connection_id(connection_id: &str) -> Result<ConnectionId> {
-        Uuid::parse_str(connection_id)
-            .map_err(|e| crate::error::AppError::ValidationError(format!("Invalid connection ID: {}", e)))
+        Uuid::parse_str(connection_id).map_err(|e| {
+            crate::error::AppError::ValidationError(format!("Invalid connection ID: {}", e))
+        })
     }
 
     fn create_text_message(text: &str) -> Result<EngineMessage> {
@@ -269,7 +280,9 @@ impl ValkyrieEngineAdapter {
         };
 
         let message_type = match message.message_type {
-            ClientMessageType::Text | ClientMessageType::Json | ClientMessageType::Binary => EngineMessageType::Data,
+            ClientMessageType::Text | ClientMessageType::Json | ClientMessageType::Binary => {
+                EngineMessageType::Data
+            }
             ClientMessageType::Control => EngineMessageType::Control,
             ClientMessageType::Custom(_) => EngineMessageType::Data, // Default to Data for custom types
         };
@@ -281,10 +294,14 @@ impl ValkyrieEngineAdapter {
             ClientMessagePriority::Critical => EnginePriority::Critical,
         };
 
-        let correlation_id = message.correlation_id
+        let correlation_id = message
+            .correlation_id
             .and_then(|id| Uuid::parse_str(&id).ok());
 
-        let mut engine_message = EngineMessage::new(message_type, crate::valkyrie::core::message::MessagePayload::Binary(payload));
+        let mut engine_message = EngineMessage::new(
+            message_type,
+            crate::valkyrie::core::message::MessagePayload::Binary(payload),
+        );
         engine_message.header.priority = priority;
         if let Some(ttl) = message.ttl {
             engine_message = engine_message.with_ttl(ttl);
@@ -295,12 +312,16 @@ impl ValkyrieEngineAdapter {
         Ok(engine_message)
     }
 
-    fn convert_engine_broadcast_result_to_client_result(result: crate::valkyrie::core::engine::BroadcastResult) -> crate::api::valkyrie::BroadcastResult {
+    fn convert_engine_broadcast_result_to_client_result(
+        result: crate::valkyrie::core::engine::BroadcastResult,
+    ) -> crate::api::valkyrie::BroadcastResult {
         crate::api::valkyrie::BroadcastResult {
             total: result.total,
             successful: result.successful,
             failed: result.failed,
-            results: result.results.into_iter()
+            results: result
+                .results
+                .into_iter()
                 .map(|(k, v)| (k.to_string(), v))
                 .collect(),
         }
@@ -309,7 +330,7 @@ impl ValkyrieEngineAdapter {
     fn convert_engine_stats_to_client_stats(stats: EngineStats) -> ClientStats {
         ClientStats {
             engine_stats: stats,
-            active_connections: 0, // Would be populated from engine
+            active_connections: 0,  // Would be populated from engine
             handlers_registered: 0, // Would be populated from engine
         }
     }
@@ -340,9 +361,10 @@ mod tests {
     #[test]
     fn test_message_conversion() {
         let client_message = ClientMessage::text("Hello, World!");
-        let result = ValkyrieEngineAdapter::convert_client_message_to_engine_message(client_message);
+        let result =
+            ValkyrieEngineAdapter::convert_client_message_to_engine_message(client_message);
         assert!(result.is_ok());
-        
+
         let engine_message = result.unwrap();
         assert_eq!(engine_message.payload, b"Hello, World!");
     }

@@ -46,7 +46,11 @@ pub async fn enhanced_auth(
             req.headers()
                 .get(header::AUTHORIZATION)
                 .and_then(|auth_header| auth_header.to_str().ok())
-                .and_then(|auth_value| auth_value.strip_prefix("Bearer ").map(|stripped| stripped.to_owned()))
+                .and_then(|auth_value| {
+                    auth_value
+                        .strip_prefix("Bearer ")
+                        .map(|stripped| stripped.to_owned())
+                })
         });
 
     let token = token.ok_or_else(|| {
@@ -141,7 +145,11 @@ pub async fn auth(
             req.headers()
                 .get(header::AUTHORIZATION)
                 .and_then(|auth_header| auth_header.to_str().ok())
-                .and_then(|auth_value| auth_value.strip_prefix("Bearer ").map(|stripped| stripped.to_owned()))
+                .and_then(|auth_value| {
+                    auth_value
+                        .strip_prefix("Bearer ")
+                        .map(|stripped| stripped.to_owned())
+                })
         });
 
     let token = token.ok_or_else(|| {

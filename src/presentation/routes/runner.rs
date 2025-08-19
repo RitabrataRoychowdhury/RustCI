@@ -21,6 +21,9 @@ pub fn runner_router() -> Router<AppState> {
         // Job management endpoints
         .route("/:runner_id/jobs", post(trigger_job_on_runner))
         .route("/:runner_id/jobs/:job_id/logs", get(fetch_job_logs))
-        .route("/:runner_id/jobs/:job_id/artifacts", get(fetch_job_artifacts))
-        // Authentication middleware will be applied at the parent router level
+        .route(
+            "/:runner_id/jobs/:job_id/artifacts",
+            get(fetch_job_artifacts),
+        )
+    // Authentication middleware will be applied at the parent router level
 }

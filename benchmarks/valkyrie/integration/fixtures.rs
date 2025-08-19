@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use rustci::config::valkyrie::ValkyrieConfig;
-use rustci::core::networking::valkyrie::message::{ValkyrieMessage, MessageType};
+use rustci::core::networking::valkyrie::message::{MessageType, ValkyrieMessage};
 use rustci::core::networking::valkyrie::transport::TransportType;
 
 /// Test fixtures for Valkyrie Protocol testing
@@ -62,32 +62,42 @@ impl TestFixtures {
         let mut messages = HashMap::new();
 
         // Small message
-        messages.insert("small", ValkyrieMessage {
-            header: Default::default(),
-            payload: b"Hello, Valkyrie!".to_vec(),
-            signature: None,
-            trace_context: None,
-        });
+        messages.insert(
+            "small",
+            ValkyrieMessage {
+                header: Default::default(),
+                payload: b"Hello, Valkyrie!".to_vec(),
+                signature: None,
+                trace_context: None,
+            },
+        );
 
         // Large message (1MB)
-        messages.insert("large", ValkyrieMessage {
-            header: Default::default(),
-            payload: vec![0u8; 1024 * 1024],
-            signature: None,
-            trace_context: None,
-        });
+        messages.insert(
+            "large",
+            ValkyrieMessage {
+                header: Default::default(),
+                payload: vec![0u8; 1024 * 1024],
+                signature: None,
+                trace_context: None,
+            },
+        );
 
         // Job request message
-        messages.insert("job_request", ValkyrieMessage {
-            header: Default::default(),
-            payload: serde_json::to_vec(&serde_json::json!({
-                "job_id": "test-job-123",
-                "pipeline": "test-pipeline",
-                "steps": ["build", "test", "deploy"]
-            })).unwrap(),
-            signature: None,
-            trace_context: None,
-        });
+        messages.insert(
+            "job_request",
+            ValkyrieMessage {
+                header: Default::default(),
+                payload: serde_json::to_vec(&serde_json::json!({
+                    "job_id": "test-job-123",
+                    "pipeline": "test-pipeline",
+                    "steps": ["build", "test", "deploy"]
+                }))
+                .unwrap(),
+                signature: None,
+                trace_context: None,
+            },
+        );
 
         messages
     }
@@ -220,31 +230,25 @@ impl TestEnvironment {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let temp_dir = tempfile::tempdir()?;
         let config = TestFixtures::minimal_config();
-        
-        Ok(TestEnvironment {
-            config,
-            temp_dir,
-        })
+
+        Ok(TestEnvironment { config, temp_dir })
     }
 
     /// Create a secure test environment with certificates
     pub fn new_secure() -> Result<Self, Box<dyn std::error::Error>> {
         let temp_dir = tempfile::tempdir()?;
         let mut config = TestFixtures::secure_config();
-        
+
         // Generate test certificates
         let cert_path = temp_dir.path().join("test-cert.pem");
         let key_path = temp_dir.path().join("test-key.pem");
-        
+
         Self::generate_test_certificates(&cert_path, &key_path)?;
-        
+
         config.tls_cert_path = Some(cert_path.to_string_lossy().to_string());
         config.tls_key_path = Some(key_path.to_string_lossy().to_string());
-        
-        Ok(TestEnvironment {
-            config,
-            temp_dir,
-        })
+
+        Ok(TestEnvironment { config, temp_dir })
     }
 
     /// Generate test certificates for secure testing
@@ -254,8 +258,14 @@ impl TestEnvironment {
     ) -> Result<(), Box<dyn std::error::Error>> {
         // This is a simplified certificate generation for testing
         // In a real implementation, you would use a proper certificate generation library
-        std::fs::write(cert_path, "-----BEGIN CERTIFICATE-----\nTEST_CERT\n-----END CERTIFICATE-----")?;
-        std::fs::write(key_path, "-----BEGIN PRIVATE KEY-----\nTEST_KEY\n-----END PRIVATE KEY-----")?;
+        std::fs::write(
+            cert_path,
+            "-----BEGIN CERTIFICATE-----\nTEST_CERT\n-----END CERTIFICATE-----",
+        )?;
+        std::fs::write(
+            key_path,
+            "-----BEGIN PRIVATE KEY-----\nTEST_KEY\n-----END PRIVATE KEY-----",
+        )?;
         Ok(())
     }
 }

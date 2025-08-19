@@ -1,7 +1,7 @@
 //! Transport endpoint definitions
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Transport endpoint definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,7 +26,7 @@ impl Endpoint {
             metadata: HashMap::new(),
         }
     }
-    
+
     /// Create a new WebSocket endpoint
     pub fn websocket(address: &str, port: u16) -> Self {
         Self {
@@ -36,7 +36,7 @@ impl Endpoint {
             metadata: HashMap::new(),
         }
     }
-    
+
     /// Create a new Unix socket endpoint
     pub fn unix_socket(path: &str) -> Self {
         Self {
@@ -78,7 +78,7 @@ impl From<&str> for TransportType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_endpoint_creation() {
         let endpoint = Endpoint::tcp("localhost", 8080);
@@ -86,7 +86,7 @@ mod tests {
         assert_eq!(endpoint.port, 8080);
         assert_eq!(endpoint.transport, "tcp");
     }
-    
+
     #[test]
     fn test_transport_type_conversion() {
         assert_eq!(TransportType::from("tcp"), TransportType::Tcp);

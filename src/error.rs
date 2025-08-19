@@ -129,9 +129,6 @@ pub enum AppError {
     #[error("Event handling failed: {event_type} - {handler}")]
     EventHandlingError { event_type: String, handler: String },
 
-    #[error("Configuration error: {key} - {message}")]
-    ConfigurationError { key: String, message: String },
-
     #[error("Rate limit exceeded: {limit} requests per {window}")]
     RateLimitExceeded { limit: u32, window: String },
 
@@ -212,6 +209,18 @@ pub enum AppError {
 
     #[error("Unsupported adapter: {0}")]
     UnsupportedAdapter(String),
+
+    #[error("No suitable adapter: {0}")]
+    NoSuitableAdapter(String),
+
+    #[error("Adapter initialization failed: {0}")]
+    AdapterInitializationFailed(String),
+
+    #[error("Invalid configuration: {0}")]
+    InvalidConfiguration(String),
+
+    #[error("Incompatible version: {0}")]
+    IncompatibleVersion(String),
 
     #[error("Metrics not available: {0}")]
     MetricsNotAvailable(String),
@@ -325,10 +334,7 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Event handling failed: {} - {}", event_type, handler),
             ),
-            AppError::ConfigurationError { key, message } => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Configuration error: {} - {}", key, message),
-            ),
+            AppError::ConfigurationError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             AppError::RateLimitExceeded { limit, window } => (
                 StatusCode::TOO_MANY_REQUESTS,
                 format!("Rate limit exceeded: {} requests per {}", limit, window),

@@ -3,9 +3,9 @@
 //! This module provides lock-free stack implementations using the Treiber stack algorithm
 //! and elimination-based optimizations for high contention scenarios.
 
-use super::{LockFreeMetrics, LockFreeConfig, CacheLinePadded, HazardPointer};
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use super::{CacheLinePadded, HazardPointer, LockFreeConfig, LockFreeMetrics};
 use std::ptr;
+use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 
 /// Errors that can occur during stack operations
 #[derive(Debug, thiserror::Error)]
@@ -65,31 +65,31 @@ impl<T> StackNode<T> {
 pub trait LockFreeStack<T>: Send + Sync {
     /// Push an item onto the stack
     fn push(&self, item: T) -> Result<(), StackError>;
-    
+
     /// Pop an item from the stack
     fn pop(&self) -> Result<T, StackError>;
-    
+
     /// Try to push without blocking
     fn try_push(&self, item: T) -> Result<(), StackError>;
-    
+
     /// Try to pop without blocking
     fn try_pop(&self) -> Result<T, StackError>;
-    
+
     /// Check if stack is empty
     fn is_empty(&self) -> bool;
-    
+
     /// Get current size (approximate)
     fn len(&self) -> usize;
-    
+
     /// Get stack statistics
     fn stats(&self) -> StackStats;
-    
+
     /// Clear all items from the stack
     fn clear(&self);
 }
 
 /// Treiber stack - classic lock-free stack implementation
-pub struct TreiberStack<T> 
+pub struct TreiberStack<T>
 where
     T: Send + Sync,
 {
@@ -112,7 +112,7 @@ where
     /// Create a new Treiber stack
     pub fn new(config: LockFreeConfig) -> Self {
         let num_threads = num_cpus::get() * 2; // Estimate for hazard pointers
-        
+
         Self {
             head: CacheLinePadded::new(AtomicPtr::new(ptr::null_mut())),
             config,
@@ -137,9 +137,8 @@ where
     /// Safely reclaim memory for a node
     fn reclaim_node(&self, node: *mut StackNode<T>) {
         // Check if any hazard pointer is protecting this node
-        let is_protected = self.hazard_pointers.iter()
-            .any(|hp| hp.is_protected(node));
-        
+        let is_protected = self.hazard_pointers.iter().any(|hp| hp.is_protected(node));
+
         if !is_protected {
             unsafe {
                 let _ = Box::from_raw(node);
@@ -157,7 +156,9 @@ impl<T: Send + Sync> LockFreeStack<T> for TreiberStack<T> {
 
         loop {
             if retries >= self.config.max_retries {
-                unsafe { let _ = Box::from_raw(new_node); }
+                unsafe {
+                    let _ = Box::from_raw(new_node);
+                }
                 self.metrics.record_failure();
                 return Err(StackError::MaxRetriesExceeded { retries });
             }
@@ -215,12 +216,9 @@ impl<T: Send + Sync> LockFreeStack<T> for TreiberStack<T> {
 
             let next = unsafe { (*head).next.load(Ordering::Acquire) };
 
-            let cas_result = self.head.compare_exchange_weak(
-                head,
-                next,
-                Ordering::Release,
-                Ordering::Relaxed,
-            );
+            let cas_result =
+                self.head
+                    .compare_exchange_weak(head, next, Ordering::Release, Ordering::Relaxed);
 
             self.metrics.record_cas(cas_result.is_ok());
 
@@ -240,18 +238,15 @@ impl<T: Send + Sync> LockFreeStack<T> for TreiberStack<T> {
 
     fn try_push(&self, item: T) -> Result<(), StackError> {
         let new_node = Box::into_raw(Box::new(StackNode::new(item)));
-        
+
         let head = self.head.load(Ordering::Acquire);
         unsafe {
             (*new_node).next.store(head, Ordering::Relaxed);
         }
 
-        let cas_result = self.head.compare_exchange(
-            head,
-            new_node,
-            Ordering::Release,
-            Ordering::Relaxed,
-        );
+        let cas_result =
+            self.head
+                .compare_exchange(head, new_node, Ordering::Release, Ordering::Relaxed);
 
         self.metrics.record_cas(cas_result.is_ok());
 
@@ -260,7 +255,9 @@ impl<T: Send + Sync> LockFreeStack<T> for TreiberStack<T> {
             self.metrics.record_success();
             Ok(())
         } else {
-            unsafe { let _ = Box::from_raw(new_node); }
+            unsafe {
+                let _ = Box::from_raw(new_node);
+            }
             self.metrics.record_failure();
             Err(StackError::MaxRetriesExceeded { retries: 1 })
         }
@@ -284,12 +281,9 @@ impl<T: Send + Sync> LockFreeStack<T> for TreiberStack<T> {
 
         let next = unsafe { (*head).next.load(Ordering::Acquire) };
 
-        let cas_result = self.head.compare_exchange(
-            head,
-            next,
-            Ordering::Release,
-            Ordering::Relaxed,
-        );
+        let cas_result =
+            self.head
+                .compare_exchange(head, next, Ordering::Release, Ordering::Relaxed);
 
         self.metrics.record_cas(cas_result.is_ok());
 
@@ -333,7 +327,7 @@ impl<T: Send + Sync> LockFreeStack<T> for TreiberStack<T> {
     }
 }
 
-impl<T> Drop for TreiberStack<T> 
+impl<T> Drop for TreiberStack<T>
 where
     T: Send + Sync,
 {
@@ -346,7 +340,7 @@ unsafe impl<T: Send + Sync> Send for TreiberStack<T> {}
 unsafe impl<T: Send + Sync> Sync for TreiberStack<T> {}
 
 /// Elimination-based stack for high contention scenarios
-pub struct EliminationStack<T> 
+pub struct EliminationStack<T>
 where
     T: Send + Sync,
 {
@@ -390,9 +384,11 @@ where
     /// Create a new elimination stack
     pub fn new(config: LockFreeConfig, elimination_array_size: usize) -> Self {
         let elimination_array = (0..elimination_array_size)
-            .map(|_| CacheLinePadded::new(AtomicPtr::new(
-                Box::into_raw(Box::new(EliminationSlot::new()))
-            )))
+            .map(|_| {
+                CacheLinePadded::new(AtomicPtr::new(Box::into_raw(Box::new(
+                    EliminationSlot::new(),
+                ))))
+            })
             .collect();
 
         Self {
@@ -406,24 +402,28 @@ where
     /// Try to eliminate a push operation with a pop operation
     fn try_eliminate_push(&self, item: T) -> Result<(), T> {
         self.elimination_attempts.fetch_add(1, Ordering::Relaxed);
-        
+
         // Choose a random slot
         let slot_index = fastrand::usize(0..self.elimination_array.len());
         let slot_ptr = self.elimination_array[slot_index].load(Ordering::Acquire);
-        
+
         if slot_ptr.is_null() {
             return Err(item);
         }
 
         let slot = unsafe { &*slot_ptr };
-        
+
         // Try to find a waiting pop operation
-        if slot.operation.compare_exchange(
-            2, // pop operation
-            0, // mark as completed
-            Ordering::AcqRel,
-            Ordering::Relaxed,
-        ).is_ok() {
+        if slot
+            .operation
+            .compare_exchange(
+                2, // pop operation
+                0, // mark as completed
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            )
+            .is_ok()
+        {
             // Successfully paired with a pop operation
             // The pop operation will take our item
             self.successful_eliminations.fetch_add(1, Ordering::Relaxed);
@@ -436,24 +436,28 @@ where
     /// Try to eliminate a pop operation with a push operation
     fn try_eliminate_pop(&self) -> Result<T, ()> {
         self.elimination_attempts.fetch_add(1, Ordering::Relaxed);
-        
+
         // Choose a random slot
         let slot_index = fastrand::usize(0..self.elimination_array.len());
         let slot_ptr = self.elimination_array[slot_index].load(Ordering::Acquire);
-        
+
         if slot_ptr.is_null() {
             return Err(());
         }
 
         let slot = unsafe { &*slot_ptr };
-        
+
         // Try to find a waiting push operation
-        if slot.operation.compare_exchange(
-            1, // push operation
-            0, // mark as completed
-            Ordering::AcqRel,
-            Ordering::Relaxed,
-        ).is_ok() {
+        if slot
+            .operation
+            .compare_exchange(
+                1, // push operation
+                0, // mark as completed
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            )
+            .is_ok()
+        {
             // Successfully paired with a push operation
             self.successful_eliminations.fetch_add(1, Ordering::Relaxed);
             // In a real implementation, we'd extract the data from the push operation
@@ -486,7 +490,7 @@ impl<T: Send + Sync> LockFreeStack<T> for EliminationStack<T> {
             self.core_stack.metrics.record_success();
             return Ok(item);
         }
-        
+
         // Elimination failed, use core stack
         self.core_stack.pop()
     }
@@ -527,13 +531,13 @@ impl<T: Send + Sync> LockFreeStack<T> for EliminationStack<T> {
     }
 }
 
-impl<T> Drop for EliminationStack<T> 
+impl<T> Drop for EliminationStack<T>
 where
     T: Send + Sync,
 {
     fn drop(&mut self) {
         self.clear();
-        
+
         // Clean up elimination array
         for slot_ptr in &self.elimination_array {
             let ptr = slot_ptr.load(Ordering::Acquire);
@@ -558,21 +562,21 @@ mod tests {
     #[test]
     fn test_treiber_stack_basic_operations() {
         let stack = TreiberStack::new(LockFreeConfig::default());
-        
+
         // Test push
         assert!(stack.push(1).is_ok());
         assert!(stack.push(2).is_ok());
         assert!(stack.push(3).is_ok());
         assert_eq!(stack.len(), 3);
         assert!(!stack.is_empty());
-        
+
         // Test pop (LIFO order)
         assert_eq!(stack.pop().unwrap(), 3);
         assert_eq!(stack.pop().unwrap(), 2);
         assert_eq!(stack.pop().unwrap(), 1);
         assert_eq!(stack.len(), 0);
         assert!(stack.is_empty());
-        
+
         // Test empty pop
         assert!(matches!(stack.pop(), Err(StackError::Empty)));
     }
@@ -582,9 +586,9 @@ mod tests {
         let stack = Arc::new(TreiberStack::new(LockFreeConfig::default()));
         let num_threads = 8;
         let items_per_thread = 100;
-        
+
         let mut handles = Vec::new();
-        
+
         // Spawn threads that push items
         for thread_id in 0..num_threads {
             let stack_clone = Arc::clone(&stack);
@@ -598,21 +602,21 @@ mod tests {
             });
             handles.push(handle);
         }
-        
+
         // Wait for all pushes to complete
         for handle in handles {
             handle.join().unwrap();
         }
-        
+
         // Verify all items are in the stack
         assert_eq!(stack.len(), num_threads * items_per_thread);
-        
+
         // Pop all items
         let mut popped_items = Vec::new();
         while let Ok(item) = stack.pop() {
             popped_items.push(item);
         }
-        
+
         assert_eq!(popped_items.len(), num_threads * items_per_thread);
         assert!(stack.is_empty());
     }
@@ -620,12 +624,12 @@ mod tests {
     #[test]
     fn test_elimination_stack_basic() {
         let stack = EliminationStack::new(LockFreeConfig::default(), 16);
-        
+
         // Basic operations should work like regular stack
         assert!(stack.push(1).is_ok());
         assert!(stack.push(2).is_ok());
         assert_eq!(stack.len(), 2);
-        
+
         assert_eq!(stack.pop().unwrap(), 2);
         assert_eq!(stack.pop().unwrap(), 1);
         assert!(stack.is_empty());
@@ -634,18 +638,18 @@ mod tests {
     #[test]
     fn test_stack_stats() {
         let stack = TreiberStack::new(LockFreeConfig::default());
-        
+
         let initial_stats = stack.stats();
         assert_eq!(initial_stats.size, 0);
         assert_eq!(initial_stats.capacity, 0); // Unbounded
-        
+
         stack.push(1).unwrap();
         stack.push(2).unwrap();
-        
+
         let stats = stack.stats();
         assert_eq!(stats.size, 2);
         assert!(stats.pushes >= 2);
-        
+
         stack.pop().unwrap();
         let stats = stack.stats();
         assert_eq!(stats.size, 1);
@@ -654,15 +658,15 @@ mod tests {
     #[test]
     fn test_try_operations() {
         let stack = TreiberStack::new(LockFreeConfig::default());
-        
+
         // try_push should work
         assert!(stack.try_push(42).is_ok());
         assert_eq!(stack.len(), 1);
-        
+
         // try_pop should work
         assert_eq!(stack.try_pop().unwrap(), 42);
         assert!(stack.is_empty());
-        
+
         // try_pop on empty stack should fail
         assert!(matches!(stack.try_pop(), Err(StackError::Empty)));
     }

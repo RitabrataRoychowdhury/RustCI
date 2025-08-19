@@ -4,48 +4,38 @@
 //! high-performance requirements. These structures enable concurrent access without
 //! traditional locking mechanisms, reducing contention and improving scalability.
 
-pub mod queue;
-pub mod stack;
-pub mod map;
-pub mod ring_buffer;
 pub mod counter;
+pub mod map;
 pub mod pool;
+pub mod queue;
 pub mod registry;
+pub mod ring_buffer;
+pub mod stack;
 
 // Re-export main components
 pub use queue::{
-    LockFreeQueue, QueueStats, QueueError, QueueNode,
-    MpscQueue, SpscQueue, MpmcQueue
+    LockFreeQueue, MpmcQueue, MpscQueue, QueueError, QueueNode, QueueStats, SpscQueue,
 };
 
-pub use stack::{
-    LockFreeStack, StackStats, StackError, StackNode,
-    TreiberStack, EliminationStack
-};
+pub use stack::{EliminationStack, LockFreeStack, StackError, StackNode, StackStats, TreiberStack};
 
-pub use map::{
-    LockFreeMap, MapStats, MapError, MapEntry,
-    ConcurrentHashMap, SkipListMap
-};
+pub use map::{ConcurrentHashMap, LockFreeMap, MapEntry, MapError, MapStats, SkipListMap};
 
 pub use ring_buffer::{
-    LockFreeRingBuffer, RingBufferStats, RingBufferError,
-    SpscRingBuffer, MpmcRingBuffer
+    LockFreeRingBuffer, MpmcRingBuffer, RingBufferError, RingBufferStats, SpscRingBuffer,
 };
 
 pub use counter::{
-    AtomicCounter, CounterStats, CounterError,
-    RelaxedCounter, SeqCstCounter, AcqRelCounter
+    AcqRelCounter, AtomicCounter, CounterError, CounterStats, RelaxedCounter, SeqCstCounter,
 };
 
 pub use pool::{
-    LockFreePool, PoolStats, PoolError, PoolNode,
-    ObjectPool, BufferPool, ConnectionPool
+    BufferPool, ConnectionPool, LockFreePool, ObjectPool, PoolError, PoolNode, PoolStats,
 };
 
 pub use registry::{
-    LockFreeRegistry, RegistryStats, RegistryError,
-    NodeRegistry, ServiceRegistry, ConnectionRegistry
+    ConnectionRegistry, LockFreeRegistry, NodeRegistry, RegistryError, RegistryStats,
+    ServiceRegistry,
 };
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -236,15 +226,26 @@ impl BackoffStrategy {
         match self {
             BackoffStrategy::None => Duration::ZERO,
             BackoffStrategy::Fixed(delay) => *delay,
-            BackoffStrategy::Linear { initial_delay, increment, max_delay } => {
+            BackoffStrategy::Linear {
+                initial_delay,
+                increment,
+                max_delay,
+            } => {
                 let delay = *initial_delay + *increment * attempt as u32;
                 delay.min(*max_delay)
             }
-            BackoffStrategy::Exponential { initial_delay, max_delay, multiplier } => {
+            BackoffStrategy::Exponential {
+                initial_delay,
+                max_delay,
+                multiplier,
+            } => {
                 let delay = initial_delay.as_nanos() as f64 * multiplier.powi(attempt as i32);
                 Duration::from_nanos(delay as u64).min(*max_delay)
             }
-            BackoffStrategy::Jitter { base_delay, max_jitter } => {
+            BackoffStrategy::Jitter {
+                base_delay,
+                max_jitter,
+            } => {
                 let jitter = Duration::from_nanos(fastrand::u64(0..max_jitter.as_nanos() as u64));
                 *base_delay + jitter
             }
@@ -350,22 +351,28 @@ mod tests {
     #[test]
     fn test_memory_ordering_conversion() {
         assert_eq!(Ordering::from(MemoryOrdering::Relaxed), Ordering::Relaxed);
-        assert_eq!(Ordering::from(MemoryOrdering::AcquireRelease), Ordering::AcqRel);
-        assert_eq!(Ordering::from(MemoryOrdering::SequentiallyConsistent), Ordering::SeqCst);
+        assert_eq!(
+            Ordering::from(MemoryOrdering::AcquireRelease),
+            Ordering::AcqRel
+        );
+        assert_eq!(
+            Ordering::from(MemoryOrdering::SequentiallyConsistent),
+            Ordering::SeqCst
+        );
     }
 
     #[test]
     fn test_metrics_success_rate() {
         let metrics = LockFreeMetrics::default();
-        
+
         // Initially 100% success rate (no operations)
         assert_eq!(metrics.success_rate(), 100.0);
-        
+
         // Record some operations
         metrics.record_success();
         metrics.record_success();
         metrics.record_failure();
-        
+
         // Should be 66.67% success rate (2/3)
         let rate = metrics.success_rate();
         assert!((rate - 66.67).abs() < 0.1);
@@ -400,11 +407,11 @@ mod tests {
         let hazard = HazardPointer::<u64>::new();
         let value = 42u64;
         let ptr = &value as *const u64;
-        
+
         hazard.protect(ptr);
         assert!(hazard.is_protected(ptr));
         assert_eq!(hazard.get(), ptr);
-        
+
         hazard.clear();
         assert!(!hazard.is_protected(ptr));
         assert_eq!(hazard.get(), std::ptr::null());

@@ -1,14 +1,14 @@
 //! Bandwidth Allocation and Management System
-//! 
+//!
 //! Implements intelligent bandwidth allocation with QoS guarantees, adaptive
 //! throttling, and fair resource distribution across different message classes.
 
+use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, Semaphore};
-use dashmap::DashMap;
-use tracing::{info, error};
+use tracing::{error, info};
 
 use super::QoSClass;
 use crate::core::networking::valkyrie::adapters::*;
@@ -305,11 +305,11 @@ pub struct BandwidthAllocation {
 impl Default for BandwidthConfig {
     fn default() -> Self {
         let mut class_ratios = HashMap::new();
-        class_ratios.insert(QoSClass::Critical, 0.3);      // 30% for critical
-        class_ratios.insert(QoSClass::System, 0.25);       // 25% for system
+        class_ratios.insert(QoSClass::Critical, 0.3); // 30% for critical
+        class_ratios.insert(QoSClass::System, 0.25); // 25% for system
         class_ratios.insert(QoSClass::JobExecution, 0.25); // 25% for job execution
         class_ratios.insert(QoSClass::DataTransfer, 0.15); // 15% for data transfer
-        class_ratios.insert(QoSClass::LogsMetrics, 0.05);  // 5% for logs/metrics
+        class_ratios.insert(QoSClass::LogsMetrics, 0.05); // 5% for logs/metrics
 
         Self {
             total_bandwidth: 1_000_000_000, // 1 Gbps
@@ -383,18 +383,22 @@ impl BandwidthAllocator {
         let start_time = Instant::now();
 
         // Check if class allocation exists
-        let class_allocation = self.class_allocations.get(&qos_class)
-            .ok_or_else(|| ValkyrieError::InvalidQoSClass(format!("Unknown QoS class: {:?}", qos_class)))?;
+        let class_allocation = self.class_allocations.get(&qos_class).ok_or_else(|| {
+            ValkyrieError::InvalidQoSClass(format!("Unknown QoS class: {:?}", qos_class))
+        })?;
 
         // Calculate available bandwidth for this class
-        let available_bandwidth = self.calculate_available_bandwidth(&class_allocation).await?;
+        let available_bandwidth = self
+            .calculate_available_bandwidth(&class_allocation)
+            .await?;
 
         // Determine actual allocation
         let allocated_bandwidth = std::cmp::min(requested_bandwidth, available_bandwidth);
 
         // Check for congestion and apply throttling if needed
         let (final_bandwidth, throttling_applied) = if self.config.throttling_enabled {
-            self.apply_throttling(stream_id, qos_class, allocated_bandwidth).await?
+            self.apply_throttling(stream_id, qos_class, allocated_bandwidth)
+                .await?
         } else {
             (allocated_bandwidth, false)
         };
@@ -415,7 +419,8 @@ impl BandwidthAllocator {
         self.stream_allocations.insert(stream_id, stream_allocation);
 
         // Update class usage
-        self.update_class_usage(&class_allocation, final_bandwidth).await;
+        self.update_class_usage(&class_allocation, final_bandwidth)
+            .await;
 
         // Update metrics
         self.update_allocation_metrics(start_time.elapsed()).await;
@@ -456,8 +461,12 @@ impl BandwidthAllocator {
         requested_bandwidth: u64,
     ) -> Result<(u64, bool)> {
         // Check for congestion
-        let congestion_state = self.throttling_manager.congestion_detector
-            .congestion_state.read().await;
+        let congestion_state = self
+            .throttling_manager
+            .congestion_detector
+            .congestion_state
+            .read()
+            .await;
 
         if !congestion_state.congested {
             return Ok((requested_bandwidth, false));
@@ -465,11 +474,14 @@ impl BandwidthAllocator {
 
         // Get throttling policy for QoS class
         if let Some(policy) = self.throttling_manager.policies.get(&qos_class) {
-            let throttling_rate = self.calculate_throttling_rate(&policy, &congestion_state).await;
+            let throttling_rate = self
+                .calculate_throttling_rate(&policy, &congestion_state)
+                .await;
             let throttled_bandwidth = (requested_bandwidth as f64 * throttling_rate) as u64;
 
             // Create or update throttling session
-            self.create_throttling_session(stream_id, throttling_rate).await;
+            self.create_throttling_session(stream_id, throttling_rate)
+                .await;
 
             Ok((throttled_bandwidth, true))
         } else {
@@ -485,10 +497,10 @@ impl BandwidthAllocator {
     ) -> f64 {
         let base_rate = policy.throttling_rate;
         let congestion_factor = congestion_state.level;
-        
+
         // Adjust throttling rate based on congestion severity
         let adjusted_rate = base_rate * (1.0 - congestion_factor * 0.5);
-        
+
         // Ensure minimum throttling rate
         adjusted_rate.max(policy.min_throttling_rate)
     }
@@ -504,7 +516,9 @@ impl BandwidthAllocator {
             adjustment_history: Vec::new(),
         };
 
-        self.throttling_manager.active_throttling.insert(stream_id, session);
+        self.throttling_manager
+            .active_throttling
+            .insert(stream_id, session);
     }
 
     /// Update class bandwidth usage
@@ -521,9 +535,11 @@ impl BandwidthAllocator {
     pub async fn release_bandwidth(&self, stream_id: StreamId) -> Result<()> {
         if let Some((_, stream_allocation)) = self.stream_allocations.remove(&stream_id) {
             // Update class usage
-            if let Some(class_allocation) = self.class_allocations.get(&stream_allocation.qos_class) {
+            if let Some(class_allocation) = self.class_allocations.get(&stream_allocation.qos_class)
+            {
                 let mut current_usage = class_allocation.current_usage.write().await;
-                *current_usage = current_usage.saturating_sub(stream_allocation.allocated_bandwidth);
+                *current_usage =
+                    current_usage.saturating_sub(stream_allocation.allocated_bandwidth);
             }
 
             // Remove throttling session if exists
@@ -569,7 +585,9 @@ impl BandwidthAllocator {
             self.stream_allocations.insert(stream_id, allocation);
 
             // Track usage globally
-            self.usage_tracker.record_usage(stream_allocation.qos_class, bytes_transferred, duration).await;
+            self.usage_tracker
+                .record_usage(stream_allocation.qos_class, bytes_transferred, duration)
+                .await;
         }
 
         Ok(())
@@ -578,35 +596,41 @@ impl BandwidthAllocator {
     /// Get bandwidth metrics
     pub async fn metrics(&self) -> BandwidthMetrics {
         let mut metrics = self.metrics.read().await.clone();
-        
+
         // Update real-time metrics
         metrics.active_streams = self.stream_allocations.len();
-        
+
         // Calculate total utilization
         let total_bandwidth = *self.total_bandwidth.read().await;
         let mut total_used = 0u64;
-        
+
         for class_allocation in self.class_allocations.iter() {
             let usage = *class_allocation.current_usage.read().await;
             total_used += usage;
-            metrics.class_utilization.insert(class_allocation.qos_class, 
-                usage as f64 / class_allocation.guaranteed_bandwidth as f64);
+            metrics.class_utilization.insert(
+                class_allocation.qos_class,
+                usage as f64 / class_allocation.guaranteed_bandwidth as f64,
+            );
         }
-        
+
         metrics.total_utilization = total_used as f64 / total_bandwidth as f64;
         metrics.efficiency = self.calculate_efficiency().await;
-        
+
         metrics
     }
 
     /// Calculate bandwidth efficiency
     async fn calculate_efficiency(&self) -> f64 {
         // Simplified efficiency calculation
-        let total_allocated = self.stream_allocations.iter()
+        let total_allocated = self
+            .stream_allocations
+            .iter()
             .map(|entry| entry.allocated_bandwidth)
             .sum::<u64>();
-        
-        let total_used = self.stream_allocations.iter()
+
+        let total_used = self
+            .stream_allocations
+            .iter()
             .map(|entry| {
                 // This would need async access in practice
                 1000u64 // Placeholder
@@ -623,12 +647,14 @@ impl BandwidthAllocator {
     /// Update allocation metrics
     async fn update_allocation_metrics(&self, latency: Duration) {
         let mut metrics = self.metrics.write().await;
-        
+
         // Update average allocation latency
         let total_allocations = metrics.active_streams + 1;
-        let total_latency = metrics.avg_allocation_latency.as_nanos() * (total_allocations - 1) as u128
+        let total_latency = metrics.avg_allocation_latency.as_nanos()
+            * (total_allocations - 1) as u128
             + latency.as_nanos();
-        metrics.avg_allocation_latency = Duration::from_nanos((total_latency / total_allocations as u128) as u64);
+        metrics.avg_allocation_latency =
+            Duration::from_nanos((total_latency / total_allocations as u128) as u64);
     }
 
     /// Perform adaptive bandwidth reallocation
@@ -639,21 +665,21 @@ impl BandwidthAllocator {
 
         // Analyze usage patterns
         let usage_analysis = self.usage_tracker.analyze_usage_patterns().await;
-        
+
         // Reallocate based on analysis
         for (qos_class, analysis) in usage_analysis {
             if let Some(mut class_allocation) = self.class_allocations.get_mut(&qos_class) {
                 // Adjust allocation based on usage trends
                 if analysis.trend > 1.2 {
                     // Increase allocation for growing usage
-                    class_allocation.guaranteed_bandwidth = 
+                    class_allocation.guaranteed_bandwidth =
                         (class_allocation.guaranteed_bandwidth as f64 * 1.1) as u64;
                 } else if analysis.trend < 0.8 {
                     // Decrease allocation for declining usage
-                    class_allocation.guaranteed_bandwidth = 
+                    class_allocation.guaranteed_bandwidth =
                         (class_allocation.guaranteed_bandwidth as f64 * 0.9) as u64;
                 }
-                
+
                 class_allocation.last_updated = Instant::now();
             }
         }
@@ -684,12 +710,14 @@ impl BandwidthUsageTracker {
         };
 
         // Record for specific class
-        let class_samples = self.class_usage.entry(qos_class)
+        let class_samples = self
+            .class_usage
+            .entry(qos_class)
             .or_insert_with(|| Arc::new(RwLock::new(Vec::new())));
-        
+
         let mut samples = class_samples.write().await;
         samples.push(usage_point.clone());
-        
+
         if samples.len() > self.max_samples {
             samples.remove(0);
         }
@@ -697,7 +725,7 @@ impl BandwidthUsageTracker {
         // Record globally
         let mut global_samples = self.global_usage.write().await;
         global_samples.push(usage_point);
-        
+
         if global_samples.len() > self.max_samples {
             global_samples.remove(0);
         }
@@ -710,29 +738,43 @@ impl BandwidthUsageTracker {
         for entry in self.class_usage.iter() {
             let qos_class = *entry.key();
             let samples = entry.value().read().await;
-            
+
             if samples.len() < 2 {
                 continue;
             }
 
             let total_bytes: u64 = samples.iter().map(|s| s.bytes).sum();
             let avg_rate = samples.iter().map(|s| s.rate).sum::<f64>() / samples.len() as f64;
-            
+
             // Calculate trend (simplified linear regression)
             let trend = if samples.len() > 10 {
                 let recent_avg = samples.iter().rev().take(5).map(|s| s.rate).sum::<f64>() / 5.0;
-                let older_avg = samples.iter().rev().skip(5).take(5).map(|s| s.rate).sum::<f64>() / 5.0;
-                if older_avg > 0.0 { recent_avg / older_avg } else { 1.0 }
+                let older_avg = samples
+                    .iter()
+                    .rev()
+                    .skip(5)
+                    .take(5)
+                    .map(|s| s.rate)
+                    .sum::<f64>()
+                    / 5.0;
+                if older_avg > 0.0 {
+                    recent_avg / older_avg
+                } else {
+                    1.0
+                }
             } else {
                 1.0
             };
 
-            analysis.insert(qos_class, UsageAnalysis {
-                total_bytes,
-                avg_rate,
-                trend,
-                sample_count: samples.len(),
-            });
+            analysis.insert(
+                qos_class,
+                UsageAnalysis {
+                    total_bytes,
+                    avg_rate,
+                    trend,
+                    sample_count: samples.len(),
+                },
+            );
         }
 
         analysis
@@ -756,31 +798,36 @@ impl ThrottlingManager {
     /// Create new throttling manager
     pub fn new() -> Self {
         let mut policies = DashMap::new();
-        
+
         // Initialize default throttling policies
-        for qos_class in [QoSClass::Critical, QoSClass::System, QoSClass::JobExecution, 
-                         QoSClass::DataTransfer, QoSClass::LogsMetrics] {
+        for qos_class in [
+            QoSClass::Critical,
+            QoSClass::System,
+            QoSClass::JobExecution,
+            QoSClass::DataTransfer,
+            QoSClass::LogsMetrics,
+        ] {
             let policy = ThrottlingPolicy {
                 qos_class,
                 congestion_threshold: match qos_class {
-                    QoSClass::Critical => 0.9,      // High threshold for critical
-                    QoSClass::System => 0.8,        // Medium-high for system
-                    QoSClass::JobExecution => 0.7,  // Medium for job execution
-                    QoSClass::DataTransfer => 0.6,  // Lower for data transfer
-                    QoSClass::LogsMetrics => 0.5,   // Lowest for logs/metrics
+                    QoSClass::Critical => 0.9,     // High threshold for critical
+                    QoSClass::System => 0.8,       // Medium-high for system
+                    QoSClass::JobExecution => 0.7, // Medium for job execution
+                    QoSClass::DataTransfer => 0.6, // Lower for data transfer
+                    QoSClass::LogsMetrics => 0.5,  // Lowest for logs/metrics
                 },
                 throttling_rate: match qos_class {
-                    QoSClass::Critical => 0.9,      // Light throttling for critical
-                    QoSClass::System => 0.8,        // Medium throttling for system
-                    QoSClass::JobExecution => 0.7,  // More throttling for jobs
-                    QoSClass::DataTransfer => 0.5,  // Heavy throttling for data
-                    QoSClass::LogsMetrics => 0.3,   // Heaviest for logs/metrics
+                    QoSClass::Critical => 0.9,     // Light throttling for critical
+                    QoSClass::System => 0.8,       // Medium throttling for system
+                    QoSClass::JobExecution => 0.7, // More throttling for jobs
+                    QoSClass::DataTransfer => 0.5, // Heavy throttling for data
+                    QoSClass::LogsMetrics => 0.3,  // Heaviest for logs/metrics
                 },
                 min_throttling_rate: 0.1,
                 recovery_rate: 0.05,
                 burst_tolerance: Duration::from_secs(5),
             };
-            
+
             policies.insert(qos_class, policy);
         }
 
@@ -815,9 +862,12 @@ impl CongestionDetector {
         if metrics.total_utilization > self.thresholds.bandwidth_threshold {
             factors.push(CongestionFactor {
                 factor_type: CongestionFactorType::BandwidthUtilization,
-                severity: (metrics.total_utilization - self.thresholds.bandwidth_threshold) / 
-                         (1.0 - self.thresholds.bandwidth_threshold),
-                description: format!("Bandwidth utilization: {:.1}%", metrics.total_utilization * 100.0),
+                severity: (metrics.total_utilization - self.thresholds.bandwidth_threshold)
+                    / (1.0 - self.thresholds.bandwidth_threshold),
+                description: format!(
+                    "Bandwidth utilization: {:.1}%",
+                    metrics.total_utilization * 100.0
+                ),
             });
         }
 
@@ -829,7 +879,7 @@ impl CongestionDetector {
         state.congested = congested;
         state.level = level;
         state.factors = factors;
-        
+
         if congested && state.detected_at.is_none() {
             state.detected_at = Some(Instant::now());
         } else if !congested {

@@ -1,33 +1,39 @@
 //! Service Registry & Discovery System
-//! 
+//!
 //! Provides intelligent service discovery with health monitoring, load balancing,
 //! and automatic failover for distributed systems.
 
+use async_trait::async_trait;
+use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use async_trait::async_trait;
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-use dashmap::DashMap;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 use crate::core::networking::valkyrie::adapters::*;
 use crate::core::networking::valkyrie::streaming::QoSClass;
 use crate::error::{Result, ValkyrieError};
 
+pub mod consensus;
 pub mod discovery;
 pub mod health;
 pub mod load_balancer;
-pub mod consensus;
 
 // Re-export key types
-pub use discovery::{ServiceDiscovery, DiscoveryStrategy, DiscoveryQuery, QueryType};
-pub use health::{HealthMonitor, HealthStatus, HealthCheckConfig, HealthCheckType, CircuitBreaker, CircuitBreakerState};
-pub use load_balancer::{LoadBalancer, EndpointState, ResourceUtilization};
+pub use discovery::{DiscoveryQuery, DiscoveryStrategy, QueryType, ServiceDiscovery};
+pub use health::{
+    CircuitBreaker, CircuitBreakerState, HealthCheckConfig, HealthCheckType, HealthMonitor,
+    HealthStatus,
+};
+pub use load_balancer::{EndpointState, LoadBalancer, ResourceUtilization};
 // Import LoadBalancingStrategy from types
 use crate::core::networking::valkyrie::types::LoadBalancingStrategy;
-pub use consensus::{ConsensusManager, ConsensusProtocol, NodeInfo, NodeRole, NodeStatus, ClusterConfig, ClusterState, LogEntry, LogEntryType};
+pub use consensus::{
+    ClusterConfig, ClusterState, ConsensusManager, ConsensusProtocol, LogEntry, LogEntryType,
+    NodeInfo, NodeRole, NodeStatus,
+};
 
 /// Service registry with intelligent discovery and health monitoring
 pub struct ServiceRegistry {
@@ -207,7 +213,7 @@ pub enum ServiceType {
 }
 
 /// Dependency types
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DependencyType {
     /// Synchronous dependency
     Synchronous,
@@ -220,7 +226,7 @@ pub enum DependencyType {
 }
 
 /// Retry policy
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetryPolicy {
     /// Maximum retry attempts
     pub max_attempts: u32,
@@ -386,9 +392,10 @@ impl ServiceRegistry {
         tags: HashMap<String, String>,
     ) -> Result<ServiceId> {
         let service_id = uuid::Uuid::new_v4();
-        
+
         // Validate service registration
-        self.validate_service_registration(&metadata, &endpoints, &capabilities).await?;
+        self.validate_service_registration(&metadata, &endpoints, &capabilities)
+            .await?;
 
         let service_entry = ServiceEntry {
             service_id,
@@ -407,26 +414,36 @@ impl ServiceRegistry {
         self.services.insert(service_id, service_entry.clone());
 
         // Start health monitoring
-        self.health_monitor.start_monitoring(service_id, &service_entry.endpoints).await?;
+        self.health_monitor
+            .start_monitoring(service_id, &service_entry.endpoints)
+            .await?;
 
         // Register with discovery system
-        self.discovery.register_service(service_id, &service_entry).await?;
+        self.discovery
+            .register_service(service_id, &service_entry)
+            .await?;
 
         // Update consensus if enabled
         if self.config.enable_consensus {
-            self.consensus.register_service(service_id, &service_entry).await?;
+            self.consensus
+                .register_service(service_id, &service_entry)
+                .await?;
         }
 
         // Emit event
         self.emit_event(ServiceEvent::ServiceRegistered {
             service_id,
             metadata,
-        }).await;
+        })
+        .await;
 
         // Update metrics
         self.update_registration_metrics().await;
 
-        info!("Registered service: {} ({})", service_entry.metadata.name, service_id);
+        info!(
+            "Registered service: {} ({})",
+            service_entry.metadata.name, service_id
+        );
         Ok(service_id)
     }
 
@@ -448,13 +465,16 @@ impl ServiceRegistry {
             self.emit_event(ServiceEvent::ServiceDeregistered {
                 service_id,
                 reason: reason.clone(),
-            }).await;
+            })
+            .await;
 
             // Update metrics
             self.update_deregistration_metrics().await;
 
-            info!("Deregistered service: {} ({}), reason: {}", 
-                  service_entry.metadata.name, service_id, reason);
+            info!(
+                "Deregistered service: {} ({}), reason: {}",
+                service_entry.metadata.name, service_id, reason
+            );
         }
 
         Ok(())
@@ -463,9 +483,9 @@ impl ServiceRegistry {
     /// Discover services by name
     pub async fn discover_services(&self, service_name: &str) -> Result<Vec<ServiceEntry>> {
         let start_time = Instant::now();
-        
+
         let services = self.discovery.discover_by_name(service_name).await?;
-        
+
         // Update metrics
         self.update_discovery_metrics(start_time.elapsed()).await;
 
@@ -474,18 +494,22 @@ impl ServiceRegistry {
             self.emit_event(ServiceEvent::ServiceDiscovered {
                 service_id: service.service_id,
                 discovery_method: "name".to_string(),
-            }).await;
+            })
+            .await;
         }
 
         Ok(services)
     }
 
     /// Discover services by tags
-    pub async fn discover_by_tags(&self, tags: &HashMap<String, String>) -> Result<Vec<ServiceEntry>> {
+    pub async fn discover_by_tags(
+        &self,
+        tags: &HashMap<String, String>,
+    ) -> Result<Vec<ServiceEntry>> {
         let start_time = Instant::now();
-        
+
         let services = self.discovery.discover_by_tags(tags).await?;
-        
+
         // Update metrics
         self.update_discovery_metrics(start_time.elapsed()).await;
 
@@ -494,7 +518,8 @@ impl ServiceRegistry {
             self.emit_event(ServiceEvent::ServiceDiscovered {
                 service_id: service.service_id,
                 discovery_method: "tags".to_string(),
-            }).await;
+            })
+            .await;
         }
 
         Ok(services)
@@ -507,16 +532,18 @@ impl ServiceRegistry {
         qos_requirements: Option<QoSClass>,
     ) -> Result<ServiceEndpoint> {
         let services = self.discover_services(service_name).await?;
-        
+
         if services.is_empty() {
             return Err(ValkyrieError::ServiceNotFound(format!(
-                "No services found with name: {}", service_name
+                "No services found with name: {}",
+                service_name
             )));
         }
 
         // Filter services by QoS requirements
         let filtered_services = if let Some(qos_class) = qos_requirements {
-            services.into_iter()
+            services
+                .into_iter()
                 .filter(|s| s.capabilities.qos_classes.contains(&qos_class))
                 .collect()
         } else {
@@ -525,19 +552,24 @@ impl ServiceRegistry {
 
         if filtered_services.is_empty() {
             return Err(ValkyrieError::ServiceNotFound(format!(
-                "No services found matching QoS requirements for: {}", service_name
+                "No services found matching QoS requirements for: {}",
+                service_name
             )));
         }
 
         // Use load balancer to select best endpoint
-        let selected_endpoint = self.load_balancer.select_endpoint(&filtered_services).await?;
+        let selected_endpoint = self
+            .load_balancer
+            .select_endpoint(&filtered_services)
+            .await?;
 
         // Emit load balancing event
         self.emit_event(ServiceEvent::LoadBalancingDecision {
             service_name: service_name.to_string(),
             selected_endpoint: selected_endpoint.endpoint_id,
             strategy: self.config.load_balancing_strategy.clone(),
-        }).await;
+        })
+        .await;
 
         // Update metrics
         self.update_load_balancing_metrics().await;
@@ -549,19 +581,20 @@ impl ServiceRegistry {
     pub async fn heartbeat(&self, service_id: ServiceId) -> Result<()> {
         if let Some(mut service_entry) = self.services.get_mut(&service_id) {
             service_entry.last_heartbeat = Instant::now();
-            
+
             // Update health status if it was unhealthy
             if matches!(service_entry.health_status, HealthStatus::Unhealthy { .. }) {
                 let old_status = service_entry.health_status.clone();
                 service_entry.health_status = HealthStatus::Healthy;
-                
+
                 self.emit_event(ServiceEvent::HealthChanged {
                     service_id,
                     old_status,
                     new_status: HealthStatus::Healthy,
-                }).await;
+                })
+                .await;
             }
-            
+
             debug!("Received heartbeat from service: {}", service_id);
         }
 
@@ -580,7 +613,8 @@ impl ServiceRegistry {
 
     /// List services by type
     pub async fn list_services_by_type(&self, service_type: ServiceType) -> Vec<ServiceEntry> {
-        self.services.iter()
+        self.services
+            .iter()
             .filter(|entry| entry.metadata.service_type == service_type)
             .map(|entry| entry.clone())
             .collect()
@@ -612,33 +646,44 @@ impl ServiceRegistry {
         // Check if we've reached the maximum number of services
         if self.services.len() >= self.config.max_services {
             return Err(ValkyrieError::RegistryFull(format!(
-                "Registry has reached maximum capacity: {}", self.config.max_services
+                "Registry has reached maximum capacity: {}",
+                self.config.max_services
             )));
         }
 
         // Validate service name
         if metadata.name.is_empty() {
-            return Err(ValkyrieError::InvalidServiceName("Service name cannot be empty".to_string()));
+            return Err(ValkyrieError::InvalidServiceName(
+                "Service name cannot be empty".to_string(),
+            ));
         }
 
         // Validate endpoints
         if endpoints.is_empty() {
-            return Err(ValkyrieError::InvalidEndpoints("Service must have at least one endpoint".to_string()));
+            return Err(ValkyrieError::InvalidEndpoints(
+                "Service must have at least one endpoint".to_string(),
+            ));
         }
 
         // Validate endpoint addresses
         for endpoint in endpoints {
             if endpoint.address.is_empty() {
-                return Err(ValkyrieError::InvalidEndpoints("Endpoint address cannot be empty".to_string()));
+                return Err(ValkyrieError::InvalidEndpoints(
+                    "Endpoint address cannot be empty".to_string(),
+                ));
             }
             if endpoint.port == 0 {
-                return Err(ValkyrieError::InvalidEndpoints("Endpoint port must be greater than 0".to_string()));
+                return Err(ValkyrieError::InvalidEndpoints(
+                    "Endpoint port must be greater than 0".to_string(),
+                ));
             }
         }
 
         // Validate capabilities
         if capabilities.qos_classes.is_empty() {
-            return Err(ValkyrieError::InvalidCapabilities("Service must support at least one QoS class".to_string()));
+            return Err(ValkyrieError::InvalidCapabilities(
+                "Service must support at least one QoS class".to_string(),
+            ));
         }
 
         Ok(())
@@ -662,11 +707,13 @@ impl ServiceRegistry {
     async fn update_discovery_metrics(&self, latency: Duration) {
         let mut metrics = self.metrics.write().await;
         metrics.discovery_requests += 1;
-        
+
         // Update average discovery latency
-        let total_latency = metrics.avg_discovery_latency.as_nanos() * (metrics.discovery_requests - 1) as u128
+        let total_latency = metrics.avg_discovery_latency.as_nanos()
+            * (metrics.discovery_requests - 1) as u128
             + latency.as_nanos();
-        metrics.avg_discovery_latency = Duration::from_nanos((total_latency / metrics.discovery_requests as u128) as u64);
+        metrics.avg_discovery_latency =
+            Duration::from_nanos((total_latency / metrics.discovery_requests as u128) as u64);
     }
 
     /// Update load balancing metrics
@@ -678,13 +725,15 @@ impl ServiceRegistry {
     /// Get registry metrics
     pub async fn metrics(&self) -> RegistryMetrics {
         let mut metrics = self.metrics.read().await.clone();
-        
+
         // Update real-time metrics
         metrics.total_services = self.services.len();
-        metrics.healthy_services = self.services.iter()
+        metrics.healthy_services = self
+            .services
+            .iter()
             .filter(|entry| matches!(entry.health_status, HealthStatus::Healthy))
             .count();
-        
+
         metrics
     }
 
@@ -702,7 +751,8 @@ impl ServiceRegistry {
 
         // Remove expired services
         for service_id in expired_services {
-            self.deregister_service(service_id, "TTL expired".to_string()).await?;
+            self.deregister_service(service_id, "TTL expired".to_string())
+                .await?;
         }
 
         Ok(())
@@ -714,7 +764,9 @@ impl ServiceRegistry {
         self.health_monitor.start().await?;
 
         // Start discovery refresh
-        self.discovery.start_refresh_task(self.config.discovery_refresh_interval).await?;
+        self.discovery
+            .start_refresh_task(self.config.discovery_refresh_interval)
+            .await?;
 
         // Start consensus if enabled
         if self.config.enable_consensus {
@@ -724,7 +776,7 @@ impl ServiceRegistry {
         // Start cleanup task
         let registry = Arc::new(self.clone());
         let cleanup_interval = self.config.service_ttl / 2; // Cleanup twice as often as TTL
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(cleanup_interval);
             loop {

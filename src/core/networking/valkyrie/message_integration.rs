@@ -1,20 +1,19 @@
+use chrono::Utc;
+use serde_json;
 use std::collections::HashMap;
 use std::time::Duration;
-use chrono::Utc;
 use uuid::Uuid;
-use serde_json;
 
 use crate::core::networking::node_communication::{
-    NodeMessage, EnhancedProtocolMessage, 
-    PriorityMessageQueue, MessageCompressor,
-    CompressionAlgorithm, CompressionInfo, FlowControlInfo, FlowControlFlags,
-    PerformanceHints, RetryPolicy, RetryCondition
-};
-use crate::core::networking::valkyrie::types::{
-    ValkyrieMessage, MessageType, MessagePriority,
-    DestinationType, CompressionPreference, ReliabilityLevel
+    CompressionAlgorithm, CompressionInfo, EnhancedProtocolMessage, FlowControlFlags,
+    FlowControlInfo, MessageCompressor, NodeMessage, PerformanceHints, PriorityMessageQueue,
+    RetryCondition, RetryPolicy,
 };
 use crate::core::networking::valkyrie::message::MessageValidator;
+use crate::core::networking::valkyrie::types::{
+    CompressionPreference, DestinationType, MessagePriority, MessageType, ReliabilityLevel,
+    ValkyrieMessage,
+};
 use crate::error::AppError;
 
 /// Enhanced message processor that integrates Valkyrie messages with QoS and compression
@@ -72,11 +71,14 @@ impl EnhancedMessageProcessor {
     /// Create default QoS policies
     fn default_qos_policies() -> HashMap<String, QoSPolicyConfig> {
         let mut policies = HashMap::new();
-        
+
         // High-performance policy for critical messages
         let mut priority_mapping = HashMap::new();
         priority_mapping.insert(MessageType::Error, MessagePriority::Critical(10));
-        priority_mapping.insert(MessageType::AlertNotification, MessagePriority::Critical(20));
+        priority_mapping.insert(
+            MessageType::AlertNotification,
+            MessagePriority::Critical(20),
+        );
         priority_mapping.insert(MessageType::JobCancel, MessagePriority::High);
         priority_mapping.insert(MessageType::JobStart, MessagePriority::High);
         priority_mapping.insert(MessageType::Ping, MessagePriority::Normal);
@@ -95,26 +97,32 @@ impl EnhancedMessageProcessor {
         reliability_requirements.insert(MessageType::Ping, ReliabilityLevel::BestEffort);
 
         let mut retry_policies = HashMap::new();
-        retry_policies.insert(MessageType::JobStart, RetryPolicy {
-            max_attempts: 3,
-            initial_delay: Duration::from_millis(100),
-            max_delay: Duration::from_secs(5),
-            backoff_multiplier: 2.0,
-            jitter: true,
-            retry_conditions: vec![
-                RetryCondition::NetworkError,
-                RetryCondition::Timeout,
-                RetryCondition::ServerError,
-            ],
-        });
+        retry_policies.insert(
+            MessageType::JobStart,
+            RetryPolicy {
+                max_attempts: 3,
+                initial_delay: Duration::from_millis(100),
+                max_delay: Duration::from_secs(5),
+                backoff_multiplier: 2.0,
+                jitter: true,
+                retry_conditions: vec![
+                    RetryCondition::NetworkError,
+                    RetryCondition::Timeout,
+                    RetryCondition::ServerError,
+                ],
+            },
+        );
 
-        policies.insert("default".to_string(), QoSPolicyConfig {
-            priority_mapping,
-            compression_rules,
-            reliability_requirements,
-            retry_policies,
-            flow_control_enabled: true,
-        });
+        policies.insert(
+            "default".to_string(),
+            QoSPolicyConfig {
+                priority_mapping,
+                compression_rules,
+                reliability_requirements,
+                retry_policies,
+                flow_control_enabled: true,
+            },
+        );
 
         policies
     }
@@ -123,65 +131,73 @@ impl EnhancedMessageProcessor {
     pub async fn process_message(
         &mut self,
         message: ValkyrieMessage,
-        policy_name: Option<&str>
+        policy_name: Option<&str>,
     ) -> Result<EnhancedProtocolMessage, AppError> {
         let start_time = std::time::Instant::now();
 
         // Validate the message
-        self.validator.validate(&message)
+        self.validator
+            .validate(&message)
             .map_err(|e| AppError::ValidationError(e.to_string()))?;
         self.metrics.messages_validated += 1;
 
         // Get QoS policy
-        let policy = self.qos_policies
+        let policy = self
+            .qos_policies
             .get(policy_name.unwrap_or("default"))
             .cloned()
             .unwrap_or_else(|| self.qos_policies["default"].clone());
 
         // Determine message priority based on policy
-        let priority = policy.priority_mapping
+        let priority = policy
+            .priority_mapping
             .get(&message.header.message_type)
             .copied()
             .unwrap_or(message.header.priority);
 
         // Determine compression based on policy and message size
-        let compression_preference = policy.compression_rules
+        let compression_preference = policy
+            .compression_rules
             .get(&message.header.message_type)
             .copied()
             .unwrap_or(CompressionPreference::Auto);
 
-        let compression_algorithm = self.select_compression_algorithm(
-            compression_preference,
-            message.estimated_size()
-        );
+        let compression_algorithm =
+            self.select_compression_algorithm(compression_preference, message.estimated_size());
 
         // Serialize and potentially compress the message
         let serialized = serde_json::to_vec(&message)
             .map_err(|e| AppError::SerializationError(e.to_string()))?;
 
-        let (compressed_data, compression_info) = if compression_algorithm != CompressionAlgorithm::None {
-            let (data, info) = MessageCompressor::compress(&serialized, compression_algorithm)
-                .map_err(|e| AppError::CompressionError(e.to_string()))?;
-            self.metrics.messages_compressed += 1;
-            (data, info)
-        } else {
-            let original_size = serialized.len() as u64;
-            (serialized, CompressionInfo {
-                algorithm: CompressionAlgorithm::None,
-                original_size,
-                compressed_size: original_size,
-                compression_ratio: 1.0,
-            })
-        };
+        let (compressed_data, compression_info) =
+            if compression_algorithm != CompressionAlgorithm::None {
+                let (data, info) = MessageCompressor::compress(&serialized, compression_algorithm)
+                    .map_err(|e| AppError::CompressionError(e.to_string()))?;
+                self.metrics.messages_compressed += 1;
+                (data, info)
+            } else {
+                let original_size = serialized.len() as u64;
+                (
+                    serialized,
+                    CompressionInfo {
+                        algorithm: CompressionAlgorithm::None,
+                        original_size,
+                        compressed_size: original_size,
+                        compression_ratio: 1.0,
+                    },
+                )
+            };
 
         // Get reliability requirements
-        let reliability = policy.reliability_requirements
+        let reliability = policy
+            .reliability_requirements
             .get(&message.header.message_type)
             .copied()
             .unwrap_or(ReliabilityLevel::BestEffort);
 
         // Get retry policy
-        let retry_policy = policy.retry_policies
+        let retry_policy = policy
+            .retry_policies
             .get(&message.header.message_type)
             .cloned();
 
@@ -204,13 +220,22 @@ impl EnhancedMessageProcessor {
 
         // Create performance hints
         let performance_hints = PerformanceHints {
-            latency_sensitive: matches!(priority, MessagePriority::Critical(_) | MessagePriority::High),
+            latency_sensitive: matches!(
+                priority,
+                MessagePriority::Critical(_) | MessagePriority::High
+            ),
             bandwidth_intensive: compressed_data.len() > 1024 * 1024, // > 1MB
             cpu_intensive: compression_info.algorithm != CompressionAlgorithm::None,
             memory_intensive: false,
-            cacheable: matches!(message.header.message_type, MessageType::MetricsReport | MessageType::StatusUpdate),
+            cacheable: matches!(
+                message.header.message_type,
+                MessageType::MetricsReport | MessageType::StatusUpdate
+            ),
             preferred_transport: None,
-            batch_eligible: matches!(message.header.message_type, MessageType::LogEntry | MessageType::MetricsReport),
+            batch_eligible: matches!(
+                message.header.message_type,
+                MessageType::LogEntry | MessageType::MetricsReport
+            ),
         };
 
         // Create the enhanced protocol message
@@ -220,7 +245,9 @@ impl EnhancedMessageProcessor {
                 timestamp: Utc::now(),
                 source: message.header.routing.source.parse().unwrap_or_default(),
                 destination: match &message.header.routing.destination {
-                    DestinationType::Unicast(endpoint) => Some(endpoint.parse().unwrap_or_default()),
+                    DestinationType::Unicast(endpoint) => {
+                        Some(endpoint.parse().unwrap_or_default())
+                    }
                     _ => None,
                 },
                 message: crate::core::networking::node_communication::MessagePayload::NodeMessage(
@@ -240,7 +267,7 @@ impl EnhancedMessageProcessor {
                             custom_metrics: HashMap::new(),
                         },
                         timestamp: Utc::now(),
-                    }
+                    },
                 ),
                 signature: None,
             },
@@ -256,8 +283,9 @@ impl EnhancedMessageProcessor {
         // Update metrics
         self.metrics.messages_processed += 1;
         let processing_time = start_time.elapsed().as_millis() as f64;
-        self.metrics.processing_time_avg_ms = 
-            (self.metrics.processing_time_avg_ms * (self.metrics.messages_processed - 1) as f64 + processing_time) 
+        self.metrics.processing_time_avg_ms = (self.metrics.processing_time_avg_ms
+            * (self.metrics.messages_processed - 1) as f64
+            + processing_time)
             / self.metrics.messages_processed as f64;
 
         Ok(enhanced_message)
@@ -267,7 +295,7 @@ impl EnhancedMessageProcessor {
     fn select_compression_algorithm(
         &self,
         preference: CompressionPreference,
-        message_size: usize
+        message_size: usize,
     ) -> CompressionAlgorithm {
         if !self.compression_enabled {
             return CompressionAlgorithm::None;
@@ -408,7 +436,7 @@ impl MessageBatchProcessor {
     pub async fn process_batch(
         &mut self,
         messages: Vec<ValkyrieMessage>,
-        policy_name: Option<&str>
+        policy_name: Option<&str>,
     ) -> Result<Vec<EnhancedProtocolMessage>, AppError> {
         let mut processed_messages = Vec::with_capacity(messages.len());
 
@@ -450,8 +478,9 @@ mod tests {
                     "disk_usage": 50.0
                 }),
                 schema: None,
-            })
-        ).with_priority(MessagePriority::Background);
+            }),
+        )
+        .with_priority(MessagePriority::Background);
 
         let result = processor.process_message(message, None).await;
         assert!(result.is_ok());
@@ -519,7 +548,7 @@ mod tests {
                             uptime_seconds: 86400,
                         },
                         timestamp: Utc::now(),
-                    }
+                    },
                 ),
                 signature: None,
             },

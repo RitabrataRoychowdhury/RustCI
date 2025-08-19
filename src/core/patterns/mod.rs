@@ -12,6 +12,6 @@ pub mod queries;
 pub mod sagas;
 
 // Re-export commonly used types
-pub use commands::{CommandHandler};
+pub use commands::CommandHandler;
 pub use events::{EventBus, EventHandler};
-pub use sagas::{SagaOrchestrator};
+pub use sagas::SagaOrchestrator;

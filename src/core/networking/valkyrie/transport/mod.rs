@@ -1,30 +1,30 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 
 use crate::core::networking::transport::{
-    Transport, TransportType, TransportEndpoint, NetworkConditions
+    NetworkConditions, Transport, TransportEndpoint, TransportType,
 };
 use crate::error::Result;
 
 // Import canonical types from central types module
-use super::types::{Duration, CompressionAlgorithm};
+use super::types::{CompressionAlgorithm, Duration};
 
 // Transport implementations
-pub mod tcp;
 pub mod quic;
-pub mod websocket;
-pub mod unix_socket;
 pub mod selector;
+pub mod tcp;
+pub mod unix_socket;
+pub mod websocket;
 
 // Re-export transport implementations
-pub use tcp::TcpTransport;
 pub use quic::QuicTransport;
-pub use websocket::WebSocketTransport;
+pub use selector::{SelectionState, TransportHealth, TransportSelector};
+pub use tcp::TcpTransport;
 pub use unix_socket::UnixSocketTransport;
-pub use selector::{TransportSelector, TransportHealth, SelectionState};
+pub use websocket::WebSocketTransport;
 
-// TransportCapabilities, CompressionAlgorithm, and EncryptionCipher definitions 
+// TransportCapabilities, CompressionAlgorithm, and EncryptionCipher definitions
 // removed - now using canonical types from types module
 
 /// Transport selection strategy
@@ -138,7 +138,11 @@ pub struct TransportManager {
     /// Failover configuration
     failover_config: FailoverConfig,
     /// Transport metrics
-    metrics: Arc<tokio::sync::RwLock<HashMap<TransportType, crate::core::networking::transport::TransportMetrics>>>,
+    metrics: Arc<
+        tokio::sync::RwLock<
+            HashMap<TransportType, crate::core::networking::transport::TransportMetrics>,
+        >,
+    >,
 }
 
 impl TransportManager {
@@ -156,13 +160,13 @@ impl TransportManager {
             metrics: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         }
     }
-    
+
     /// Register a transport
     pub fn register_transport(&mut self, transport: Arc<dyn Transport>) {
         let transport_type = transport.transport_type();
         self.transports.insert(transport_type, transport);
     }
-    
+
     /// Select optimal transport for endpoint
     pub async fn select_transport(
         &self,
@@ -170,9 +174,7 @@ impl TransportManager {
         conditions: &NetworkConditions,
     ) -> Result<Arc<dyn Transport>> {
         match &self.selection_strategy {
-            TransportSelectionStrategy::FirstAvailable => {
-                self.select_first_available(endpoint)
-            }
+            TransportSelectionStrategy::FirstAvailable => self.select_first_available(endpoint),
             TransportSelectionStrategy::LatencyOptimized => {
                 self.select_latency_optimized(endpoint, conditions).await
             }
@@ -180,11 +182,10 @@ impl TransportManager {
                 self.select_throughput_optimized(endpoint, conditions).await
             }
             TransportSelectionStrategy::ReliabilityOptimized => {
-                self.select_reliability_optimized(endpoint, conditions).await
+                self.select_reliability_optimized(endpoint, conditions)
+                    .await
             }
-            TransportSelectionStrategy::RoundRobin => {
-                self.select_round_robin(endpoint)
-            }
+            TransportSelectionStrategy::RoundRobin => self.select_round_robin(endpoint),
             TransportSelectionStrategy::Weighted(weights) => {
                 self.select_weighted(endpoint, weights)
             }
@@ -194,28 +195,34 @@ impl TransportManager {
             }
         }
     }
-    
+
     /// Get all available transports
     pub fn get_available_transports(&self) -> Vec<TransportType> {
         self.transports.keys().cloned().collect()
     }
-    
+
     /// Get transport by type
     pub fn get_transport(&self, transport_type: &TransportType) -> Option<Arc<dyn Transport>> {
         self.transports.get(transport_type).cloned()
     }
-    
+
     /// Update transport metrics
-    pub async fn update_metrics(&self, transport_type: TransportType, metrics: crate::core::networking::transport::TransportMetrics) {
+    pub async fn update_metrics(
+        &self,
+        transport_type: TransportType,
+        metrics: crate::core::networking::transport::TransportMetrics,
+    ) {
         let mut metrics_map = self.metrics.write().await;
         metrics_map.insert(transport_type, metrics);
     }
-    
+
     /// Get aggregated metrics
-    pub async fn get_aggregated_metrics(&self) -> HashMap<TransportType, crate::core::networking::transport::TransportMetrics> {
+    pub async fn get_aggregated_metrics(
+        &self,
+    ) -> HashMap<TransportType, crate::core::networking::transport::TransportMetrics> {
         self.metrics.read().await.clone()
     }
-    
+
     // Private helper methods
     fn select_first_available(&self, endpoint: &TransportEndpoint) -> Result<Arc<dyn Transport>> {
         for transport in self.transports.values() {
@@ -223,11 +230,14 @@ impl TransportManager {
                 return Ok(transport.clone());
             }
         }
-        Err(crate::core::networking::node_communication::ProtocolError::ConnectionError {
-            message: "No suitable transport found".to_string()
-        }.into())
+        Err(
+            crate::core::networking::node_communication::ProtocolError::ConnectionError {
+                message: "No suitable transport found".to_string(),
+            }
+            .into(),
+        )
     }
-    
+
     async fn select_latency_optimized(
         &self,
         endpoint: &TransportEndpoint,
@@ -239,7 +249,7 @@ impl TransportManager {
         } else {
             vec![TransportType::Tcp, TransportType::Quic]
         };
-        
+
         for transport_type in preferred_types {
             if let Some(transport) = self.transports.get(&transport_type) {
                 if transport.supports_endpoint(endpoint) {
@@ -247,10 +257,10 @@ impl TransportManager {
                 }
             }
         }
-        
+
         self.select_first_available(endpoint)
     }
-    
+
     async fn select_throughput_optimized(
         &self,
         endpoint: &TransportEndpoint,
@@ -262,7 +272,7 @@ impl TransportManager {
         } else {
             vec![TransportType::Tcp, TransportType::Quic]
         };
-        
+
         for transport_type in preferred_types {
             if let Some(transport) = self.transports.get(&transport_type) {
                 if transport.supports_endpoint(endpoint) {
@@ -270,10 +280,10 @@ impl TransportManager {
                 }
             }
         }
-        
+
         self.select_first_available(endpoint)
     }
-    
+
     async fn select_reliability_optimized(
         &self,
         endpoint: &TransportEndpoint,
@@ -285,7 +295,7 @@ impl TransportManager {
         } else {
             vec![TransportType::Quic, TransportType::SecureTcp]
         };
-        
+
         for transport_type in preferred_types {
             if let Some(transport) = self.transports.get(&transport_type) {
                 if transport.supports_endpoint(endpoint) {
@@ -293,16 +303,16 @@ impl TransportManager {
                 }
             }
         }
-        
+
         self.select_first_available(endpoint)
     }
-    
+
     fn select_round_robin(&self, endpoint: &TransportEndpoint) -> Result<Arc<dyn Transport>> {
         // Simple round-robin implementation
         // In a real implementation, this would maintain state
         self.select_first_available(endpoint)
     }
-    
+
     fn select_weighted(
         &self,
         endpoint: &TransportEndpoint,

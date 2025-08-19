@@ -3,13 +3,13 @@
 //! This module defines the core message types and structures used
 //! throughout the Valkyrie Protocol.
 
-use std::collections::HashMap;
-use std::time::Duration;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::time::Duration;
 use uuid::Uuid;
 
-use crate::valkyrie::core::{StreamId, EndpointId, CorrelationId};
+use crate::valkyrie::core::{CorrelationId, EndpointId, StreamId};
 
 /// Enhanced Valkyrie message with advanced framing and metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,36 +34,43 @@ impl ValkyrieMessage {
             trace_context: None,
         }
     }
-    
+
     /// Create a text message
     pub fn text(content: &str) -> Self {
         Self::new(MessageType::Data, MessagePayload::Text(content.to_string()))
     }
-    
+
     /// Create a binary message
     pub fn binary(data: Vec<u8>) -> Self {
         Self::new(MessageType::Data, MessagePayload::Binary(data))
     }
-    
+
     /// Create a JSON message
     pub fn json<T: serde::Serialize>(data: &T) -> crate::valkyrie::Result<Self> {
-        let json_value = serde_json::to_value(data)
-            .map_err(|e| crate::valkyrie::ValkyrieError::InternalServerError(format!("JSON serialization failed: {}", e)))?;
-        Ok(Self::new(MessageType::Data, MessagePayload::Json(json_value)))
+        let json_value = serde_json::to_value(data).map_err(|e| {
+            crate::valkyrie::ValkyrieError::InternalServerError(format!(
+                "JSON serialization failed: {}",
+                e
+            ))
+        })?;
+        Ok(Self::new(
+            MessageType::Data,
+            MessagePayload::Json(json_value),
+        ))
     }
-    
+
     /// Set message priority
     pub fn with_priority(mut self, priority: MessagePriority) -> Self {
         self.header.priority = priority;
         self
     }
-    
+
     /// Set message TTL
     pub fn with_ttl(mut self, ttl: Duration) -> Self {
         self.header.ttl = Some(ttl);
         self
     }
-    
+
     /// Set correlation ID
     pub fn with_correlation_id(mut self, correlation_id: CorrelationId) -> Self {
         self.header.correlation_id = Some(correlation_id);
@@ -545,28 +552,28 @@ pub struct TraceContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_message_creation() {
         let message = ValkyrieMessage::text("Hello, World!");
         assert!(matches!(message.payload, MessagePayload::Text(_)));
         assert_eq!(message.header.message_type, MessageType::Data);
     }
-    
+
     #[test]
     fn test_message_with_priority() {
-        let message = ValkyrieMessage::text("Important message")
-            .with_priority(MessagePriority::High);
+        let message =
+            ValkyrieMessage::text("Important message").with_priority(MessagePriority::High);
         assert_eq!(message.header.priority, MessagePriority::High);
     }
-    
+
     #[test]
     fn test_json_message() {
         let data = serde_json::json!({"key": "value"});
         let result = ValkyrieMessage::json(&data);
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn test_protocol_version() {
         let version = ProtocolVersion::current();

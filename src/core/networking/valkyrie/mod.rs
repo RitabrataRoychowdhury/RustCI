@@ -7,214 +7,237 @@
 // Central type definitions - imported first to ensure consistency
 pub mod types;
 
+pub mod adapters;
 pub mod engine;
+pub mod lockfree;
 pub mod message;
 pub mod message_integration;
-pub mod transport;
-pub mod security;
-pub mod streaming;
-pub mod zero_copy;
-pub mod simd_processor;
-pub mod performance_bench;
-pub mod lockfree;
 pub mod observability;
-pub mod adapters;
+pub mod performance_bench;
 pub mod registry;
 pub mod routing;
+pub mod security;
+pub mod simd_processor;
+pub mod streaming;
+pub mod transport;
+pub mod zero_copy;
 
 // Re-export central types (canonical definitions)
 pub use types::{
-    // Core message types (several come from message.rs)
-    ValkyrieMessage, MessageHeader, MessagePriority,
-    SecurityLevel,
-    // Transport types
-    TransportCapabilities,
-    // Type aliases for backward compatibility
-    EngineMessage, ClientMessage, Message,
+    ClientMessage,
     // Core identifiers
-    ConnectionId, StreamId, EndpointId, CorrelationId, Duration,
+    ConnectionId,
     // Error types
     ConversionError,
+    CorrelationId,
+    Duration,
+    EndpointId,
+    // Type aliases for backward compatibility
+    EngineMessage,
+    Message,
+    MessageHeader,
+    MessagePriority,
+    SecurityLevel,
+    StreamId,
+    // Transport types
+    TransportCapabilities,
+    // Core message types (several come from message.rs)
+    ValkyrieMessage,
 };
 
 // Types now re-exported from types.rs above
 
 // Re-export main components from engine
 pub use engine::{
-    ValkyrieEngine, ValkyrieConfig, ConnectionHandle, Listener,
-    MessageHandler, BroadcastResult, ValkyrieEvent,
-    EngineStats, ProtocolState, Endpoint
+    BroadcastResult, ConnectionHandle, Endpoint, EngineStats, Listener, MessageHandler,
+    ProtocolState, ValkyrieConfig, ValkyrieEngine, ValkyrieEvent,
 };
 
 // Re-export additional types from types.rs
 pub use types::{
-    DestinationType, CompressionAlgorithm, CompressionPreference, EncryptionCipher,
-    ReliabilityLevel, LoadBalancingStrategy, ProtocolVersion,
-    ProtocolExtension, RoutingHints, ServiceSelector,
-    GeographicSelector, CustomSelector, SignatureAlgorithm, 
-    StructuredPayload, StreamPayload, FileTransferPayload, 
-    StreamOperation, FileTransferOperation, MessageType, MessagePayload, 
-    MessageFlags, RoutingInfo, MessageSignature, TraceContext, ProtocolInfo
+    CompressionAlgorithm, CompressionPreference, CustomSelector, DestinationType, EncryptionCipher,
+    FileTransferOperation, FileTransferPayload, GeographicSelector, LoadBalancingStrategy,
+    MessageFlags, MessagePayload, MessageSignature, MessageType, ProtocolExtension, ProtocolInfo,
+    ProtocolVersion, ReliabilityLevel, RoutingHints, RoutingInfo, ServiceSelector,
+    SignatureAlgorithm, StreamOperation, StreamPayload, StructuredPayload, TraceContext,
 };
 
 // Re-export additional message system components (non-conflicting)
-pub use message::{
-    MessageValidator, MessageValidationError
-};
+pub use message::{MessageValidationError, MessageValidator};
 
 // Re-export message integration components
 pub use message_integration::{
-    EnhancedMessageProcessor, MessageBatchProcessor, QoSPolicyConfig,
-    ProcessorMetrics
+    EnhancedMessageProcessor, MessageBatchProcessor, ProcessorMetrics, QoSPolicyConfig,
 };
 
 // Re-export transport components (non-conflicting)
 pub use transport::{
-    TransportSelectionStrategy, ConnectionPool as TransportConnectionPool,
-    FailoverConfig, CompressionConfig,
-    BackoffStrategy as TransportBackoffStrategy,
-    TransportManager,
-    TcpTransport, QuicTransport, WebSocketTransport, UnixSocketTransport,
-    TransportSelector, TransportHealth, SelectionState
+    BackoffStrategy as TransportBackoffStrategy, CompressionConfig,
+    ConnectionPool as TransportConnectionPool, FailoverConfig, QuicTransport, SelectionState,
+    TcpTransport, TransportHealth, TransportManager, TransportSelectionStrategy, TransportSelector,
+    UnixSocketTransport, WebSocketTransport,
 };
 
 // Re-export security components
 pub use security::{
-    SecurityManager, SecurityConfig, SecurityMetrics, SecurityHealthStatus,
-    AuthMethod, EncryptionMethod, SecurityEventType, SecuritySeverity,
-    AuthProvider, AuthCredentials, AuthCredentialData, AuthResult, AuthSubject,
-    AuthCapabilities, AuthProviderMetrics, AuthConfig,
-    JwtAuthProvider, JwtConfig, JwtClaims, MtlsAuthProvider,
-    SpiffeAuthProvider, SpiffeConfig, OAuth2Config, LdapConfig,
-    EncryptionEngine, EncryptionContext, EncryptionCapabilities, EncryptionMetrics,
-    PostQuantumCrypto, PostQuantumConfig, PostQuantumMetrics,
-    KyberVariant, DilithiumVariant, ClassicalAlgorithm,
-    Aes256GcmEngine, ChaCha20Poly1305Engine, PostQuantumEngine,
-    RbacManager, RbacConfig, RbacMetrics, Role, Permission, AccessPolicy,
-    PermissionCondition, ConditionOperator, PolicyRule, PolicyEffect,
-    IntrusionDetectionSystem, IdsConfig, IdsMetrics, SecurityEvent,
-    ThreatAssessment, ThreatType, ThreatLevel, AnalysisResult,
-    SecurityAuditLogger, AuditConfig, SecurityAuditEntry, AuditMetrics,
-    IntegrityChain, CorrelationTracker as SecurityCorrelationTracker, CorrelationContext as SecurityCorrelationContext, ComplianceReport,
-    CertificateManager, CertificateConfig, CertificateInfo, CertificateStatus,
-    CaCertificate, RevocationInfo, RevocationReason, CertificateMetrics,
-    CertificateRequest, HsmConfig
+    AccessPolicy, Aes256GcmEngine, AnalysisResult, AuditConfig, AuditMetrics, AuthCapabilities,
+    AuthConfig, AuthCredentialData, AuthCredentials, AuthMethod, AuthProvider, AuthProviderMetrics,
+    AuthResult, AuthSubject, CaCertificate, CertificateConfig, CertificateInfo, CertificateManager,
+    CertificateMetrics, CertificateRequest, CertificateStatus, ChaCha20Poly1305Engine,
+    ClassicalAlgorithm, ComplianceReport, ConditionOperator,
+    CorrelationContext as SecurityCorrelationContext,
+    CorrelationTracker as SecurityCorrelationTracker, DilithiumVariant, EncryptionCapabilities,
+    EncryptionContext, EncryptionEngine, EncryptionMethod, EncryptionMetrics, HsmConfig, IdsConfig,
+    IdsMetrics, IntegrityChain, IntrusionDetectionSystem, JwtAuthProvider, JwtClaims, JwtConfig,
+    KyberVariant, LdapConfig, MtlsAuthProvider, OAuth2Config, Permission, PermissionCondition,
+    PolicyEffect, PolicyRule, PostQuantumConfig, PostQuantumCrypto, PostQuantumEngine,
+    PostQuantumMetrics, RbacConfig, RbacManager, RbacMetrics, RevocationInfo, RevocationReason,
+    Role, SecurityAuditEntry, SecurityAuditLogger, SecurityConfig, SecurityEvent,
+    SecurityEventType, SecurityHealthStatus, SecurityManager, SecurityMetrics, SecuritySeverity,
+    SpiffeAuthProvider, SpiffeConfig, ThreatAssessment, ThreatLevel, ThreatType,
 };
 
 // Re-export streaming components
 pub use streaming::{
-    StreamMultiplexer, MultiplexerConfig, MultiplexerStatistics,
-    Stream, StreamConfig, StreamMetrics, StreamState, StreamType, StreamPriority,
-    StreamEvent, StreamEventHandler, DefaultStreamEventHandler,
-    FlowWindow, FlowControlEvent, CongestionState, CongestionAlgorithm,
-    FlowControlManager, FlowControlConfig,
-    PriorityScheduler, SchedulingAlgorithm, SchedulerConfig, SchedulerMetrics,
-    ScheduledMessage, QosRequirements, SchedulingTask, TaskState,
-    BandwidthAllocator, BandwidthAllocationAlgorithm, QosManager, QosPolicy, QosMetrics,
-    LatencyPercentiles, SlaMonitor, ServiceLevelAgreement, SlaViolation,
-    SlaViolationType, ViolationSeverity, QueueStatistics,
-    CongestionController, CongestionControlAlgorithm, CongestionMetrics, RecoveryStrategy
+    BandwidthAllocationAlgorithm, BandwidthAllocator, CongestionAlgorithm,
+    CongestionControlAlgorithm, CongestionController, CongestionMetrics, CongestionState,
+    DefaultStreamEventHandler, FlowControlConfig, FlowControlEvent, FlowControlManager, FlowWindow,
+    LatencyPercentiles, MultiplexerConfig, MultiplexerStatistics, PriorityScheduler, QosManager,
+    QosMetrics, QosPolicy, QosRequirements, QueueStatistics, RecoveryStrategy, ScheduledMessage,
+    SchedulerConfig, SchedulerMetrics, SchedulingAlgorithm, SchedulingTask, ServiceLevelAgreement,
+    SlaMonitor, SlaViolation, SlaViolationType, Stream, StreamConfig, StreamEvent,
+    StreamEventHandler, StreamMetrics, StreamMultiplexer, StreamPriority, StreamState, StreamType,
+    TaskState, ViolationSeverity,
 };
 
 // Re-export zero-copy optimization components
 pub use zero_copy::{
-    SimdBuffer, ZeroCopyBufferPool, PoolStats, SimdDataProcessor, ProcessingStats,
-    ZeroCopyFile, ZeroCopySerializer
+    PoolStats, ProcessingStats, SimdBuffer, SimdDataProcessor, ZeroCopyBufferPool, ZeroCopyFile,
+    ZeroCopySerializer,
 };
 
 // Re-export SIMD processor components
 pub use simd_processor::{
-    SimdMessageProcessor, MessageProcessingStats, SimdPatternMatcher,
-    SimdPattern, MatchStats
+    MatchStats, MessageProcessingStats, SimdMessageProcessor, SimdPattern, SimdPatternMatcher,
 };
 
 // Re-export performance benchmark components
-pub use performance_bench::{
-    PerformanceBenchmark, BenchmarkResults
-};
+pub use performance_bench::{BenchmarkResults, PerformanceBenchmark};
 
 // Re-export lock-free data structure components
 pub use lockfree::{
-    LockFreeMetrics, LockFreeConfig, MemoryOrdering, BackoffStrategy as LockFreeBackoffStrategy, CacheLinePadded, HazardPointer,
-    LockFreeQueue, QueueStats, QueueError, QueueNode, MpscQueue, SpscQueue, MpmcQueue,
-    LockFreeStack, StackStats, StackError, StackNode, TreiberStack, EliminationStack,
-    LockFreeMap, MapStats, MapError, MapEntry, ConcurrentHashMap, SkipListMap,
-    LockFreeRingBuffer, RingBufferStats, RingBufferError, SpscRingBuffer, MpmcRingBuffer,
-    AtomicCounter, CounterStats, CounterError, RelaxedCounter, SeqCstCounter, AcqRelCounter,
-    LockFreePool, PoolStats as LockFreePoolStats, PoolError, PoolNode, ObjectPool, BufferPool, ConnectionPool as LockFreeConnectionPool,
-    LockFreeRegistry, RegistryStats, RegistryError, NodeRegistry, 
-    ServiceRegistry as LockFreeServiceRegistry, ConnectionRegistry
+    AcqRelCounter, AtomicCounter, BackoffStrategy as LockFreeBackoffStrategy, BufferPool,
+    CacheLinePadded, ConcurrentHashMap, ConnectionPool as LockFreeConnectionPool,
+    ConnectionRegistry, CounterError, CounterStats, EliminationStack, HazardPointer,
+    LockFreeConfig, LockFreeMap, LockFreeMetrics, LockFreePool, LockFreeQueue, LockFreeRegistry,
+    LockFreeRingBuffer, LockFreeStack, MapEntry, MapError, MapStats, MemoryOrdering, MpmcQueue,
+    MpmcRingBuffer, MpscQueue, NodeRegistry, ObjectPool, PoolError, PoolNode,
+    PoolStats as LockFreePoolStats, QueueError, QueueNode, QueueStats, RegistryError,
+    RegistryStats, RelaxedCounter, RingBufferError, RingBufferStats, SeqCstCounter,
+    ServiceRegistry as LockFreeServiceRegistry, SkipListMap, SpscQueue, SpscRingBuffer, StackError,
+    StackNode, StackStats, TreiberStack,
 };
 
 // Re-export observability components
 pub use observability::{
-    ObservabilityManager, ObservabilityConfig, ObservabilityStatus, ObservabilityError,
-    MetricsCollector, MetricValue, MetricType,
-    StructuredLogger, LogLevel,
-    HealthMonitor, HealthStatus, HealthCheck,
-    MetricsDashboard, DashboardConfig,
-    CorrelationTracker as ObservabilityCorrelationTracker, CorrelationId as ObservabilityCorrelationId,
-    TraceSpan, SpanLog,
-    ExternalObservabilityIntegration, ExternalObservabilityConfig, ExternalObservabilityStatus,
-    PrometheusIntegration, OpenTelemetryIntegration, JaegerIntegration, GrafanaIntegration,
-    IntegrationStatus, LegacyObservabilityAdapter, CompatibilityConfig,
-    ProtocolVersionNegotiator, FeatureDetector
+    CompatibilityConfig, CorrelationId as ObservabilityCorrelationId,
+    CorrelationTracker as ObservabilityCorrelationTracker, DashboardConfig,
+    ExternalObservabilityConfig, ExternalObservabilityIntegration, ExternalObservabilityStatus,
+    FeatureDetector, GrafanaIntegration, HealthCheck, HealthMonitor, HealthStatus,
+    IntegrationStatus, JaegerIntegration, LegacyObservabilityAdapter, LogLevel, MetricType,
+    MetricValue, MetricsCollector, MetricsDashboard, ObservabilityConfig, ObservabilityError,
+    ObservabilityManager, ObservabilityStatus, OpenTelemetryIntegration, PrometheusIntegration,
+    ProtocolVersionNegotiator, SpanLog, StructuredLogger, TraceSpan,
 };
 
 // Re-export adapter components
 pub use adapters::{
-    UniversalAdapterFactory, AdapterBuilder, AdapterRequirements, AdapterConfig,
-    AdapterCapabilities, AdapterInfo, AdapterMetrics,
-    AdapterSelectionStrategy, PerformanceBasedStrategy, ReliabilityBasedStrategy,
-    LatencyOptimizedStrategy, ThroughputOptimizedStrategy,
-    HttpAdapterBuilder, DockerAdapterBuilder, KubernetesAdapterBuilder,
-    RedisAdapterBuilder, QuicTcpAdapterBuilder
+    AdapterBuilder, AdapterCapabilities, AdapterConfig, AdapterInfo, AdapterMetrics,
+    AdapterRequirements, AdapterSelectionStrategy, DockerAdapterBuilder, HttpAdapterBuilder,
+    KubernetesAdapterBuilder, LatencyOptimizedStrategy, PerformanceBasedStrategy,
+    QuicTcpAdapterBuilder, RedisAdapterBuilder, ReliabilityBasedStrategy,
+    ThroughputOptimizedStrategy, UniversalAdapterFactory,
 };
 
 // Re-export registry components
 pub use registry::{
-    ServiceRegistry, ServiceEntry, ServiceMetadata, ServiceEndpoint, ServiceCapabilities,
-    ServiceType, ServiceDependency, DependencyType,
-    ServiceDiscovery, DiscoveryQuery, QueryType,
-    HealthMonitor as RegistryHealthMonitor, HealthStatus as RegistryHealthStatus, 
-    HealthCheckConfig, HealthCheckType, CircuitBreaker, CircuitBreakerState,
-    LoadBalancer, EndpointState, ResourceUtilization,
-    ConsensusManager, ConsensusProtocol, NodeInfo, NodeRole, NodeStatus,
-    ClusterConfig, ClusterState, LogEntry, LogEntryType
+    CircuitBreaker, CircuitBreakerState, ClusterConfig, ClusterState, ConsensusManager,
+    ConsensusProtocol, DependencyType, DiscoveryQuery, EndpointState, HealthCheckConfig,
+    HealthCheckType, HealthMonitor as RegistryHealthMonitor, HealthStatus as RegistryHealthStatus,
+    LoadBalancer, LogEntry, LogEntryType, NodeInfo, NodeRole, NodeStatus, QueryType,
+    ResourceUtilization, ServiceCapabilities, ServiceDependency, ServiceDiscovery, ServiceEndpoint,
+    ServiceEntry, ServiceMetadata, ServiceRegistry, ServiceType,
 };
 
 // Re-export routing components
 pub use routing::{
-    // Core routing types
-    RoutingContext, Route, Hop, NetworkTopology, NetworkNode, NetworkLink,
-    RoutingAlgorithm, RoutingStrategy, AlgorithmManager, RoutingError,
-    
-    // Load balancing
-    LoadBalancingStrategy as RoutingLoadBalancingStrategy, LoadBalancingAlgorithm, LoadBalancerManager,
-    ServiceEndpoint as RoutingServiceEndpoint, RequestContext, LoadBalancingError,
-    RoundRobinStrategy, WeightedRoundRobinStrategy, ConsistentHashingStrategy,
-    
-    // Topology management
-    TopologyManager, DiscoveryAgent, MetricCollector, TopologyError,
-    GeographicManager, RegionManager, DistanceCalculator,
-    
-    // QoS routing
-    QoSRouter, PriorityManager, SLAEnforcer, TrafficShaper, BandwidthManager,
-    QoSScheduler, QoSError, QoSMetricsSnapshot,
-    
+    adaptive::FeatureExtractor as RoutingFeatureExtractor,
+    AdaptiveError,
     // Adaptive routing
-    AdaptiveRoutingEngine, ModelManager, 
-    adaptive::FeatureExtractor as RoutingFeatureExtractor, PredictionEngine,
-    PatternRecognizer, AdaptiveError, RouteQualityPrediction,
-    
+    AdaptiveRoutingEngine,
+    AlgorithmManager,
+    BandwidthManager,
+    CacheConfig,
+    CacheStats,
+    ConfigError,
     // Configuration
-    ConfigurationManager, PolicyEngine, RoutingPolicy, RoutingRule,
-    ConfigError, PolicyEvaluationResult,
-    
+    ConfigurationManager,
+    ConsistentHashingStrategy,
+
+    DiscoveryAgent,
+    DistanceCalculator,
+
+    GeographicManager,
+    Hop,
+    LoadBalancerManager,
+    LoadBalancingAlgorithm,
+    LoadBalancingError,
+    // Load balancing
+    LoadBalancingStrategy as RoutingLoadBalancingStrategy,
+    MetricCollector,
+    ModelManager,
+    NetworkLink,
+    NetworkNode,
+    NetworkTopology,
+    PatternRecognizer,
+    PolicyEngine,
+    PolicyEvaluationResult,
+
+    PredictionEngine,
+    PriorityManager,
+    QoSError,
+    QoSMetricsSnapshot,
+
+    // QoS routing
+    QoSRouter,
+    QoSScheduler,
+    RegionManager,
+    RequestContext,
+    RoundRobinStrategy,
+    Route,
     // Caching
-    RouteCache, CacheConfig, CacheStats, RouteCacheKey,
-    
+    RouteCache,
+    RouteCacheKey,
+
+    RouteQualityPrediction,
+
+    RoutingAlgorithm,
+    // Core routing types
+    RoutingContext,
+    RoutingError,
+
     // Metrics
-    RoutingMetricsCollector, RoutingMetricsSnapshot, 
+    RoutingMetricsCollector,
+    RoutingMetricsSnapshot,
+    RoutingPolicy,
+    RoutingRule,
+    RoutingStrategy,
+    SLAEnforcer,
     SecurityEventType as RoutingSecurityEventType,
+    ServiceEndpoint as RoutingServiceEndpoint,
+    TopologyError,
+    // Topology management
+    TopologyManager,
+    TrafficShaper,
+    WeightedRoundRobinStrategy,
 };

@@ -4,9 +4,9 @@
 //! All other modules should import types from here to ensure consistency and
 //! eliminate type conflicts throughout the codebase.
 
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 // ============================================================================
@@ -82,15 +82,15 @@ pub enum MessageType {
     Pong = 0x03,
     Error = 0x04,
     Close = 0x05,
-    
+
     // Job execution messages
-    JobExecution = 0x20,
-    
+    JobExecution = 0x1F,
+
     // Basic message types for compatibility
     Heartbeat = 0x06,
     Data = 0x07,
     Control = 0x08,
-    
+
     // Authentication and security
     AuthChallenge = 0x10,
     AuthResponse = 0x11,
@@ -98,7 +98,7 @@ pub enum MessageType {
     AuthFailure = 0x13,
     KeyExchange = 0x14,
     CertificateRequest = 0x15,
-    
+
     // Job management (enhanced)
     JobRequest = 0x20,
     JobAccept = 0x21,
@@ -111,7 +111,7 @@ pub enum MessageType {
     JobMigrate = 0x28,
     JobPause = 0x29,
     JobResume = 0x2A,
-    
+
     // Streaming and data transfer
     StreamOpen = 0x30,
     StreamData = 0x31,
@@ -121,7 +121,7 @@ pub enum MessageType {
     FileTransferStart = 0x35,
     FileTransferChunk = 0x36,
     FileTransferComplete = 0x37,
-    
+
     // Observability and monitoring
     MetricsReport = 0x40,
     LogEntry = 0x41,
@@ -129,7 +129,7 @@ pub enum MessageType {
     HealthCheck = 0x43,
     StatusUpdate = 0x44,
     AlertNotification = 0x45,
-    
+
     // Cluster management
     NodeJoin = 0x50,
     NodeLeave = 0x51,
@@ -138,7 +138,7 @@ pub enum MessageType {
     LeaderElection = 0x54,
     ConsensusProposal = 0x55,
     ConsensusVote = 0x56,
-    
+
     // Service discovery and routing
     ServiceRegister = 0x60,
     ServiceDeregister = 0x61,
@@ -146,13 +146,13 @@ pub enum MessageType {
     ServiceResponse = 0x63,
     RouteUpdate = 0x64,
     LoadBalanceUpdate = 0x65,
-    
+
     // Flow control and QoS
     FlowControlUpdate = 0x70,
     BackpressureSignal = 0x71,
     QoSUpdate = 0x72,
     PriorityUpdate = 0x73,
-    
+
     // Custom and extensible
     Custom(u16) = 0xFF00,
 }
@@ -204,13 +204,15 @@ impl MessagePayload {
             MessagePayload::Binary(data) => data.len(),
             MessagePayload::Json(value) => {
                 serde_json::to_string(value).map(|s| s.len()).unwrap_or(0)
-            },
+            }
             MessagePayload::Text(text) => text.len(),
             MessagePayload::Structured(payload) => {
                 serde_json::to_string(payload).map(|s| s.len()).unwrap_or(0)
-            },
+            }
             MessagePayload::Stream(payload) => payload.data.as_ref().map(|d| d.len()).unwrap_or(0),
-            MessagePayload::FileTransfer(payload) => payload.chunk_data.as_ref().map(|d| d.len()).unwrap_or(0),
+            MessagePayload::FileTransfer(payload) => {
+                payload.chunk_data.as_ref().map(|d| d.len()).unwrap_or(0)
+            }
             MessagePayload::Empty => 0,
         }
     }
@@ -222,8 +224,14 @@ impl MessagePayload {
             MessagePayload::Json(_) => false,
             MessagePayload::Text(text) => text.is_empty(),
             MessagePayload::Structured(_) => false,
-            MessagePayload::Stream(payload) => payload.data.as_ref().map(|d| d.is_empty()).unwrap_or(true),
-            MessagePayload::FileTransfer(payload) => payload.chunk_data.as_ref().map(|d| d.is_empty()).unwrap_or(true),
+            MessagePayload::Stream(payload) => {
+                payload.data.as_ref().map(|d| d.is_empty()).unwrap_or(true)
+            }
+            MessagePayload::FileTransfer(payload) => payload
+                .chunk_data
+                .as_ref()
+                .map(|d| d.is_empty())
+                .unwrap_or(true),
             MessagePayload::Empty => true,
         }
     }

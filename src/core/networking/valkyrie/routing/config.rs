@@ -2,11 +2,11 @@
 // Task 3.1.6: Configuration and Policy Management
 
 use super::*;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 /// Configuration manager for routing system
 pub struct ConfigurationManager {
@@ -65,34 +65,34 @@ pub enum RuleCondition {
     DestinationNode(NodeId),
     SourceRegion(RegionId),
     DestinationRegion(RegionId),
-    
+
     // QoS conditions
     PriorityEquals(MessagePriority),
     PriorityAbove(MessagePriority),
     LatencyRequirement(Duration),
     BandwidthRequirement(u64),
     ReliabilityRequirement(f64),
-    
+
     // Network conditions
     NodeLoad(NodeId, f64),
     LinkUtilization(LinkId, f64),
     NetworkCongestion(CongestionState),
-    
+
     // Time conditions
-    TimeOfDay(u8, u8), // hour, minute
-    DayOfWeek(u8),     // 0 = Sunday
+    TimeOfDay(u8, u8),         // hour, minute
+    DayOfWeek(u8),             // 0 = Sunday
     DateRange(String, String), // ISO date strings
-    
+
     // Security conditions
     SecurityLevel(SecurityLevel),
     UserRole(String),
     TenantId(String),
-    
+
     // Logical conditions
     And(Vec<RuleCondition>),
     Or(Vec<RuleCondition>),
     Not(Box<RuleCondition>),
-    
+
     // Custom conditions
     Custom(String), // Expression string
 }
@@ -106,27 +106,27 @@ pub enum RuleAction {
     AvoidNodes(Vec<NodeId>),
     PreferRegions(Vec<RegionId>),
     AvoidRegions(Vec<RegionId>),
-    
+
     // QoS actions
     SetPriority(MessagePriority),
     ReserveBandwidth(u64),
     SetLatencyTarget(Duration),
-    
+
     // Traffic shaping actions
     ApplyRateLimit(u64),
     ApplyDelay(Duration),
     ApplyBackpressure,
-    
+
     // Security actions
     RequireEncryption,
     RequireAuthentication,
     ApplySecurityPolicy(String),
-    
+
     // Monitoring actions
     EnableTracing,
     LogEvent(String),
     TriggerAlert(String),
-    
+
     // Custom actions
     Custom(String), // Action expression
 }
@@ -545,37 +545,44 @@ pub trait StorageBackend: Send + Sync {
 pub enum ConfigError {
     #[error("Policy not found: {policy_id}")]
     PolicyNotFound { policy_id: PolicyId },
-    
+
     #[error("Rule not found: {rule_id}")]
     RuleNotFound { rule_id: RuleId },
-    
+
     #[error("Policy validation failed: {policy_id} - {error}")]
     PolicyValidationFailed { policy_id: PolicyId, error: String },
-    
+
     #[error("Rule validation failed: {rule_id} - {error}")]
     RuleValidationFailed { rule_id: RuleId, error: String },
-    
+
     #[error("Expression evaluation failed: {expression} - {error}")]
     ExpressionEvaluationFailed { expression: String, error: String },
-    
+
     #[error("Conflict resolution failed: {conflict_type:?} - {error}")]
-    ConflictResolutionFailed { conflict_type: ConflictType, error: String },
-    
+    ConflictResolutionFailed {
+        conflict_type: ConflictType,
+        error: String,
+    },
+
     #[error("Configuration reload failed: {path} - {error}")]
     ReloadFailed { path: String, error: String },
-    
+
     #[error("Version not found: {version}")]
     VersionNotFound { version: String },
-    
+
     #[error("Rollback failed: {from_version} -> {to_version} - {error}")]
-    RollbackFailed { from_version: String, to_version: String, error: String },
-    
+    RollbackFailed {
+        from_version: String,
+        to_version: String,
+        error: String,
+    },
+
     #[error("Storage error: {error}")]
     StorageError { error: String },
-    
+
     #[error("Serialization error: {error}")]
     SerializationError { error: String },
-    
+
     #[error("Validation error: {field} - {error}")]
     ValidationError { field: String, error: String },
 }
@@ -607,7 +614,7 @@ impl ConfigurationManager {
     pub async fn add_policy(&self, policy: RoutingPolicy) -> Result<(), ConfigError> {
         // Validate policy
         self.rule_validator.validate_policy(&policy).await?;
-        
+
         // Check for conflicts
         let conflicts = self.policy_engine.detect_conflicts(&policy).await?;
         if !conflicts.is_empty() {
@@ -616,10 +623,10 @@ impl ConfigurationManager {
                 error: format!("Policy conflicts detected: {:?}", conflicts),
             });
         }
-        
+
         // Add policy
         self.policy_engine.add_policy(policy).await?;
-        
+
         Ok(())
     }
 
@@ -634,7 +641,9 @@ impl ConfigurationManager {
         context: &RoutingContext,
         topology: &NetworkTopology,
     ) -> Result<PolicyEvaluationResult, ConfigError> {
-        self.policy_engine.evaluate_policies(context, topology).await
+        self.policy_engine
+            .evaluate_policies(context, topology)
+            .await
     }
 
     /// Start hot reload monitoring
@@ -672,8 +681,11 @@ impl PolicyEngine {
 
     pub async fn remove_policy(&self, policy_id: &PolicyId) -> Result<(), ConfigError> {
         let mut policies = self.policies.write().await;
-        policies.remove(policy_id)
-            .ok_or_else(|| ConfigError::PolicyNotFound { policy_id: policy_id.clone() })?;
+        policies
+            .remove(policy_id)
+            .ok_or_else(|| ConfigError::PolicyNotFound {
+                policy_id: policy_id.clone(),
+            })?;
         Ok(())
     }
 
@@ -692,7 +704,10 @@ impl PolicyEngine {
         })
     }
 
-    pub async fn detect_conflicts(&self, policy: &RoutingPolicy) -> Result<Vec<ConflictType>, ConfigError> {
+    pub async fn detect_conflicts(
+        &self,
+        policy: &RoutingPolicy,
+    ) -> Result<Vec<ConflictType>, ConfigError> {
         Ok(Vec::new())
     }
 }
@@ -820,14 +835,19 @@ impl ConfigStore {
 
     pub async fn load_snapshot(&self) -> Result<ConfigSnapshot, ConfigError> {
         let config_data = self.storage_backend.load_config("current").await?;
-        serde_json::from_str(&config_data)
-            .map_err(|e| ConfigError::SerializationError { error: e.to_string() })
+        serde_json::from_str(&config_data).map_err(|e| ConfigError::SerializationError {
+            error: e.to_string(),
+        })
     }
 
     pub async fn save_snapshot(&self, snapshot: &ConfigSnapshot) -> Result<(), ConfigError> {
-        let config_data = serde_json::to_string(snapshot)
-            .map_err(|e| ConfigError::SerializationError { error: e.to_string() })?;
-        self.storage_backend.save_config("current", &config_data).await
+        let config_data =
+            serde_json::to_string(snapshot).map_err(|e| ConfigError::SerializationError {
+                error: e.to_string(),
+            })?;
+        self.storage_backend
+            .save_config("current", &config_data)
+            .await
     }
 }
 

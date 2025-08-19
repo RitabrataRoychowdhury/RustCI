@@ -1,18 +1,18 @@
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use async_trait::async_trait;
-use tokio::sync::{mpsc, RwLock, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use uuid::Uuid;
 
+use crate::core::networking::node_communication::{ProtocolError, ProtocolMessage};
 use crate::core::networking::transport::{
-    Transport, Connection, Listener, TransportType, TransportConfig, 
-    TransportEndpoint, TransportMetrics, NetworkConditions, ConnectionMetadata
+    Connection, ConnectionMetadata, Listener, NetworkConditions, Transport, TransportConfig,
+    TransportEndpoint, TransportMetrics, TransportType,
 };
+use crate::core::networking::valkyrie::transport::{CompressionConfig, ConnectionPool};
 use crate::core::networking::valkyrie::types::TransportCapabilities;
-use crate::core::networking::valkyrie::transport::{ConnectionPool, CompressionConfig};
-use crate::core::networking::node_communication::{ProtocolMessage, ProtocolError};
 use crate::error::Result;
 
 /// WebSocket transport implementation for browser compatibility
@@ -64,7 +64,7 @@ impl WebSocketTransport {
             websocket_config,
         }
     }
-    
+
     /// Create WebSocket server configuration
     fn create_server_config(&self) -> WebSocketServerConfig {
         WebSocketServerConfig {
@@ -75,7 +75,7 @@ impl WebSocketTransport {
             auto_ping_pong: self.websocket_config.auto_ping_pong,
         }
     }
-    
+
     /// Create WebSocket client configuration
     fn create_client_config(&self) -> WebSocketClientConfig {
         WebSocketClientConfig {
@@ -88,7 +88,7 @@ impl WebSocketTransport {
             pong_timeout: self.websocket_config.pong_timeout,
         }
     }
-    
+
     /// Update connection metrics
     async fn update_metrics(&self, bytes_sent: u64, bytes_received: u64) {
         let mut metrics = self.metrics.write().await;
@@ -108,40 +108,44 @@ impl Transport for WebSocketTransport {
     fn transport_type(&self) -> TransportType {
         TransportType::WebSocket
     }
-    
+
     async fn listen(&self, config: &TransportConfig) -> Result<Box<dyn Listener>> {
         let addr: SocketAddr = format!("{}:{}", config.bind_address, config.port.unwrap_or(8080))
             .parse()
             .map_err(|e| ProtocolError::ConnectionError {
-                message: format!("Invalid bind address: {}", e)
+                message: format!("Invalid bind address: {}", e),
             })?;
-        
+
         // Create WebSocket listener (simplified implementation)
         let listener = WebSocketListener::new(addr, self.create_server_config())?;
-        
+
         Ok(Box::new(listener))
     }
-    
+
     async fn connect(&self, endpoint: &TransportEndpoint) -> Result<Box<dyn Connection>> {
         let url = if endpoint.tls_enabled {
-            format!("wss://{}:{}", endpoint.address, endpoint.port.unwrap_or(443))
+            format!(
+                "wss://{}:{}",
+                endpoint.address,
+                endpoint.port.unwrap_or(443)
+            )
         } else {
             format!("ws://{}:{}", endpoint.address, endpoint.port.unwrap_or(80))
         };
-        
+
         // Create WebSocket connection (simplified implementation)
         let connection = WebSocketConnection::connect(&url, self.create_client_config()).await?;
         let connection_id = connection.metadata().connection_id;
-        
+
         // Register connection
         let mut connections = self.connections.write().await;
         connections.insert(connection_id, Arc::new(Mutex::new(connection)));
-        
+
         // Update metrics
         let mut metrics = self.metrics.write().await;
         metrics.active_connections += 1;
         metrics.total_connections += 1;
-        
+
         // Return a wrapper that implements the Connection trait
         Ok(Box::new(WebSocketConnectionWrapper {
             connection_id,
@@ -149,31 +153,31 @@ impl Transport for WebSocketTransport {
             metrics: self.metrics.clone(),
         }))
     }
-    
+
     async fn shutdown(&self) -> Result<()> {
         // Send shutdown signal
         if let Some(tx) = &self.shutdown_tx {
             let _ = tx.send(()).await;
         }
-        
+
         // Close all active connections
         let mut connections = self.connections.write().await;
         for (_, connection) in connections.drain() {
             let mut conn = connection.lock().await;
             let _ = conn.close().await;
         }
-        
+
         // Reset metrics
         let mut metrics = self.metrics.write().await;
         metrics.active_connections = 0;
-        
+
         Ok(())
     }
-    
+
     async fn get_metrics(&self) -> TransportMetrics {
         self.metrics.read().await.clone()
     }
-    
+
     fn capabilities(&self) -> TransportCapabilities {
         TransportCapabilities {
             max_message_size: self.websocket_config.max_message_size,
@@ -192,17 +196,20 @@ impl Transport for WebSocketTransport {
             supports_failover: true,
         }
     }
-    
+
     async fn configure(&mut self, config: TransportConfig) -> Result<()> {
         let mut current_config = self.config.write().await;
         *current_config = config;
         Ok(())
     }
-    
+
     fn supports_endpoint(&self, endpoint: &TransportEndpoint) -> bool {
-        matches!(endpoint.transport_type, TransportType::WebSocket | TransportType::SecureWebSocket)
+        matches!(
+            endpoint.transport_type,
+            TransportType::WebSocket | TransportType::SecureWebSocket
+        )
     }
-    
+
     async fn optimize_for_conditions(&self, conditions: &NetworkConditions) -> TransportConfig {
         let mut config = TransportConfig::default();
         config.transport_type = if conditions.is_mobile || conditions.is_metered {
@@ -210,14 +217,14 @@ impl Transport for WebSocketTransport {
         } else {
             TransportType::SecureWebSocket
         };
-        
+
         // Optimize for mobile networks
         if conditions.is_mobile {
             config.timeouts.connect_timeout = Duration::from_secs(60);
             config.timeouts.read_timeout = Duration::from_secs(120);
             config.buffer_sizes.max_message_size = 512 * 1024; // 512KB for mobile
         }
-        
+
         config
     }
 }
@@ -262,14 +269,15 @@ impl Listener for WebSocketListener {
         // Simplified implementation - in reality, this would use a WebSocket library
         // like tokio-tungstenite to accept incoming WebSocket connections
         Err(ProtocolError::ConnectionError {
-            message: "WebSocket listener not fully implemented".to_string()
-        }.into())
+            message: "WebSocket listener not fully implemented".to_string(),
+        }
+        .into())
     }
-    
+
     fn local_addr(&self) -> Result<SocketAddr> {
         Ok(self.addr)
     }
-    
+
     async fn close(&mut self) -> Result<()> {
         Ok(())
     }
@@ -290,7 +298,7 @@ impl WebSocketConnection {
     pub async fn connect(url: &str, config: WebSocketClientConfig) -> Result<Self> {
         // Simplified implementation - in reality, this would establish a WebSocket connection
         let connection_id = Uuid::new_v4();
-        
+
         Ok(Self {
             connection_id,
             url: url.to_string(),
@@ -311,59 +319,60 @@ impl WebSocketConnection {
             last_pong: None,
         })
     }
-    
+
     pub fn metadata(&self) -> ConnectionMetadata {
         self.metadata.clone()
     }
-    
+
     async fn send_internal(&mut self, message: &ProtocolMessage) -> Result<()> {
         // In a real implementation, this would send the message over WebSocket
-        let serialized = serde_json::to_vec(message)
-            .map_err(ProtocolError::SerializationError)?;
-        
+        let serialized = serde_json::to_vec(message).map_err(ProtocolError::SerializationError)?;
+
         // Check message size
         if serialized.len() > self.config.max_message_size {
             return Err(ProtocolError::ConnectionError {
-                message: format!("Message too large: {} bytes", serialized.len())
-            }.into());
+                message: format!("Message too large: {} bytes", serialized.len()),
+            }
+            .into());
         }
-        
+
         // Simulate sending over WebSocket
         // In reality, this would use a WebSocket library to send the message
-        
+
         // Update metadata
         self.metadata.bytes_sent += serialized.len() as u64;
         self.metadata.messages_sent += 1;
-        
+
         Ok(())
     }
-    
+
     async fn receive_internal(&mut self) -> Result<ProtocolMessage> {
         // In a real implementation, this would receive from WebSocket
         // For now, we'll return an error indicating incomplete implementation
         Err(ProtocolError::ConnectionError {
-            message: "WebSocket receive not fully implemented".to_string()
-        }.into())
+            message: "WebSocket receive not fully implemented".to_string(),
+        }
+        .into())
     }
-    
+
     async fn close(&mut self) -> Result<()> {
         self.connected = false;
         Ok(())
     }
-    
+
     /// Send ping frame for keepalive
     async fn send_ping(&mut self) -> Result<()> {
         // In a real implementation, this would send a WebSocket ping frame
         self.last_ping = Some(std::time::Instant::now());
         Ok(())
     }
-    
+
     /// Handle pong frame
     async fn handle_pong(&mut self) -> Result<()> {
         self.last_pong = Some(std::time::Instant::now());
         Ok(())
     }
-    
+
     /// Check if connection is healthy based on ping/pong
     fn is_healthy(&self) -> bool {
         if let (Some(ping_time), Some(pong_time)) = (self.last_ping, self.last_pong) {
@@ -390,11 +399,12 @@ impl Connection for WebSocketConnectionWrapper {
             conn.send_internal(message).await
         } else {
             Err(ProtocolError::ConnectionError {
-                message: "Connection not found".to_string()
-            }.into())
+                message: "Connection not found".to_string(),
+            }
+            .into())
         }
     }
-    
+
     async fn receive(&mut self) -> Result<ProtocolMessage> {
         let connections = self.connections.read().await;
         if let Some(connection) = connections.get(&self.connection_id) {
@@ -402,30 +412,31 @@ impl Connection for WebSocketConnectionWrapper {
             conn.receive_internal().await
         } else {
             Err(ProtocolError::ConnectionError {
-                message: "Connection not found".to_string()
-            }.into())
+                message: "Connection not found".to_string(),
+            }
+            .into())
         }
     }
-    
+
     async fn close(&mut self) -> Result<()> {
         let connections = self.connections.read().await;
         if let Some(connection) = connections.get(&self.connection_id) {
             let mut conn = connection.lock().await;
             conn.close().await?;
         }
-        
+
         // Remove from connections registry
         drop(connections);
         let mut connections = self.connections.write().await;
         connections.remove(&self.connection_id);
-        
+
         Ok(())
     }
-    
+
     fn is_connected(&self) -> bool {
         true // Simplified implementation
     }
-    
+
     fn metadata(&self) -> ConnectionMetadata {
         ConnectionMetadata {
             connection_id: self.connection_id,
@@ -445,7 +456,7 @@ impl Default for WebSocketConfig {
     fn default() -> Self {
         Self {
             max_message_size: 16 * 1024 * 1024, // 16MB
-            max_frame_size: 64 * 1024, // 64KB
+            max_frame_size: 64 * 1024,          // 64KB
             compression: CompressionConfig::default(),
             ping_interval: Duration::from_secs(30),
             pong_timeout: Duration::from_secs(10),
@@ -455,4 +466,3 @@ impl Default for WebSocketConfig {
         }
     }
 }
-

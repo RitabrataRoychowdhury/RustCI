@@ -307,8 +307,8 @@ impl WorkspaceService for WorkspaceServiceImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::repositories::WorkspaceRepository;
     use crate::application::services::EncryptionService;
+    use crate::domain::repositories::WorkspaceRepository;
     use async_trait::async_trait;
     use std::sync::Arc;
     use tokio;

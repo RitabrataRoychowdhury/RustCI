@@ -1,17 +1,17 @@
 //! Health Monitoring System
-//! 
+//!
 //! Implements comprehensive health monitoring with multiple check types,
 //! circuit breakers, and intelligent failure detection for service reliability.
 
+use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, Semaphore};
-use dashmap::DashMap;
-use serde::{Serialize, Deserialize};
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
-use super::{ServiceId, ServiceEndpoint, EndpointId};
+use super::{EndpointId, ServiceEndpoint, ServiceId};
 use crate::error::{Result, ValkyrieError};
 
 /// Health monitoring system
@@ -100,10 +100,7 @@ pub enum HealthCheckType {
         headers: HashMap<String, String>,
     },
     /// TCP connection check
-    Tcp {
-        host: String,
-        port: u16,
-    },
+    Tcp { host: String, port: u16 },
     /// gRPC health check
     Grpc {
         endpoint: String,
@@ -187,11 +184,12 @@ pub struct HealthCheckResult {
 /// Health check executor trait
 pub trait HealthCheckExecutor: Send + Sync {
     /// Execute health check
-    fn execute(&self, check_type: &HealthCheckType, timeout: Duration) -> Result<HealthCheckResult>;
-    
+    fn execute(&self, check_type: &HealthCheckType, timeout: Duration)
+        -> Result<HealthCheckResult>;
+
     /// Executor name
     fn name(&self) -> &str;
-    
+
     /// Supported check types
     fn supported_types(&self) -> Vec<String>;
 }
@@ -232,7 +230,7 @@ pub struct HealthMonitorConfig {
 }
 
 /// Retry policy for health checks
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetryPolicy {
     /// Maximum retry attempts
     pub max_attempts: u32,
@@ -290,7 +288,7 @@ impl HealthMonitor {
             default_check_interval: check_interval,
             ..Default::default()
         };
-        
+
         Self::with_config(config)
     }
 
@@ -319,7 +317,11 @@ impl HealthMonitor {
     }
 
     /// Start monitoring a service
-    pub async fn start_monitoring(&self, service_id: ServiceId, endpoints: &[ServiceEndpoint]) -> Result<()> {
+    pub async fn start_monitoring(
+        &self,
+        service_id: ServiceId,
+        endpoints: &[ServiceEndpoint],
+    ) -> Result<()> {
         // Create health check configuration
         let health_config = HealthCheckConfig {
             service_id,
@@ -344,7 +346,8 @@ impl HealthMonitor {
 
         // Initialize endpoint health
         for endpoint in endpoints {
-            self.endpoint_health.insert(endpoint.endpoint_id, HealthStatus::Unknown);
+            self.endpoint_health
+                .insert(endpoint.endpoint_id, HealthStatus::Unknown);
         }
 
         // Create circuit breaker if enabled
@@ -371,10 +374,10 @@ impl HealthMonitor {
     pub async fn stop_monitoring(&self, service_id: ServiceId) -> Result<()> {
         // Remove health check configuration
         self.health_checks.remove(&service_id);
-        
+
         // Remove health status
         self.health_status.remove(&service_id);
-        
+
         // Remove circuit breaker
         self.circuit_breakers.remove(&service_id);
 
@@ -384,21 +387,27 @@ impl HealthMonitor {
 
     /// Get health status for service
     pub async fn get_health_status(&self, service_id: ServiceId) -> Option<HealthStatus> {
-        self.health_status.get(&service_id).map(|status| status.clone())
+        self.health_status
+            .get(&service_id)
+            .map(|status| status.clone())
     }
 
     /// Get health status for endpoint
     pub async fn get_endpoint_health(&self, endpoint_id: EndpointId) -> Option<HealthStatus> {
-        self.endpoint_health.get(&endpoint_id).map(|status| status.clone())
+        self.endpoint_health
+            .get(&endpoint_id)
+            .map(|status| status.clone())
     }
 
     /// Perform health check for service
     pub async fn check_service_health(&self, service_id: ServiceId) -> Result<HealthCheckResult> {
-        let _permit = self.check_semaphore.acquire().await
-            .map_err(|e| ValkyrieError::HealthCheckError(format!("Failed to acquire semaphore: {}", e)))?;
+        let _permit = self.check_semaphore.acquire().await.map_err(|e| {
+            ValkyrieError::HealthCheckError(format!("Failed to acquire semaphore: {}", e))
+        })?;
 
-        let health_config = self.health_checks.get(&service_id)
-            .ok_or_else(|| ValkyrieError::ServiceNotFound(format!("No health config for service: {}", service_id)))?;
+        let health_config = self.health_checks.get(&service_id).ok_or_else(|| {
+            ValkyrieError::ServiceNotFound(format!("No health config for service: {}", service_id))
+        })?;
 
         // Check circuit breaker
         if let Some(circuit_breaker) = self.circuit_breakers.get(&service_id) {
@@ -430,7 +439,10 @@ impl HealthMonitor {
         let mut details = HashMap::new();
 
         for check_type in &health_config.check_types {
-            match self.execute_health_check(check_type, health_config.timeout).await {
+            match self
+                .execute_health_check(check_type, health_config.timeout)
+                .await
+            {
                 Ok(result) => {
                     if !result.success {
                         overall_success = false;
@@ -450,7 +462,11 @@ impl HealthMonitor {
         let check_result = HealthCheckResult {
             success: overall_success,
             response_time: start_time.elapsed(),
-            error: if errors.is_empty() { None } else { Some(errors.join("; ")) },
+            error: if errors.is_empty() {
+                None
+            } else {
+                Some(errors.join("; "))
+            },
             details,
             timestamp: Instant::now(),
         };
@@ -468,33 +484,63 @@ impl HealthMonitor {
     }
 
     /// Execute a specific health check
-    async fn execute_health_check(&self, check_type: &HealthCheckType, timeout: Duration) -> Result<HealthCheckResult> {
+    async fn execute_health_check(
+        &self,
+        check_type: &HealthCheckType,
+        timeout: Duration,
+    ) -> Result<HealthCheckResult> {
         match check_type {
-            HealthCheckType::Http { endpoint, expected_status, .. } => {
-                self.execute_http_check(endpoint, *expected_status, timeout).await
+            HealthCheckType::Http {
+                endpoint,
+                expected_status,
+                ..
+            } => {
+                self.execute_http_check(endpoint, *expected_status, timeout)
+                    .await
             }
             HealthCheckType::Tcp { host, port } => {
                 self.execute_tcp_check(host, *port, timeout).await
             }
-            HealthCheckType::Grpc { endpoint, service_name } => {
-                self.execute_grpc_check(endpoint, service_name.as_deref(), timeout).await
+            HealthCheckType::Grpc {
+                endpoint,
+                service_name,
+            } => {
+                self.execute_grpc_check(endpoint, service_name.as_deref(), timeout)
+                    .await
             }
-            HealthCheckType::Database { connection_string, query } => {
-                self.execute_database_check(connection_string, query.as_deref(), timeout).await
+            HealthCheckType::Database {
+                connection_string,
+                query,
+            } => {
+                self.execute_database_check(connection_string, query.as_deref(), timeout)
+                    .await
             }
-            HealthCheckType::Custom { executor_name, parameters } => {
-                self.execute_custom_check(executor_name, parameters, timeout).await
+            HealthCheckType::Custom {
+                executor_name,
+                parameters,
+            } => {
+                self.execute_custom_check(executor_name, parameters, timeout)
+                    .await
             }
-            HealthCheckType::Composite { checks, require_all } => {
-                self.execute_composite_check(checks, *require_all, timeout).await
+            HealthCheckType::Composite {
+                checks,
+                require_all,
+            } => {
+                self.execute_composite_check(checks, *require_all, timeout)
+                    .await
             }
         }
     }
 
     /// Execute HTTP health check
-    async fn execute_http_check(&self, endpoint: &str, expected_status: u16, timeout: Duration) -> Result<HealthCheckResult> {
+    async fn execute_http_check(
+        &self,
+        endpoint: &str,
+        expected_status: u16,
+        timeout: Duration,
+    ) -> Result<HealthCheckResult> {
         let start_time = Instant::now();
-        
+
         // Simplified HTTP check - in practice would use proper HTTP client
         let success = true; // Placeholder
         let response_time = start_time.elapsed();
@@ -502,7 +548,11 @@ impl HealthMonitor {
         Ok(HealthCheckResult {
             success,
             response_time,
-            error: if success { None } else { Some("HTTP check failed".to_string()) },
+            error: if success {
+                None
+            } else {
+                Some("HTTP check failed".to_string())
+            },
             details: {
                 let mut details = HashMap::new();
                 details.insert("endpoint".to_string(), endpoint.to_string());
@@ -514,9 +564,14 @@ impl HealthMonitor {
     }
 
     /// Execute TCP health check
-    async fn execute_tcp_check(&self, host: &str, port: u16, timeout: Duration) -> Result<HealthCheckResult> {
+    async fn execute_tcp_check(
+        &self,
+        host: &str,
+        port: u16,
+        timeout: Duration,
+    ) -> Result<HealthCheckResult> {
         let start_time = Instant::now();
-        
+
         // Simplified TCP check
         let success = true; // Placeholder
         let response_time = start_time.elapsed();
@@ -524,7 +579,11 @@ impl HealthMonitor {
         Ok(HealthCheckResult {
             success,
             response_time,
-            error: if success { None } else { Some("TCP connection failed".to_string()) },
+            error: if success {
+                None
+            } else {
+                Some("TCP connection failed".to_string())
+            },
             details: {
                 let mut details = HashMap::new();
                 details.insert("host".to_string(), host.to_string());
@@ -536,9 +595,14 @@ impl HealthMonitor {
     }
 
     /// Execute gRPC health check
-    async fn execute_grpc_check(&self, endpoint: &str, service_name: Option<&str>, timeout: Duration) -> Result<HealthCheckResult> {
+    async fn execute_grpc_check(
+        &self,
+        endpoint: &str,
+        service_name: Option<&str>,
+        timeout: Duration,
+    ) -> Result<HealthCheckResult> {
         let start_time = Instant::now();
-        
+
         // Simplified gRPC check
         let success = true; // Placeholder
         let response_time = start_time.elapsed();
@@ -546,7 +610,11 @@ impl HealthMonitor {
         Ok(HealthCheckResult {
             success,
             response_time,
-            error: if success { None } else { Some("gRPC health check failed".to_string()) },
+            error: if success {
+                None
+            } else {
+                Some("gRPC health check failed".to_string())
+            },
             details: {
                 let mut details = HashMap::new();
                 details.insert("endpoint".to_string(), endpoint.to_string());
@@ -560,9 +628,14 @@ impl HealthMonitor {
     }
 
     /// Execute database health check
-    async fn execute_database_check(&self, connection_string: &str, query: Option<&str>, timeout: Duration) -> Result<HealthCheckResult> {
+    async fn execute_database_check(
+        &self,
+        connection_string: &str,
+        query: Option<&str>,
+        timeout: Duration,
+    ) -> Result<HealthCheckResult> {
         let start_time = Instant::now();
-        
+
         // Simplified database check
         let success = true; // Placeholder
         let response_time = start_time.elapsed();
@@ -570,7 +643,11 @@ impl HealthMonitor {
         Ok(HealthCheckResult {
             success,
             response_time,
-            error: if success { None } else { Some("Database connection failed".to_string()) },
+            error: if success {
+                None
+            } else {
+                Some("Database connection failed".to_string())
+            },
             details: {
                 let mut details = HashMap::new();
                 details.insert("connection_type".to_string(), "database".to_string());
@@ -584,7 +661,12 @@ impl HealthMonitor {
     }
 
     /// Execute custom health check
-    async fn execute_custom_check(&self, executor_name: &str, parameters: &HashMap<String, String>, timeout: Duration) -> Result<HealthCheckResult> {
+    async fn execute_custom_check(
+        &self,
+        executor_name: &str,
+        parameters: &HashMap<String, String>,
+        timeout: Duration,
+    ) -> Result<HealthCheckResult> {
         // Custom executor implementation would go here
         Ok(HealthCheckResult {
             success: true,
@@ -596,43 +678,53 @@ impl HealthMonitor {
     }
 
     /// Execute composite health check
-    fn execute_composite_check<'a>(&'a self, checks: &'a [HealthCheckType], require_all: bool, timeout: Duration) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<HealthCheckResult>> + Send + 'a>> {
+    fn execute_composite_check<'a>(
+        &'a self,
+        checks: &'a [HealthCheckType],
+        require_all: bool,
+        timeout: Duration,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<HealthCheckResult>> + Send + 'a>>
+    {
         Box::pin(async move {
-        let start_time = Instant::now();
-        let mut overall_success = if require_all { true } else { false };
-        let mut errors = Vec::new();
-        let mut all_details = HashMap::new();
+            let start_time = Instant::now();
+            let mut overall_success = if require_all { true } else { false };
+            let mut errors = Vec::new();
+            let mut all_details = HashMap::new();
 
-        for (i, check) in checks.iter().enumerate() {
-            match self.execute_health_check(check, timeout).await {
-                Ok(result) => {
-                    if require_all {
-                        overall_success = overall_success && result.success;
-                    } else {
-                        overall_success = overall_success || result.success;
+            for (i, check) in checks.iter().enumerate() {
+                match self.execute_health_check(check, timeout).await {
+                    Ok(result) => {
+                        if require_all {
+                            overall_success = overall_success && result.success;
+                        } else {
+                            overall_success = overall_success || result.success;
+                        }
+
+                        if let Some(error) = result.error {
+                            errors.push(format!("Check {}: {}", i, error));
+                        }
+
+                        for (key, value) in result.details {
+                            all_details.insert(format!("check_{}_{}", i, key), value);
+                        }
                     }
-                    
-                    if let Some(error) = result.error {
-                        errors.push(format!("Check {}: {}", i, error));
-                    }
-                    
-                    for (key, value) in result.details {
-                        all_details.insert(format!("check_{}_{}", i, key), value);
-                    }
-                }
-                Err(e) => {
-                    errors.push(format!("Check {}: {}", i, e));
-                    if require_all {
-                        overall_success = false;
+                    Err(e) => {
+                        errors.push(format!("Check {}: {}", i, e));
+                        if require_all {
+                            overall_success = false;
+                        }
                     }
                 }
             }
-        }
 
             Ok(HealthCheckResult {
                 success: overall_success,
                 response_time: start_time.elapsed(),
-                error: if errors.is_empty() { None } else { Some(errors.join("; ")) },
+                error: if errors.is_empty() {
+                    None
+                } else {
+                    Some(errors.join("; "))
+                },
                 details: all_details,
                 timestamp: Instant::now(),
             })
@@ -641,7 +733,9 @@ impl HealthMonitor {
 
     /// Update health status based on check result
     async fn update_health_status(&self, service_id: ServiceId, result: &HealthCheckResult) {
-        let current_status = self.health_status.get(&service_id)
+        let current_status = self
+            .health_status
+            .get(&service_id)
             .map(|s| s.clone())
             .unwrap_or(HealthStatus::Unknown);
 
@@ -659,7 +753,10 @@ impl HealthMonitor {
             }
         } else {
             HealthStatus::Unhealthy {
-                reason: result.error.clone().unwrap_or("Health check failed".to_string()),
+                reason: result
+                    .error
+                    .clone()
+                    .unwrap_or("Health check failed".to_string()),
                 last_healthy: match current_status {
                     HealthStatus::Healthy => Some(Instant::now()),
                     HealthStatus::Unhealthy { last_healthy, .. } => last_healthy,
@@ -682,12 +779,14 @@ impl HealthMonitor {
                     } else {
                         circuit_breaker.failure_count += 1;
                         circuit_breaker.success_count = 0;
-                        
-                        if circuit_breaker.failure_count >= circuit_breaker.config.failure_threshold {
+
+                        if circuit_breaker.failure_count >= circuit_breaker.config.failure_threshold
+                        {
                             circuit_breaker.state = CircuitBreakerState::Open;
                             circuit_breaker.last_state_change = Instant::now();
-                            circuit_breaker.next_retry = Some(Instant::now() + circuit_breaker.config.timeout);
-                            
+                            circuit_breaker.next_retry =
+                                Some(Instant::now() + circuit_breaker.config.timeout);
+
                             warn!("Circuit breaker opened for service: {}", service_id);
                         }
                     }
@@ -696,12 +795,13 @@ impl HealthMonitor {
                     if result.success {
                         circuit_breaker.success_count += 1;
                         circuit_breaker.failure_count = 0;
-                        
-                        if circuit_breaker.success_count >= circuit_breaker.config.success_threshold {
+
+                        if circuit_breaker.success_count >= circuit_breaker.config.success_threshold
+                        {
                             circuit_breaker.state = CircuitBreakerState::Closed;
                             circuit_breaker.last_state_change = Instant::now();
                             circuit_breaker.next_retry = None;
-                            
+
                             info!("Circuit breaker closed for service: {}", service_id);
                         }
                     } else {
@@ -709,8 +809,9 @@ impl HealthMonitor {
                         circuit_breaker.failure_count += 1;
                         circuit_breaker.success_count = 0;
                         circuit_breaker.last_state_change = Instant::now();
-                        circuit_breaker.next_retry = Some(Instant::now() + circuit_breaker.config.timeout);
-                        
+                        circuit_breaker.next_retry =
+                            Some(Instant::now() + circuit_breaker.config.timeout);
+
                         warn!("Circuit breaker reopened for service: {}", service_id);
                     }
                 }
@@ -724,12 +825,15 @@ impl HealthMonitor {
     /// Create default health checks for endpoints
     fn create_default_checks(&self, endpoints: &[ServiceEndpoint]) -> Vec<HealthCheckType> {
         let mut checks = Vec::new();
-        
+
         for endpoint in endpoints {
             match endpoint.protocol.as_str() {
                 "http" | "https" => {
                     checks.push(HealthCheckType::Http {
-                        endpoint: format!("{}://{}:{}/health", endpoint.protocol, endpoint.address, endpoint.port),
+                        endpoint: format!(
+                            "{}://{}:{}/health",
+                            endpoint.protocol, endpoint.address, endpoint.port
+                        ),
                         expected_status: 200,
                         expected_body: None,
                         headers: HashMap::new(),
@@ -756,7 +860,7 @@ impl HealthMonitor {
                 }
             }
         }
-        
+
         checks
     }
 
@@ -764,13 +868,13 @@ impl HealthMonitor {
     async fn start_health_check_task(&self, service_id: ServiceId) {
         let monitor = self.clone();
         let check_interval = self.config.default_check_interval;
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(check_interval);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 if let Err(e) = monitor.check_service_health(service_id).await {
                     error!("Health check failed for service {}: {}", service_id, e);
                 }
@@ -782,7 +886,7 @@ impl HealthMonitor {
     async fn update_health_metrics(&self, result: &HealthCheckResult) {
         let mut metrics = self.metrics.write().await;
         metrics.total_checks += 1;
-        
+
         if result.success {
             metrics.successful_checks += 1;
         } else {
@@ -790,9 +894,11 @@ impl HealthMonitor {
         }
 
         // Update average check duration
-        let total_duration = metrics.avg_check_duration.as_nanos() * (metrics.total_checks - 1) as u128
+        let total_duration = metrics.avg_check_duration.as_nanos()
+            * (metrics.total_checks - 1) as u128
             + result.response_time.as_nanos();
-        metrics.avg_check_duration = Duration::from_nanos((total_duration / metrics.total_checks as u128) as u64);
+        metrics.avg_check_duration =
+            Duration::from_nanos((total_duration / metrics.total_checks as u128) as u64);
     }
 
     /// Start health monitoring
@@ -804,11 +910,11 @@ impl HealthMonitor {
     /// Get health metrics
     pub async fn metrics(&self) -> HealthMetrics {
         let mut metrics = self.metrics.read().await.clone();
-        
+
         // Update real-time status distribution
         metrics.status_distribution.clear();
         metrics.services_by_status.clear();
-        
+
         for status in self.health_status.iter() {
             let status_name = match status.value() {
                 HealthStatus::Healthy => "healthy",
@@ -817,11 +923,17 @@ impl HealthMonitor {
                 HealthStatus::Unknown => "unknown",
                 HealthStatus::Maintenance { .. } => "maintenance",
             };
-            
-            *metrics.status_distribution.entry(status_name.to_string()).or_insert(0) += 1;
-            *metrics.services_by_status.entry(status_name.to_string()).or_insert(0) += 1;
+
+            *metrics
+                .status_distribution
+                .entry(status_name.to_string())
+                .or_insert(0) += 1;
+            *metrics
+                .services_by_status
+                .entry(status_name.to_string())
+                .or_insert(0) += 1;
         }
-        
+
         metrics
     }
 }

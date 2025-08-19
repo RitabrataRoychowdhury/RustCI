@@ -128,7 +128,10 @@ impl Clone for BandwidthAllocation {
             guaranteed_bandwidth: self.guaranteed_bandwidth,
             max_bandwidth: self.max_bandwidth,
             burst_allowance: self.burst_allowance,
-            current_usage: AtomicU64::new(self.current_usage.load(std::sync::atomic::Ordering::Relaxed)),
+            current_usage: AtomicU64::new(
+                self.current_usage
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            ),
             allocation_window: self.allocation_window,
         }
     }
@@ -222,7 +225,7 @@ pub enum ShapingCondition {
     LatencyAbove(Duration),
     ErrorRateAbove(f64),
     TimeWindow(Duration, Duration), // start, end
-    Custom(String), // Custom condition expression
+    Custom(String),                 // Custom condition expression
 }
 
 /// Action to take when shaping
@@ -238,10 +241,7 @@ pub enum ShapingAction {
 }
 
 impl QoSRouter {
-    pub fn new(
-        total_bandwidth: u64,
-        scheduling_algorithm: SchedulingAlgorithm,
-    ) -> Self {
+    pub fn new(total_bandwidth: u64, scheduling_algorithm: SchedulingAlgorithm) -> Self {
         Self {
             priority_manager: Arc::new(PriorityManager::new()),
             sla_enforcer: Arc::new(SLAEnforcer::new()),
@@ -266,21 +266,26 @@ impl QoSRouter {
 
         // Reserve bandwidth if needed
         if let Some(min_bandwidth) = context.qos_requirements.min_bandwidth {
-            self.bandwidth_manager.reserve_bandwidth(
-                &context.message_id,
-                min_bandwidth,
-                context.qos_requirements.priority,
-            ).await?;
+            self.bandwidth_manager
+                .reserve_bandwidth(
+                    &context.message_id,
+                    min_bandwidth,
+                    context.qos_requirements.priority,
+                )
+                .await?;
         }
 
         // Calculate QoS-aware route
         let mut qos_context = context.clone();
         self.enhance_context_with_qos(&mut qos_context).await;
 
-        let route = routing_engine.calculate_route(&qos_context, topology).await?;
+        let route = routing_engine
+            .calculate_route(&qos_context, topology)
+            .await?;
 
         // Validate route meets QoS requirements
-        self.validate_route_qos(&route, &context.qos_requirements).await?;
+        self.validate_route_qos(&route, &context.qos_requirements)
+            .await?;
 
         // Schedule message based on priority
         self.qos_scheduler.schedule_message(context).await?;
@@ -313,8 +318,10 @@ impl QoSRouter {
     // Private helper methods
     async fn enhance_context_with_qos(&self, context: &mut RoutingContext) {
         // Add QoS-specific routing hints
-        let priority_weight = self.priority_manager.get_priority_weight(context.qos_requirements.priority);
-        
+        let priority_weight = self
+            .priority_manager
+            .get_priority_weight(context.qos_requirements.priority);
+
         if let Some(latency_weight) = context.routing_hints.latency_weight {
             context.routing_hints.latency_weight = Some(latency_weight * priority_weight);
         } else {
@@ -388,7 +395,8 @@ impl PriorityManager {
 
     pub async fn get_queue_depths(&self) -> HashMap<MessagePriority, usize> {
         let queues = self.priority_queues.read().await;
-        queues.iter()
+        queues
+            .iter()
             .map(|(priority, queue)| (*priority, queue.len()))
             .collect()
     }
@@ -396,7 +404,7 @@ impl PriorityManager {
     pub async fn enqueue_message(&self, message: QueuedMessage) -> Result<(), QoSError> {
         let priority = message.routing_context.qos_requirements.priority;
         let mut queues = self.priority_queues.write().await;
-        
+
         let queue = queues.entry(priority).or_insert_with(|| {
             PriorityQueue::new(1000) // Default max size
         });
@@ -424,7 +432,7 @@ impl<T> PriorityQueue<T> {
             self.dropped_items.fetch_add(1, Ordering::Relaxed);
             return Err(QoSError::QueueFull);
         }
-        
+
         self.items.push_back(item);
         Ok(())
     }
@@ -480,7 +488,7 @@ impl TrafficShaper {
 
     pub async fn apply_shaping(&self, context: &RoutingContext) -> Result<(), RoutingError> {
         let priority = context.qos_requirements.priority;
-        
+
         // Check token bucket
         let token_buckets = self.token_buckets.read().await;
         if let Some(bucket) = token_buckets.get(&priority) {
@@ -521,22 +529,26 @@ impl TrafficShaper {
         true
     }
 
-    async fn evaluate_condition(&self, condition: &ShapingCondition, context: &RoutingContext) -> bool {
+    async fn evaluate_condition(
+        &self,
+        condition: &ShapingCondition,
+        context: &RoutingContext,
+    ) -> bool {
         match condition {
             ShapingCondition::PriorityEquals(priority) => {
                 context.qos_requirements.priority == *priority
             }
-            ShapingCondition::SourceNode(node_id) => {
-                context.source == *node_id
-            }
-            ShapingCondition::DestinationNode(node_id) => {
-                context.destination == *node_id
-            }
+            ShapingCondition::SourceNode(node_id) => context.source == *node_id,
+            ShapingCondition::DestinationNode(node_id) => context.destination == *node_id,
             _ => true, // Simplified for other conditions
         }
     }
 
-    async fn apply_policy_actions(&self, policy: &ShapingPolicy, context: &RoutingContext) -> Result<(), RoutingError> {
+    async fn apply_policy_actions(
+        &self,
+        policy: &ShapingPolicy,
+        context: &RoutingContext,
+    ) -> Result<(), RoutingError> {
         for action in &policy.actions {
             match action {
                 ShapingAction::DelayMessages(duration) => {
@@ -566,7 +578,7 @@ impl TokenBucket {
 
     pub async fn consume_token(&self) -> bool {
         self.refill_tokens().await;
-        
+
         let current_tokens = self.tokens.load(Ordering::Relaxed);
         if current_tokens > 0 {
             self.tokens.fetch_sub(1, Ordering::Relaxed);
@@ -580,12 +592,12 @@ impl TokenBucket {
         let now = Instant::now();
         let mut last_refill = self.last_refill.write().await;
         let elapsed = now.duration_since(*last_refill);
-        
+
         if elapsed >= Duration::from_secs(1) {
             let tokens_to_add = (elapsed.as_secs() * self.refill_rate).min(self.capacity);
             let current_tokens = self.tokens.load(Ordering::Relaxed);
             let new_tokens = (current_tokens + tokens_to_add).min(self.capacity);
-            
+
             self.tokens.store(new_tokens, Ordering::Relaxed);
             *last_refill = now;
         }
@@ -610,7 +622,7 @@ impl BandwidthManager {
     ) -> Result<(), RoutingError> {
         let mut reserved = self.reserved_bandwidth.write().await;
         let total_reserved: u64 = reserved.values().sum();
-        
+
         if total_reserved + bandwidth > self.total_bandwidth {
             return Err(RoutingError::QoSNotSatisfiable {
                 requirements: QoSRequirements {
@@ -620,7 +632,7 @@ impl BandwidthManager {
                 },
             });
         }
-        
+
         reserved.insert(*message_id, bandwidth);
         Ok(())
     }
@@ -643,9 +655,7 @@ impl QoSScheduler {
 
     pub async fn schedule_message(&self, context: &RoutingContext) -> Result<(), RoutingError> {
         match self.scheduling_algorithm {
-            SchedulingAlgorithm::StrictPriority => {
-                self.schedule_strict_priority(context).await
-            }
+            SchedulingAlgorithm::StrictPriority => self.schedule_strict_priority(context).await,
             SchedulingAlgorithm::WeightedFairQueuing => {
                 self.schedule_weighted_fair_queuing(context).await
             }
@@ -662,11 +672,14 @@ impl QoSScheduler {
         Ok(())
     }
 
-    async fn schedule_weighted_fair_queuing(&self, context: &RoutingContext) -> Result<(), RoutingError> {
+    async fn schedule_weighted_fair_queuing(
+        &self,
+        context: &RoutingContext,
+    ) -> Result<(), RoutingError> {
         // Weighted fair queuing implementation
         let mut state = self.scheduler_state.write().await;
         let priority = context.qos_requirements.priority;
-        
+
         // Update service credits based on priority weight
         let weight = match priority {
             MessagePriority::Critical => 4.0,
@@ -675,10 +688,10 @@ impl QoSScheduler {
             MessagePriority::Low => 1.0,
             MessagePriority::Background => 0.5,
         };
-        
+
         state.queue_weights.insert(priority, weight);
         state.last_service_time.insert(priority, Instant::now());
-        
+
         Ok(())
     }
 }
@@ -688,16 +701,16 @@ impl QoSScheduler {
 pub enum QoSError {
     #[error("Queue is full")]
     QueueFull,
-    
+
     #[error("SLA violation: {violation:?}")]
     SLAViolation { violation: SLAViolationType },
-    
+
     #[error("Bandwidth not available: requested {requested}, available {available}")]
     BandwidthUnavailable { requested: u64, available: u64 },
-    
+
     #[error("Traffic shaping applied: {reason}")]
     TrafficShaped { reason: String },
-    
+
     #[error("Congestion detected: {state:?}")]
     CongestionDetected { state: CongestionState },
 }
@@ -716,17 +729,23 @@ pub struct QoSMetricsSnapshot {
 // Placeholder implementations for supporting types
 pub struct PreemptionHandler;
 impl PreemptionHandler {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 pub struct ViolationDetector;
 impl ViolationDetector {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 pub struct RemediationEngine;
 impl RemediationEngine {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 pub struct SLAMetrics {
@@ -742,12 +761,16 @@ impl SLAMetrics {
 
 pub struct CongestionDetector;
 impl CongestionDetector {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 pub struct BackpressureManager;
 impl BackpressureManager {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 impl CongestionController {
@@ -766,12 +789,16 @@ impl CongestionController {
 
 pub struct UtilizationMonitor;
 impl UtilizationMonitor {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 pub struct StarvationDetector;
 impl StarvationDetector {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 #[derive(Debug, Clone)]

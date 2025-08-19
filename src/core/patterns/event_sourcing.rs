@@ -683,10 +683,7 @@ impl SchemaEvolutionManager {
 
     /// Register an event migrator
     pub fn register_migrator(&mut self, event_type: String, migrator: Box<dyn EventMigrator>) {
-        self.migrators
-            .entry(event_type)
-            .or_default()
-            .push(migrator);
+        self.migrators.entry(event_type).or_default().push(migrator);
     }
 
     /// Migrate event to latest schema version

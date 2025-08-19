@@ -1,8 +1,10 @@
 //! Unix Socket Transport Implementation for Valkyrie Protocol
 
-use async_trait::async_trait;
-use crate::valkyrie::transport::{Transport, Connection, Listener, Endpoint, TransportCapabilities};
+use crate::valkyrie::transport::{
+    Connection, Endpoint, Listener, Transport, TransportCapabilities,
+};
 use crate::valkyrie::Result;
+use async_trait::async_trait;
 
 /// Unix socket transport implementation
 pub struct UnixSocketTransport;
@@ -20,12 +22,12 @@ impl Transport for UnixSocketTransport {
         // Placeholder implementation
         todo!("Implement Unix socket connect")
     }
-    
+
     async fn listen(&self, _bind_address: std::net::SocketAddr) -> Result<Box<dyn Listener>> {
         // Placeholder implementation
         todo!("Implement Unix socket listen")
     }
-    
+
     fn capabilities(&self) -> TransportCapabilities {
         TransportCapabilities {
             encryption: false,

@@ -53,7 +53,9 @@ pub struct ProfileResult {
 }
 
 impl PerformanceProfiler {
-    pub fn new(metrics_collector: Option<Arc<crate::core::observability::metrics::MetricsCollector>>) -> Self {
+    pub fn new(
+        metrics_collector: Option<Arc<crate::core::observability::metrics::MetricsCollector>>,
+    ) -> Self {
         Self {
             active_profiles: Arc::new(RwLock::new(HashMap::new())),
             completed_profiles: Arc::new(RwLock::new(Vec::new())),
@@ -251,7 +253,9 @@ impl PerformanceProfiler {
         let mut system = System::new();
         system.refresh_processes();
 
-        system.process(sysinfo::get_current_pid().ok()?).map(|process| process.memory())
+        system
+            .process(sysinfo::get_current_pid().ok()?)
+            .map(|process| process.memory())
     }
 
     /// Get current CPU usage (simplified implementation)
@@ -261,7 +265,9 @@ impl PerformanceProfiler {
         let mut system = System::new();
         system.refresh_processes();
 
-        system.process(sysinfo::get_current_pid().ok()?).map(|process| process.cpu_usage() as f64)
+        system
+            .process(sysinfo::get_current_pid().ok()?)
+            .map(|process| process.cpu_usage() as f64)
     }
 
     /// Generate performance report
@@ -327,7 +333,9 @@ pub struct MemorySnapshot {
 }
 
 impl MemoryProfiler {
-    pub fn new(metrics_collector: Option<Arc<crate::core::observability::metrics::MetricsCollector>>) -> Self {
+    pub fn new(
+        metrics_collector: Option<Arc<crate::core::observability::metrics::MetricsCollector>>,
+    ) -> Self {
         Self {
             snapshots: Arc::new(RwLock::new(Vec::new())),
             metrics_collector,

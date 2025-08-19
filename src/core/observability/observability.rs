@@ -5,13 +5,15 @@ use std::time::Duration;
 use tracing::{error, info, warn};
 
 use crate::core::{
-    jobs::async_jobs::{JobQueue, QueueStats},
     infrastructure::{
-        caching::{CacheManager, QueryCache, SessionCache, CacheStats},
-        concurrency::{DeadlockDetector, DistributedLockManager, RateLimiter, RateLimitStats, LockInfo},
+        caching::{CacheManager, CacheStats, QueryCache, SessionCache},
+        concurrency::{
+            DeadlockDetector, DistributedLockManager, LockInfo, RateLimitStats, RateLimiter,
+        },
         error_manager::{ErrorContext, ErrorManager, ErrorStats},
-        runtime_optimization::{RuntimeOptimizer, PerformanceReport},
+        runtime_optimization::{PerformanceReport, RuntimeOptimizer},
     },
+    jobs::async_jobs::{JobQueue, QueueStats},
     patterns::correlation::CorrelationTracker,
 };
 

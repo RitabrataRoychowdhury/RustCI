@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 // Import canonical types from central types module
 use super::types::{
-    ValkyrieMessage, MessagePriority, TraceContext,
-    CompressionPreference, StreamId, CorrelationId, Duration
+    CompressionPreference, CorrelationId, Duration, MessagePriority, StreamId, TraceContext,
+    ValkyrieMessage,
 };
 
 /// Message validation errors
@@ -11,25 +11,27 @@ use super::types::{
 pub enum MessageValidationError {
     #[error("Invalid protocol magic number: expected {expected:x}, got {actual:x}")]
     InvalidMagic { expected: u32, actual: u32 },
-    
+
     #[error("Unsupported protocol version: {version:?}")]
-    UnsupportedVersion { version: crate::core::networking::valkyrie::types::ProtocolVersion },
-    
+    UnsupportedVersion {
+        version: crate::core::networking::valkyrie::types::ProtocolVersion,
+    },
+
     #[error("Message too large: {size} bytes exceeds limit of {limit}")]
     MessageTooLarge { size: usize, limit: usize },
-    
+
     #[error("Message expired: TTL {ttl:?} exceeded")]
     MessageExpired { ttl: Duration },
-    
+
     #[error("Invalid signature: {reason}")]
     InvalidSignature { reason: String },
-    
+
     #[error("Missing required field: {field}")]
     MissingRequiredField { field: String },
-    
+
     #[error("Invalid routing destination")]
     InvalidDestination,
-    
+
     #[error("Compression error: {message}")]
     CompressionError { message: String },
 }
@@ -49,7 +51,11 @@ impl MessageValidator {
     pub fn new() -> Self {
         Self {
             max_message_size: 64 * 1024 * 1024, // 64MB default
-            supported_versions: vec![crate::core::networking::valkyrie::types::ProtocolVersion { major: 1, minor: 0, patch: 0 }],
+            supported_versions: vec![crate::core::networking::valkyrie::types::ProtocolVersion {
+                major: 1,
+                minor: 0,
+                patch: 0,
+            }],
             verify_signatures: true,
         }
     }
@@ -65,7 +71,10 @@ impl MessageValidator {
         }
 
         // Check protocol version
-        if !self.supported_versions.contains(&message.header.protocol_info.version) {
+        if !self
+            .supported_versions
+            .contains(&message.header.protocol_info.version)
+        {
             return Err(MessageValidationError::UnsupportedVersion {
                 version: message.header.protocol_info.version.clone(),
             });
@@ -135,7 +144,10 @@ impl ValkyrieMessage {
     }
 
     /// Set reliability level
-    pub fn with_reliability(mut self, level: crate::core::networking::valkyrie::types::ReliabilityLevel) -> Self {
+    pub fn with_reliability(
+        mut self,
+        level: crate::core::networking::valkyrie::types::ReliabilityLevel,
+    ) -> Self {
         self.header.routing.hints.reliability_level = level;
         self
     }
@@ -187,16 +199,16 @@ impl ValkyrieMessage {
 pub enum MessageProcessingError {
     #[error("Deserialization error: {reason}")]
     DeserializationError { reason: String },
-    
+
     #[error("Serialization error: {reason}")]
     SerializationError { reason: String },
-    
+
     #[error("Validation error: {reason}")]
     ValidationError { reason: String },
-    
+
     #[error("Compression error: {reason}")]
     CompressionError { reason: String },
-    
+
     #[error("Integrity error: {reason}")]
     IntegrityError { reason: String },
 }
@@ -206,7 +218,7 @@ pub enum MessageProcessingError {
 pub enum CompressionError {
     #[error("Serialization error: {reason}")]
     SerializationError { reason: String },
-    
+
     #[error("Compression failed: {reason}")]
     CompressionFailed { reason: String },
 }

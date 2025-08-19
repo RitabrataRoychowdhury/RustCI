@@ -1,8 +1,8 @@
 use crate::{
-    AppState,
     core::networking::security::{JwtClaims, JwtManager, Role},
     domain::entities::{User, UserData, UserLoginResponse, UserResponse},
     error::{AppError, Result},
+    AppState,
 };
 use axum::{
     extract::{Query, State},
@@ -13,9 +13,9 @@ use axum::{
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use time;
 use tracing::{error, info};
 use utoipa::ToSchema;
-use time;
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct OAuthQuery {

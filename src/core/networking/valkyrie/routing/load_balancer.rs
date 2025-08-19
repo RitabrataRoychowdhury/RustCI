@@ -2,12 +2,12 @@
 // Task 3.1.2: Load Balancing Engine
 
 use super::*;
+use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use dashmap::DashMap;
 
 /// Service endpoint for load balancing
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,7 +49,7 @@ pub struct EndpointPerformanceMetrics {
     pub cpu_usage: f64,
     pub memory_usage: f64,
     pub connection_count: u32,
-    #[serde(skip)]
+    #[serde(skip, default = "Instant::now")]
     pub last_updated: Instant,
 }
 
@@ -136,19 +136,22 @@ pub trait LoadBalancingAlgorithm: Send + Sync {
 pub enum LoadBalancingError {
     #[error("No healthy endpoints available")]
     NoHealthyEndpoints,
-    
+
     #[error("No endpoints available for service {service}")]
     NoEndpointsAvailable { service: String },
-    
+
     #[error("Session affinity failed for session {session_id}")]
     SessionAffinityFailed { session_id: String },
-    
+
     #[error("Consistent hashing failed: {reason}")]
     ConsistentHashingFailed { reason: String },
-    
+
     #[error("Algorithm error: {algorithm:?} - {error}")]
-    AlgorithmError { algorithm: LoadBalancingStrategy, error: String },
-    
+    AlgorithmError {
+        algorithm: LoadBalancingStrategy,
+        error: String,
+    },
+
     #[error("Internal error: {message}")]
     Internal { message: String },
 }
@@ -217,8 +220,14 @@ impl Clone for CircuitBreaker {
     fn clone(&self) -> Self {
         Self {
             state: self.state,
-            failure_count: AtomicU64::new(self.failure_count.load(std::sync::atomic::Ordering::Relaxed)),
-            success_count: AtomicU64::new(self.success_count.load(std::sync::atomic::Ordering::Relaxed)),
+            failure_count: AtomicU64::new(
+                self.failure_count
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            success_count: AtomicU64::new(
+                self.success_count
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            ),
             last_failure_time: self.last_failure_time,
             failure_threshold: self.failure_threshold,
             recovery_timeout: self.recovery_timeout,
@@ -317,14 +326,16 @@ impl WeightedRoundRobinStrategy {
 
     fn update_weights(&self, endpoints: &[ServiceEndpoint]) {
         let mut total = 0u64;
-        
+
         for endpoint in endpoints {
             let weight = endpoint.weight as u64;
-            self.current_weights.insert(endpoint.id, AtomicU64::new(weight));
-            self.effective_weights.insert(endpoint.id, AtomicU64::new(weight));
+            self.current_weights
+                .insert(endpoint.id, AtomicU64::new(weight));
+            self.effective_weights
+                .insert(endpoint.id, AtomicU64::new(weight));
             total += weight;
         }
-        
+
         self.total_weight.store(total, Ordering::Relaxed);
     }
 }
@@ -354,14 +365,20 @@ impl LoadBalancingAlgorithm for WeightedRoundRobinStrategy {
         }
 
         // Update weights if needed
-        self.update_weights(&healthy_endpoints.iter().map(|e| (*e).clone()).collect::<Vec<_>>());
+        self.update_weights(
+            &healthy_endpoints
+                .iter()
+                .map(|e| (*e).clone())
+                .collect::<Vec<_>>(),
+        );
 
         // Weighted round robin selection
         let mut selected_endpoint: Option<&ServiceEndpoint> = None;
         let mut max_current_weight = 0i64;
 
         for endpoint in &healthy_endpoints {
-            let current_weight = self.current_weights
+            let current_weight = self
+                .current_weights
                 .get(&endpoint.id)
                 .map(|w| w.fetch_add(endpoint.weight as u64, Ordering::Relaxed) as i64)
                 .unwrap_or(0);
@@ -378,7 +395,7 @@ impl LoadBalancingAlgorithm for WeightedRoundRobinStrategy {
                 let total = self.total_weight.load(Ordering::Relaxed) as i64;
                 weight_ref.store((max_current_weight - total) as u64, Ordering::Relaxed);
             }
-            
+
             Ok((*endpoint).clone())
         } else {
             Err(LoadBalancingError::NoHealthyEndpoints)
@@ -461,10 +478,11 @@ impl LoadBalancingAlgorithm for ConsistentHashingStrategy {
 
         // Find the endpoint in the ring
         let ring = self.hash_ring.read().await;
-        let endpoint_id = ring.get_endpoint_for_hash(request_hash)
-            .ok_or_else(|| LoadBalancingError::ConsistentHashingFailed {
+        let endpoint_id = ring.get_endpoint_for_hash(request_hash).ok_or_else(|| {
+            LoadBalancingError::ConsistentHashingFailed {
                 reason: "No endpoints in hash ring".to_string(),
-            })?;
+            }
+        })?;
 
         // Check if the endpoint is healthy
         let is_healthy = health_status
@@ -475,21 +493,26 @@ impl LoadBalancingAlgorithm for ConsistentHashingStrategy {
 
         if !is_healthy {
             // Find next healthy endpoint in the ring
-            if let Some(healthy_endpoint_id) = ring.get_next_healthy_endpoint(request_hash, health_status) {
-                let endpoint = ring.endpoints.get(&healthy_endpoint_id)
-                    .ok_or_else(|| LoadBalancingError::Internal {
+            if let Some(healthy_endpoint_id) =
+                ring.get_next_healthy_endpoint(request_hash, health_status)
+            {
+                let endpoint = ring.endpoints.get(&healthy_endpoint_id).ok_or_else(|| {
+                    LoadBalancingError::Internal {
                         message: "Endpoint not found in ring".to_string(),
-                    })?;
+                    }
+                })?;
                 return Ok(endpoint.clone());
             } else {
                 return Err(LoadBalancingError::NoHealthyEndpoints);
             }
         }
 
-        let endpoint = ring.endpoints.get(&endpoint_id)
-            .ok_or_else(|| LoadBalancingError::Internal {
-                message: "Endpoint not found in ring".to_string(),
-            })?;
+        let endpoint =
+            ring.endpoints
+                .get(&endpoint_id)
+                .ok_or_else(|| LoadBalancingError::Internal {
+                    message: "Endpoint not found in ring".to_string(),
+                })?;
 
         Ok(endpoint.clone())
     }
@@ -526,7 +549,7 @@ impl HashRing {
 
         for endpoint in endpoints {
             self.endpoints.insert(endpoint.id, endpoint.clone());
-            
+
             // Add virtual nodes
             for i in 0..virtual_nodes {
                 let key = format!("{}:{}", endpoint.id, i);
@@ -538,7 +561,9 @@ impl HashRing {
 
     pub fn get_endpoint_for_hash(&self, hash: u64) -> Option<EndpointId> {
         // Find the first endpoint with hash >= request_hash
-        self.ring.range(hash..).next()
+        self.ring
+            .range(hash..)
+            .next()
             .or_else(|| self.ring.iter().next()) // Wrap around to first endpoint
             .map(|(_, endpoint_id)| *endpoint_id)
     }
@@ -580,13 +605,13 @@ impl HashFunction {
     pub fn hash(&self, data: &[u8]) -> u64 {
         match self {
             HashFunction::Sha256 => {
-                use sha2::{Sha256, Digest};
+                use sha2::{Digest, Sha256};
                 let mut hasher = Sha256::new();
                 hasher.update(data);
                 let result = hasher.finalize();
                 u64::from_be_bytes([
-                    result[0], result[1], result[2], result[3],
-                    result[4], result[5], result[6], result[7],
+                    result[0], result[1], result[2], result[3], result[4], result[5], result[6],
+                    result[7],
                 ])
             }
             HashFunction::Fnv1a => {
@@ -651,10 +676,7 @@ impl LoadBalancingAlgorithm for HealthAwareLoadBalancer {
         // Filter out endpoints with open circuit breakers
         let available_endpoints: Vec<_> = endpoints
             .iter()
-            .filter(|endpoint| {
-                self.circuit_breaker
-                    .is_endpoint_available(&endpoint.id)
-            })
+            .filter(|endpoint| self.circuit_breaker.is_endpoint_available(&endpoint.id))
             .cloned()
             .collect();
 
@@ -688,8 +710,9 @@ impl LoadBalancerManager {
         session_manager: Arc<SessionManager>,
         circuit_breaker: Arc<CircuitBreakerManager>,
     ) -> Self {
-        let mut strategies: HashMap<LoadBalancingStrategy, Arc<dyn LoadBalancingAlgorithm>> = HashMap::new();
-        
+        let mut strategies: HashMap<LoadBalancingStrategy, Arc<dyn LoadBalancingAlgorithm>> =
+            HashMap::new();
+
         // Register default strategies
         strategies.insert(
             LoadBalancingStrategy::RoundRobin,
@@ -725,11 +748,13 @@ impl LoadBalancerManager {
         let health_status = self.health_monitor.get_health_status().await;
 
         // Get strategy
-        let algorithm = self.strategies.get(&strategy)
-            .ok_or_else(|| LoadBalancingError::AlgorithmError {
-                algorithm: strategy,
-                error: "Strategy not found".to_string(),
-            })?;
+        let algorithm =
+            self.strategies
+                .get(&strategy)
+                .ok_or_else(|| LoadBalancingError::AlgorithmError {
+                    algorithm: strategy,
+                    error: "Strategy not found".to_string(),
+                })?;
 
         // Select endpoint
         let result = algorithm
@@ -738,7 +763,9 @@ impl LoadBalancerManager {
 
         // Record metrics
         let duration = start_time.elapsed();
-        self.metrics_collector.record_decision(strategy, duration, &result).await;
+        self.metrics_collector
+            .record_decision(strategy, duration, &result)
+            .await;
 
         result
     }
@@ -786,7 +813,7 @@ impl LoadBalancingMetricsCollector {
         result: &Result<ServiceEndpoint, LoadBalancingError>,
     ) {
         self.total_decisions.fetch_add(1, Ordering::Relaxed);
-        
+
         // Update average decision time
         let duration_nanos = duration.as_nanos() as u64;
         let current_avg = self.average_decision_time.load(Ordering::Relaxed);
@@ -810,12 +837,14 @@ impl LoadBalancingMetricsCollector {
     }
 
     pub async fn get_metrics(&self) -> LoadBalancingMetrics {
-        let endpoint_selections = self.endpoint_selections
+        let endpoint_selections = self
+            .endpoint_selections
             .iter()
             .map(|entry| (*entry.key(), entry.value().load(Ordering::Relaxed)))
             .collect();
 
-        let strategy_usage = self.strategy_usage
+        let strategy_usage = self
+            .strategy_usage
             .iter()
             .map(|entry| (*entry.key(), entry.value().load(Ordering::Relaxed)))
             .collect();
@@ -823,7 +852,7 @@ impl LoadBalancingMetricsCollector {
         LoadBalancingMetrics {
             total_decisions: self.total_decisions.load(Ordering::Relaxed),
             average_decision_time: Duration::from_nanos(
-                self.average_decision_time.load(Ordering::Relaxed)
+                self.average_decision_time.load(Ordering::Relaxed),
             ),
             endpoint_selections,
             strategy_usage,
@@ -862,7 +891,7 @@ impl CircuitBreakerManager {
     pub fn record_success(&self, endpoint_id: &EndpointId) {
         if let Some(mut cb) = self.circuit_breakers.get_mut(endpoint_id) {
             cb.success_count.fetch_add(1, Ordering::Relaxed);
-            
+
             match cb.state {
                 CircuitBreakerState::HalfOpen => {
                     // Transition back to closed
@@ -875,7 +904,8 @@ impl CircuitBreakerManager {
     }
 
     pub fn record_failure(&self, endpoint_id: &EndpointId) {
-        let mut cb = self.circuit_breakers
+        let mut cb = self
+            .circuit_breakers
             .entry(*endpoint_id)
             .or_insert_with(|| CircuitBreaker {
                 state: CircuitBreakerState::Closed,
@@ -916,13 +946,15 @@ impl HealthMonitor {
         let mut status = self.health_status.write().await;
         status.endpoint_health.insert(endpoint_id, health);
         status.last_updated = Instant::now();
-        
+
         // Recalculate global health score
-        let healthy_count = status.endpoint_health.values()
+        let healthy_count = status
+            .endpoint_health
+            .values()
             .filter(|h| h.status == EndpointHealthStatus::Healthy)
             .count();
         let total_count = status.endpoint_health.len();
-        
+
         status.global_health_score = if total_count > 0 {
             healthy_count as f64 / total_count as f64
         } else {

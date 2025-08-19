@@ -3,10 +3,10 @@
 //! This module provides lock-free registries for managing nodes, services,
 //! and connections in the Valkyrie Protocol.
 
-use super::{LockFreeMetrics, LockFreeConfig};
-use super::map::{LockFreeMap, ConcurrentHashMap, MapError};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use super::map::{ConcurrentHashMap, LockFreeMap, MapError};
+use super::{LockFreeConfig, LockFreeMetrics};
 use std::hash::Hash;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 /// Errors that can occur during registry operations
@@ -54,51 +54,56 @@ pub struct RegistryStats {
 pub trait LockFreeRegistry<K, V>: Send + Sync {
     /// Register an entry
     fn register(&self, key: K, value: V) -> Result<(), RegistryError>;
-    
+
     /// Unregister an entry
     fn unregister(&self, key: &K) -> Result<Option<V>, RegistryError>;
-    
+
     /// Lookup an entry
     fn lookup(&self, key: &K) -> Result<Option<V>, RegistryError>
     where
         V: Clone;
-    
+
     /// Update an entry if it exists
     fn update<F>(&self, key: &K, updater: F) -> Result<Option<V>, RegistryError>
     where
         F: FnOnce(&V) -> V,
         V: Clone;
-    
+
     /// Register or update an entry
-    fn register_or_update<F>(&self, key: K, value: V, updater: F) -> Result<Option<V>, RegistryError>
+    fn register_or_update<F>(
+        &self,
+        key: K,
+        value: V,
+        updater: F,
+    ) -> Result<Option<V>, RegistryError>
     where
         F: FnOnce(&V) -> V,
         V: Clone;
-    
+
     /// Check if an entry exists
     fn contains(&self, key: &K) -> bool;
-    
+
     /// Get all keys
     fn keys(&self) -> Vec<K>
     where
         K: Clone;
-    
+
     /// Get current entry count
     fn len(&self) -> usize;
-    
+
     /// Check if registry is empty
     fn is_empty(&self) -> bool;
-    
+
     /// Get registry statistics
     fn stats(&self) -> RegistryStats;
-    
+
     /// Clear all entries
     fn clear(&self);
 }
 
 /// Entry with metadata for registry
 #[derive(Debug, Clone)]
-pub struct RegistryEntry<V> 
+pub struct RegistryEntry<V>
 where
     V: Send + Sync,
 {
@@ -117,7 +122,7 @@ where
 unsafe impl<V: Send + Sync> Send for RegistryEntry<V> {}
 unsafe impl<V: Send + Sync> Sync for RegistryEntry<V> {}
 
-impl<V> RegistryEntry<V> 
+impl<V> RegistryEntry<V>
 where
     V: Send + Sync,
 {
@@ -158,7 +163,7 @@ where
 }
 
 /// Node registry for managing distributed nodes
-pub struct NodeRegistry<NodeId, NodeInfo> 
+pub struct NodeRegistry<NodeId, NodeInfo>
 where
     NodeId: Hash + Eq + Clone + Send + Sync + std::fmt::Debug,
     NodeInfo: Clone + Send + Sync,
@@ -195,7 +200,7 @@ where
         // This is a simplified implementation
         // In a real system, you'd want a more efficient way to iterate
         let result = Vec::new();
-        
+
         // For demonstration, we'll just return empty vec
         // A real implementation would need to iterate through the map
         result
@@ -216,8 +221,8 @@ where
     fn register(&self, key: NodeId, value: NodeInfo) -> Result<(), RegistryError> {
         let entry = RegistryEntry::new(value);
         match self.inner.insert(key.clone(), entry) {
-            Ok(Some(_)) => Err(RegistryError::AlreadyExists { 
-                key: format!("{:?}", key) 
+            Ok(Some(_)) => Err(RegistryError::AlreadyExists {
+                key: format!("{:?}", key),
             }),
             Ok(None) => {
                 self.metrics.record_success();
@@ -291,7 +296,12 @@ where
         }
     }
 
-    fn register_or_update<F>(&self, key: NodeId, value: NodeInfo, updater: F) -> Result<Option<NodeInfo>, RegistryError>
+    fn register_or_update<F>(
+        &self,
+        key: NodeId,
+        value: NodeInfo,
+        updater: F,
+    ) -> Result<Option<NodeInfo>, RegistryError>
     where
         F: FnOnce(&NodeInfo) -> NodeInfo,
     {
@@ -354,7 +364,7 @@ where
 }
 
 /// Service registry for managing distributed services
-pub struct ServiceRegistry<ServiceId, ServiceInfo> 
+pub struct ServiceRegistry<ServiceId, ServiceInfo>
 where
     ServiceId: Hash + Eq + Clone + Send + Sync + std::fmt::Debug,
     ServiceInfo: Clone + Send + Sync,
@@ -371,7 +381,11 @@ where
     ServiceInfo: Clone + Send + Sync,
 {
     /// Create a new service registry
-    pub fn new(bucket_count: usize, config: LockFreeConfig, health_check_interval: Duration) -> Self {
+    pub fn new(
+        bucket_count: usize,
+        config: LockFreeConfig,
+        health_check_interval: Duration,
+    ) -> Self {
         Self {
             inner: NodeRegistry::new(bucket_count, config),
             health_check_interval,
@@ -394,7 +408,8 @@ where
     }
 }
 
-impl<ServiceId, ServiceInfo> LockFreeRegistry<ServiceId, ServiceInfo> for ServiceRegistry<ServiceId, ServiceInfo>
+impl<ServiceId, ServiceInfo> LockFreeRegistry<ServiceId, ServiceInfo>
+    for ServiceRegistry<ServiceId, ServiceInfo>
 where
     ServiceId: Hash + Eq + Clone + Send + Sync + std::fmt::Debug,
     ServiceInfo: Clone + Send + Sync,
@@ -418,7 +433,12 @@ where
         self.inner.update(key, updater)
     }
 
-    fn register_or_update<F>(&self, key: ServiceId, value: ServiceInfo, updater: F) -> Result<Option<ServiceInfo>, RegistryError>
+    fn register_or_update<F>(
+        &self,
+        key: ServiceId,
+        value: ServiceInfo,
+        updater: F,
+    ) -> Result<Option<ServiceInfo>, RegistryError>
     where
         F: FnOnce(&ServiceInfo) -> ServiceInfo,
     {
@@ -451,7 +471,7 @@ where
 }
 
 /// Connection registry for managing active connections
-pub struct ConnectionRegistry<ConnectionId, ConnectionInfo> 
+pub struct ConnectionRegistry<ConnectionId, ConnectionInfo>
 where
     ConnectionId: Hash + Eq + Clone + Send + Sync + std::fmt::Debug,
     ConnectionInfo: Clone + Send + Sync,
@@ -495,7 +515,8 @@ where
     }
 }
 
-impl<ConnectionId, ConnectionInfo> LockFreeRegistry<ConnectionId, ConnectionInfo> for ConnectionRegistry<ConnectionId, ConnectionInfo>
+impl<ConnectionId, ConnectionInfo> LockFreeRegistry<ConnectionId, ConnectionInfo>
+    for ConnectionRegistry<ConnectionId, ConnectionInfo>
 where
     ConnectionId: Hash + Eq + Clone + Send + Sync + std::fmt::Debug,
     ConnectionInfo: Clone + Send + Sync,
@@ -512,14 +533,23 @@ where
         self.inner.lookup(key)
     }
 
-    fn update<F>(&self, key: &ConnectionId, updater: F) -> Result<Option<ConnectionInfo>, RegistryError>
+    fn update<F>(
+        &self,
+        key: &ConnectionId,
+        updater: F,
+    ) -> Result<Option<ConnectionInfo>, RegistryError>
     where
         F: FnOnce(&ConnectionInfo) -> ConnectionInfo,
     {
         self.inner.update(key, updater)
     }
 
-    fn register_or_update<F>(&self, key: ConnectionId, value: ConnectionInfo, updater: F) -> Result<Option<ConnectionInfo>, RegistryError>
+    fn register_or_update<F>(
+        &self,
+        key: ConnectionId,
+        value: ConnectionInfo,
+        updater: F,
+    ) -> Result<Option<ConnectionInfo>, RegistryError>
     where
         F: FnOnce(&ConnectionInfo) -> ConnectionInfo,
     {
@@ -574,7 +604,9 @@ mod tests {
         };
 
         // Register a node
-        assert!(registry.register("node1".to_string(), node_info.clone()).is_ok());
+        assert!(registry
+            .register("node1".to_string(), node_info.clone())
+            .is_ok());
         assert_eq!(registry.len(), 1);
         assert!(!registry.is_empty());
 
@@ -583,11 +615,13 @@ mod tests {
         assert_eq!(result, Some(node_info.clone()));
 
         // Update the node
-        let updated_info = registry.update(&"node1".to_string(), |info| NodeInfo {
-            address: info.address.clone(),
-            port: info.port,
-            status: "inactive".to_string(),
-        }).unwrap();
+        let updated_info = registry
+            .update(&"node1".to_string(), |info| NodeInfo {
+                address: info.address.clone(),
+                port: info.port,
+                status: "inactive".to_string(),
+            })
+            .unwrap();
         assert_eq!(updated_info.unwrap().status, "active");
 
         // Verify update
@@ -603,11 +637,7 @@ mod tests {
 
     #[test]
     fn test_service_registry() {
-        let registry = ServiceRegistry::new(
-            16,
-            LockFreeConfig::default(),
-            Duration::from_secs(30),
-        );
+        let registry = ServiceRegistry::new(16, LockFreeConfig::default(), Duration::from_secs(30));
 
         let service_info = NodeInfo {
             address: "service.example.com".to_string(),
@@ -616,11 +646,19 @@ mod tests {
         };
 
         // Register service
-        assert!(registry.register("auth-service".to_string(), service_info.clone()).is_ok());
+        assert!(registry
+            .register("auth-service".to_string(), service_info.clone())
+            .is_ok());
 
         // Health check
-        assert_eq!(registry.health_check(&"auth-service".to_string()).unwrap(), true);
-        assert_eq!(registry.health_check(&"nonexistent".to_string()).unwrap(), false);
+        assert_eq!(
+            registry.health_check(&"auth-service".to_string()).unwrap(),
+            true
+        );
+        assert_eq!(
+            registry.health_check(&"nonexistent".to_string()).unwrap(),
+            false
+        );
 
         // Get stats
         let stats = registry.stats();
@@ -630,11 +668,8 @@ mod tests {
 
     #[test]
     fn test_connection_registry() {
-        let registry = ConnectionRegistry::new(
-            16,
-            LockFreeConfig::default(),
-            Duration::from_secs(60),
-        );
+        let registry =
+            ConnectionRegistry::new(16, LockFreeConfig::default(), Duration::from_secs(60));
 
         let conn_info = NodeInfo {
             address: "client.example.com".to_string(),
@@ -712,15 +747,15 @@ mod tests {
     #[test]
     fn test_registry_entry_metadata() {
         let entry = RegistryEntry::new("test_value".to_string());
-        
+
         assert_eq!(entry.value, "test_value");
         assert_eq!(entry.access_count, 0);
         assert_eq!(entry.version, 1);
-        
+
         let mut entry = entry;
         entry.accessed();
         assert_eq!(entry.access_count, 1);
-        
+
         entry.update_value("new_value".to_string());
         assert_eq!(entry.value, "new_value");
         assert_eq!(entry.version, 2);
@@ -737,27 +772,23 @@ mod tests {
         };
 
         // First call should register
-        let result = registry.register_or_update(
-            "node1".to_string(),
-            node_info.clone(),
-            |info| NodeInfo {
+        let result = registry
+            .register_or_update("node1".to_string(), node_info.clone(), |info| NodeInfo {
                 address: info.address.clone(),
                 port: info.port,
                 status: "updated".to_string(),
-            },
-        ).unwrap();
+            })
+            .unwrap();
         assert!(result.is_none()); // No previous value
 
         // Second call should update
-        let result = registry.register_or_update(
-            "node1".to_string(),
-            node_info.clone(),
-            |info| NodeInfo {
+        let result = registry
+            .register_or_update("node1".to_string(), node_info.clone(), |info| NodeInfo {
                 address: info.address.clone(),
                 port: info.port,
                 status: "updated_again".to_string(),
-            },
-        ).unwrap();
+            })
+            .unwrap();
         assert!(result.is_some()); // Previous value returned
 
         // Verify final state

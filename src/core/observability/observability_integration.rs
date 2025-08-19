@@ -1,18 +1,20 @@
 use crate::error::Result;
+use axum::Router;
 use std::sync::Arc;
 use tracing::{info, instrument};
-use axum::Router;
 
 use crate::core::cluster::{
-    control_plane_observability::{ControlPlaneObservability, ObservabilityConfig, ObservabilityStatus},
-    control_plane_health::{ControlPlaneHealth, DatabaseHealthCheck, JobSchedulerHealthCheck, NodeRegistryHealthCheck, ControlPlaneHealthResponse},
+    control_plane_health::{
+        ControlPlaneHealth, ControlPlaneHealthResponse, DatabaseHealthCheck,
+        JobSchedulerHealthCheck, NodeRegistryHealthCheck,
+    },
     control_plane_metrics::{ControlPlaneMetrics, MetricsSnapshot},
+    control_plane_observability::{
+        ControlPlaneObservability, ObservabilityConfig, ObservabilityStatus,
+    },
 };
 
-use super::{
-    distributed_tracing::DistributedTracing,
-    structured_logging::StructuredLogging,
-};
+use super::{distributed_tracing::DistributedTracing, structured_logging::StructuredLogging};
 
 /// Comprehensive observability integration service
 pub struct ObservabilityIntegration {
@@ -37,11 +39,9 @@ impl ObservabilityIntegration {
 
         // Create observability configuration
         let observability_config = ObservabilityConfig::default();
-        
+
         // Initialize main observability service
-        let observability = Arc::new(
-            ControlPlaneObservability::new(observability_config).await?
-        );
+        let observability = Arc::new(ControlPlaneObservability::new(observability_config).await?);
 
         // Get individual components
         let health = observability.health_monitor();
@@ -51,15 +51,21 @@ impl ObservabilityIntegration {
 
         // Add health checks if components are provided
         if let Some(db) = database {
-            health.add_check(Box::new(DatabaseHealthCheck::new(db))).await;
+            health
+                .add_check(Box::new(DatabaseHealthCheck::new(db)))
+                .await;
         }
 
         if let (Some(active), Some(queue)) = (active_jobs, queue_length) {
-            health.add_check(Box::new(JobSchedulerHealthCheck::new(active, queue))).await;
+            health
+                .add_check(Box::new(JobSchedulerHealthCheck::new(active, queue)))
+                .await;
         }
 
         if let (Some(healthy), Some(total)) = (healthy_nodes, total_nodes) {
-            health.add_check(Box::new(NodeRegistryHealthCheck::new(healthy, total))).await;
+            health
+                .add_check(Box::new(NodeRegistryHealthCheck::new(healthy, total)))
+                .await;
         }
 
         // Start background monitoring
@@ -164,13 +170,14 @@ mod tests {
             Some(Arc::new(RwLock::new(0))),
             Some(Arc::new(RwLock::new(0))),
             Some(Arc::new(RwLock::new(0))),
-        ).await;
+        )
+        .await;
 
         assert!(integration.is_ok());
-        
+
         let integration = integration.unwrap();
         let status = integration.get_integration_status().await;
-        
+
         assert!(!status.observability_status.service_name.is_empty());
         assert!(status.integration_uptime_seconds > 0);
     }
@@ -180,7 +187,7 @@ mod tests {
         let integration = Arc::new(
             ObservabilityIntegration::new(None, None, None, None, None)
                 .await
-                .unwrap()
+                .unwrap(),
         );
 
         let router = integration.create_router();

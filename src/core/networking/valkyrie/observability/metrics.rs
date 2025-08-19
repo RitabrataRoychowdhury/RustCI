@@ -1,12 +1,11 @@
 // Built-in metrics collection without external dependencies
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio::time::interval;
-use serde::{Serialize, Deserialize};
-
 
 use super::ObservabilityError;
 
@@ -112,7 +111,7 @@ impl MetricsCollector {
 
             while *running_flag.read().await {
                 cleanup_interval.tick().await;
-                
+
                 let current_time = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
@@ -121,10 +120,10 @@ impl MetricsCollector {
                 let mut metrics_guard = metrics.write().await;
                 metrics_guard.retain(|_, series| {
                     // Remove old data points
-                    series.data_points.retain(|point| {
-                        current_time - point.timestamp < retention_seconds
-                    });
-                    
+                    series
+                        .data_points
+                        .retain(|point| current_time - point.timestamp < retention_seconds);
+
                     // Keep series if it has recent data points
                     !series.data_points.is_empty()
                 });
@@ -172,7 +171,7 @@ impl MetricsCollector {
         let metric_key = format!("{}:{}", name, self.labels_to_key(&labels));
 
         let mut metrics = self.metrics.write().await;
-        
+
         match metrics.get_mut(&metric_key) {
             Some(series) => {
                 series.data_points.push(data_point);
@@ -220,7 +219,8 @@ impl MetricsCollector {
         values: Vec<f64>,
         labels: HashMap<String, String>,
     ) -> Result<(), ObservabilityError> {
-        self.record(name, MetricValue::Histogram(values), labels).await
+        self.record(name, MetricValue::Histogram(values), labels)
+            .await
     }
 
     /// Record summary metric
@@ -231,7 +231,8 @@ impl MetricsCollector {
         count: u64,
         labels: HashMap<String, String>,
     ) -> Result<(), ObservabilityError> {
-        self.record(name, MetricValue::Summary { sum, count }, labels).await
+        self.record(name, MetricValue::Summary { sum, count }, labels)
+            .await
     }
 
     /// Query metrics
@@ -330,7 +331,9 @@ impl MetricsCollector {
 
         let result = match function {
             AggregationFunction::Sum => all_values.iter().sum(),
-            AggregationFunction::Average => all_values.iter().sum::<f64>() / all_values.len() as f64,
+            AggregationFunction::Average => {
+                all_values.iter().sum::<f64>() / all_values.len() as f64
+            }
             AggregationFunction::Min => all_values.iter().fold(f64::INFINITY, |a, &b| a.min(b)),
             AggregationFunction::Max => all_values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)),
             AggregationFunction::Count => all_values.len() as f64,

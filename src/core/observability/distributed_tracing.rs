@@ -320,13 +320,8 @@ impl DistributedTracing {
             _ => TraceEventLevel::Info,
         };
 
-        self.add_trace_event(
-            job_trace.correlation_id,
-            event_name,
-            level,
-            HashMap::new(),
-        )
-        .await;
+        self.add_trace_event(job_trace.correlation_id, event_name, level, HashMap::new())
+            .await;
     }
 
     /// Add job stage to trace
@@ -418,9 +413,15 @@ impl DistributedTracing {
         let duration = job_trace.start_time.elapsed();
 
         let mut attributes = HashMap::new();
-        attributes.insert("job_duration_ms".to_string(), duration.as_millis().to_string());
+        attributes.insert(
+            "job_duration_ms".to_string(),
+            duration.as_millis().to_string(),
+        );
         attributes.insert("job_success".to_string(), success.to_string());
-        attributes.insert("stages_count".to_string(), job_trace.stages.len().to_string());
+        attributes.insert(
+            "stages_count".to_string(),
+            job_trace.stages.len().to_string(),
+        );
 
         self.add_trace_attributes(job_trace.correlation_id, attributes)
             .await;
@@ -481,12 +482,17 @@ impl DistributedTracing {
             .with_service_name(&self.config.service_name)
             .with_endpoint(&self.config.jaeger_endpoint)
             .install_simple()
-            .map_err(|e| AppError::InternalServerError(format!("Failed to initialize Jaeger tracer: {}", e)))?;
+            .map_err(|e| {
+                AppError::InternalServerError(format!("Failed to initialize Jaeger tracer: {}", e))
+            })?;
 
         // Set global tracer
         global::set_tracer_provider(tracer.provider().unwrap());
 
-        info!("OpenTelemetry tracing initialized with Jaeger endpoint: {}", self.config.jaeger_endpoint);
+        info!(
+            "OpenTelemetry tracing initialized with Jaeger endpoint: {}",
+            self.config.jaeger_endpoint
+        );
         Ok(())
     }
 
@@ -511,9 +517,7 @@ impl DistributedTracing {
 #[macro_export]
 macro_rules! trace_operation {
     ($tracer:expr, $operation:expr, $code:block) => {{
-        let correlation_id = $tracer
-            .start_trace($operation, "control_plane", None)
-            .await;
+        let correlation_id = $tracer.start_trace($operation, "control_plane", None).await;
         let result = $code;
         $tracer.end_trace(correlation_id, true).await;
         result
@@ -543,7 +547,9 @@ mod tests {
 
         let mut attributes = HashMap::new();
         attributes.insert("test_key".to_string(), "test_value".to_string());
-        tracing.add_trace_attributes(correlation_id, attributes).await;
+        tracing
+            .add_trace_attributes(correlation_id, attributes)
+            .await;
 
         tracing
             .add_trace_event(

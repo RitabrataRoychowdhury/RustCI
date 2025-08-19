@@ -1,16 +1,18 @@
 //! Adapter Selection Strategies
-//! 
+//!
 //! Implements the Strategy pattern for intelligent adapter selection based on
 //! performance metrics, load conditions, and custom business rules.
 
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use async_trait::async_trait;
 use tracing::{debug, info, warn};
 
+use super::factory::{
+    AdapterInfo, AdapterRequirements, PerformanceRequirements, ReliabilityRequirements,
+};
 use super::*;
-use super::factory::{AdapterRequirements, AdapterInfo, PerformanceRequirements, ReliabilityRequirements};
 use crate::error::{Result, ValkyrieError};
 
 /// Strategy Pattern for Intelligent Adapter Selection
@@ -20,15 +22,15 @@ pub trait AdapterSelectionStrategy: Send + Sync {
     async fn select_adapter_type(
         &self,
         requirements: &AdapterRequirements,
-        available_adapters: &[AdapterInfo]
+        available_adapters: &[AdapterInfo],
     ) -> Result<AdapterType>;
-    
+
     /// Get strategy name for logging and metrics
     fn strategy_name(&self) -> &str;
-    
+
     /// Get strategy priority (higher = more preferred)
     fn priority(&self) -> u8;
-    
+
     /// Validate if strategy can handle requirements
     fn can_handle(&self, requirements: &AdapterRequirements) -> bool;
 }
@@ -88,7 +90,8 @@ pub struct CustomSelectionStrategy {
     /// Strategy name
     name: String,
     /// Selection function
-    selector: Box<dyn Fn(&AdapterRequirements, &[AdapterInfo]) -> Result<AdapterType> + Send + Sync>,
+    selector:
+        Box<dyn Fn(&AdapterRequirements, &[AdapterInfo]) -> Result<AdapterType> + Send + Sync>,
     /// Priority level
     priority: u8,
 }
@@ -139,7 +142,7 @@ impl PerformanceBasedStrategy {
             memory_weight: 0.1,
         }
     }
-    
+
     /// Create with custom weights
     pub fn with_weights(
         latency_weight: f64,
@@ -155,50 +158,66 @@ impl PerformanceBasedStrategy {
             memory_weight,
         }
     }
-    
+
     /// Calculate latency score (higher is better)
-    fn calculate_latency_score(&self, perf_data: &AdapterPerformanceData, requirements: &PerformanceRequirements) -> f64 {
+    fn calculate_latency_score(
+        &self,
+        perf_data: &AdapterPerformanceData,
+        requirements: &PerformanceRequirements,
+    ) -> f64 {
         let max_acceptable = requirements.max_latency.as_nanos() as f64;
         let actual = perf_data.p99_latency.as_nanos() as f64;
-        
+
         if actual > max_acceptable {
             0.0 // Unacceptable latency
         } else {
             1.0 - (actual / max_acceptable)
         }
     }
-    
+
     /// Calculate throughput score (higher is better)
-    fn calculate_throughput_score(&self, perf_data: &AdapterPerformanceData, requirements: &PerformanceRequirements) -> f64 {
+    fn calculate_throughput_score(
+        &self,
+        perf_data: &AdapterPerformanceData,
+        requirements: &PerformanceRequirements,
+    ) -> f64 {
         let min_required = requirements.min_throughput as f64;
         let actual = perf_data.current_throughput;
-        
+
         if actual < min_required {
             0.0 // Insufficient throughput
         } else {
             (actual / (min_required * 2.0)).min(1.0) // Cap at 1.0
         }
     }
-    
+
     /// Calculate reliability score (higher is better)
-    fn calculate_reliability_score(&self, perf_data: &AdapterPerformanceData, requirements: &ReliabilityRequirements) -> f64 {
+    fn calculate_reliability_score(
+        &self,
+        perf_data: &AdapterPerformanceData,
+        requirements: &ReliabilityRequirements,
+    ) -> f64 {
         let availability_score = if perf_data.availability >= requirements.min_availability {
             perf_data.availability
         } else {
             0.0
         };
-        
+
         let error_score = if perf_data.error_rate <= requirements.max_error_rate {
             1.0 - perf_data.error_rate
         } else {
             0.0
         };
-        
+
         (availability_score + error_score) / 2.0
     }
-    
+
     /// Calculate memory score (higher is better, lower memory usage)
-    fn calculate_memory_score(&self, perf_data: &AdapterPerformanceData, requirements: &PerformanceRequirements) -> f64 {
+    fn calculate_memory_score(
+        &self,
+        perf_data: &AdapterPerformanceData,
+        requirements: &PerformanceRequirements,
+    ) -> f64 {
         if let Some(max_memory) = requirements.max_memory {
             let usage_ratio = perf_data.memory_usage as f64 / max_memory as f64;
             if usage_ratio > 1.0 {
@@ -217,42 +236,51 @@ impl AdapterSelectionStrategy for PerformanceBasedStrategy {
     async fn select_adapter_type(
         &self,
         requirements: &AdapterRequirements,
-        available_adapters: &[AdapterInfo]
+        available_adapters: &[AdapterInfo],
     ) -> Result<AdapterType> {
         let mut best_adapter = None;
         let mut best_score = 0.0;
-        
+
         debug!("Evaluating {} available adapters", available_adapters.len());
-        
+
         for adapter_info in available_adapters {
             // Get real-time performance metrics
-            let perf_metrics = self.metrics.get_adapter_metrics(adapter_info.adapter_type).await?;
-            
+            let perf_metrics = self
+                .metrics
+                .get_adapter_metrics(adapter_info.adapter_type)
+                .await?;
+
             // Calculate weighted scores
-            let latency_score = self.calculate_latency_score(&perf_metrics, &requirements.performance);
-            let throughput_score = self.calculate_throughput_score(&perf_metrics, &requirements.performance);
-            let reliability_score = self.calculate_reliability_score(&perf_metrics, &requirements.reliability);
-            let memory_score = self.calculate_memory_score(&perf_metrics, &requirements.performance);
-            
+            let latency_score =
+                self.calculate_latency_score(&perf_metrics, &requirements.performance);
+            let throughput_score =
+                self.calculate_throughput_score(&perf_metrics, &requirements.performance);
+            let reliability_score =
+                self.calculate_reliability_score(&perf_metrics, &requirements.reliability);
+            let memory_score =
+                self.calculate_memory_score(&perf_metrics, &requirements.performance);
+
             // Calculate total weighted score
-            let total_score = 
-                (latency_score * self.latency_weight) +
-                (throughput_score * self.throughput_weight) +
-                (reliability_score * self.reliability_weight) +
-                (memory_score * self.memory_weight);
-            
+            let total_score = (latency_score * self.latency_weight)
+                + (throughput_score * self.throughput_weight)
+                + (reliability_score * self.reliability_weight)
+                + (memory_score * self.memory_weight);
+
             debug!("Adapter {} scores: latency={:.2}, throughput={:.2}, reliability={:.2}, memory={:.2}, total={:.2}",
                    adapter_info.adapter_type, latency_score, throughput_score, reliability_score, memory_score, total_score);
-            
+
             if total_score > best_score {
                 best_score = total_score;
                 best_adapter = Some(adapter_info.adapter_type);
             }
         }
-        
+
         match best_adapter {
             Some(adapter_type) => {
-                info!("Selected adapter {} with score {:.2}", adapter_type, best_score);
+                info!(
+                    "Selected adapter {} with score {:.2}",
+                    adapter_type, best_score
+                );
                 Ok(adapter_type)
             }
             None => {
@@ -261,15 +289,15 @@ impl AdapterSelectionStrategy for PerformanceBasedStrategy {
             }
         }
     }
-    
+
     fn strategy_name(&self) -> &str {
         "performance-based"
     }
-    
+
     fn priority(&self) -> u8 {
         100 // High priority for performance-critical scenarios
     }
-    
+
     fn can_handle(&self, _requirements: &AdapterRequirements) -> bool {
         true // Can handle any requirements
     }
@@ -292,50 +320,50 @@ impl AdapterSelectionStrategy for ReliabilityBasedStrategy {
     async fn select_adapter_type(
         &self,
         requirements: &AdapterRequirements,
-        available_adapters: &[AdapterInfo]
+        available_adapters: &[AdapterInfo],
     ) -> Result<AdapterType> {
         let mut best_adapter = None;
         let mut best_reliability = 0.0;
-        
+
         for adapter_info in available_adapters {
             let capabilities = &adapter_info.capabilities;
-            
+
             // Calculate reliability score based on features
             let mut reliability_score = 0.0;
-            
+
             if capabilities.reliability_features.supports_failover {
                 reliability_score += self.failover_weight;
             }
-            
+
             if capabilities.reliability_features.supports_health_check {
                 reliability_score += self.health_weight;
             }
-            
+
             if capabilities.reliability_features.supports_circuit_breaker {
                 reliability_score += 0.2;
             }
-            
+
             if capabilities.reliability_features.supports_retry {
                 reliability_score += 0.1;
             }
-            
+
             if reliability_score > best_reliability {
                 best_reliability = reliability_score;
                 best_adapter = Some(adapter_info.adapter_type);
             }
         }
-        
+
         best_adapter.ok_or(ValkyrieError::NoSuitableAdapter)
     }
-    
+
     fn strategy_name(&self) -> &str {
         "reliability-based"
     }
-    
+
     fn priority(&self) -> u8 {
         90 // High priority for reliability-critical scenarios
     }
-    
+
     fn can_handle(&self, requirements: &AdapterRequirements) -> bool {
         requirements.reliability.min_availability >= self.min_availability
     }
@@ -349,17 +377,21 @@ impl PerformanceMetrics {
             update_interval: Duration::from_secs(10),
         }
     }
-    
+
     /// Get performance metrics for adapter type
-    pub async fn get_adapter_metrics(&self, adapter_type: AdapterType) -> Result<AdapterPerformanceData> {
+    pub async fn get_adapter_metrics(
+        &self,
+        adapter_type: AdapterType,
+    ) -> Result<AdapterPerformanceData> {
         let metrics = self.adapter_metrics.read().await;
-        
-        metrics.get(&adapter_type)
+
+        metrics
+            .get(&adapter_type)
             .cloned()
             .or_else(|| Some(AdapterPerformanceData::default_for_type(adapter_type)))
             .ok_or(ValkyrieError::MetricsNotAvailable(adapter_type.to_string()))
     }
-    
+
     /// Update metrics for adapter type
     pub async fn update_metrics(&self, adapter_type: AdapterType, data: AdapterPerformanceData) {
         let mut metrics = self.adapter_metrics.write().await;

@@ -384,6 +384,8 @@ impl ErrorManager {
             AppError::SecurityContextNotFound(_) => "security_context_not_found".to_string(),
             AppError::SecurityContextExpired(_) => "security_context_expired".to_string(),
             AppError::CongestionControl(_) => "congestion_control".to_string(),
+            // Handle all remaining error types
+            _ => "unknown_error".to_string(),
         }
     }
 
@@ -438,6 +440,8 @@ impl ErrorManager {
             AppError::SecurityContextNotFound(_) => "SECURITY_CONTEXT_NOT_FOUND".to_string(),
             AppError::SecurityContextExpired(_) => "SECURITY_CONTEXT_EXPIRED".to_string(),
             AppError::CongestionControl(_) => "CONGESTION_CONTROL".to_string(),
+            // Handle all remaining error types
+            _ => "UNKNOWN_ERROR".to_string(),
         }
     }
 

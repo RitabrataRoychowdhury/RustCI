@@ -1,14 +1,14 @@
 //! Zero-Trust Security Layer
-//! 
+//!
 //! Implements comprehensive zero-trust security with identity verification,
 //! policy enforcement, continuous monitoring, and adaptive threat response.
 
+use async_trait::async_trait;
+use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use async_trait::async_trait;
 use tokio::sync::RwLock;
-use dashmap::DashMap;
 use tracing::info;
 
 use super::{SecurityManager, ThreatLevel};
@@ -328,22 +328,16 @@ pub enum PolicyAction {
     /// Deny access
     Deny,
     /// Require additional authentication
-    RequireAuth {
-        auth_level: VerificationLevel,
-    },
+    RequireAuth { auth_level: VerificationLevel },
     /// Apply rate limiting
-    RateLimit {
-        requests_per_minute: u32,
-    },
+    RateLimit { requests_per_minute: u32 },
     /// Log and monitor
     LogAndMonitor {
         log_level: String,
         alert_threshold: u32,
     },
     /// Quarantine
-    Quarantine {
-        duration: Duration,
-    },
+    Quarantine { duration: Duration },
     /// Custom action
     Custom {
         action_type: String,
@@ -409,13 +403,16 @@ pub type IdentityId = uuid::Uuid;
 pub trait IdentityProvider: Send + Sync {
     /// Provider name
     fn name(&self) -> &str;
-    
+
     /// Verify identity
-    async fn verify_identity(&self, credentials: &HashMap<String, String>) -> Result<VerifiedIdentity>;
-    
+    async fn verify_identity(
+        &self,
+        credentials: &HashMap<String, String>,
+    ) -> Result<VerifiedIdentity>;
+
     /// Refresh identity
     async fn refresh_identity(&self, identity: &VerifiedIdentity) -> Result<VerifiedIdentity>;
-    
+
     /// Revoke identity
     async fn revoke_identity(&self, identity_id: IdentityId) -> Result<()>;
 }
@@ -464,16 +461,18 @@ impl ZeroTrustManager {
         request_context: HashMap<String, String>,
     ) -> Result<SecurityContext> {
         let start_time = Instant::now();
-        
+
         // Verify identity
         let identity = self.identity_verifier.verify_identity(&credentials).await?;
-        
+
         // Assess initial risk
         let risk_level = self.assess_risk(&identity, &request_context).await?;
-        
+
         // Calculate initial trust score
-        let trust_score = self.calculate_trust_score(&identity, risk_level.clone(), &request_context).await;
-        
+        let trust_score = self
+            .calculate_trust_score(&identity, risk_level.clone(), &request_context)
+            .await;
+
         // Create security context
         let context_id = uuid::Uuid::new_v4();
         let security_context = SecurityContext {
@@ -489,13 +488,16 @@ impl ZeroTrustManager {
         };
 
         // Store security context
-        self.security_contexts.insert(context_id, security_context.clone());
+        self.security_contexts
+            .insert(context_id, security_context.clone());
 
         // Update metrics
         self.update_auth_metrics(true, start_time.elapsed()).await;
 
-        info!("Authenticated identity: {} with trust score: {:.2}", 
-              security_context.identity.principal, trust_score);
+        info!(
+            "Authenticated identity: {} with trust score: {:.2}",
+            security_context.identity.principal, trust_score
+        );
 
         Ok(security_context)
     }
@@ -511,25 +513,27 @@ impl ZeroTrustManager {
         let start_time = Instant::now();
 
         // Get security context
-        let mut security_context = self.security_contexts.get(&context_id)
+        let mut security_context = self
+            .security_contexts
+            .get(&context_id)
             .ok_or_else(|| ValkyrieError::SecurityContextNotFound(context_id.to_string()))?
             .clone();
 
         // Check if context is expired
         if Instant::now() > security_context.expires_at {
-            return Err(ValkyrieError::SecurityContextExpired(context_id.to_string()));
+            return Err(ValkyrieError::SecurityContextExpired(
+                context_id.to_string(),
+            ));
         }
 
         // Continuous verification
         self.continuous_verification(&mut security_context).await?;
 
         // Evaluate policies
-        let policy_result = self.policy_engine.evaluate_policies(
-            &security_context,
-            resource,
-            action,
-            request_data,
-        ).await?;
+        let policy_result = self
+            .policy_engine
+            .evaluate_policies(&security_context, resource, action, request_data)
+            .await?;
 
         // Check trust threshold
         if security_context.trust_score < self.config.min_trust_threshold {
@@ -542,15 +546,20 @@ impl ZeroTrustManager {
         }
 
         // Apply policy decisions
-        let authorization_result = self.apply_policy_decisions(&security_context, &policy_result).await?;
+        let authorization_result = self
+            .apply_policy_decisions(&security_context, &policy_result)
+            .await?;
 
         // Update security context
         security_context.last_verified = Instant::now();
-        security_context.applied_policies.extend(policy_result.applied_policies);
+        security_context
+            .applied_policies
+            .extend(policy_result.applied_policies);
         self.security_contexts.insert(context_id, security_context);
 
         // Update metrics
-        self.update_authorization_metrics(&authorization_result, start_time.elapsed()).await;
+        self.update_authorization_metrics(&authorization_result, start_time.elapsed())
+            .await;
 
         Ok(authorization_result)
     }
@@ -561,8 +570,10 @@ impl ZeroTrustManager {
         let time_since_verification = Instant::now().duration_since(context.last_verified);
         if time_since_verification > self.config.reauth_interval {
             // Perform re-verification
-            let refreshed_identity = self.identity_verifier
-                .refresh_identity(&context.identity).await?;
+            let refreshed_identity = self
+                .identity_verifier
+                .refresh_identity(&context.identity)
+                .await?;
             context.identity = refreshed_identity;
         }
 
@@ -683,7 +694,9 @@ impl ZeroTrustManager {
         for decision in &policy_result.decisions {
             match decision {
                 PolicyDecision::Allow => continue,
-                PolicyDecision::Deny { reason: deny_reason } => {
+                PolicyDecision::Deny {
+                    reason: deny_reason,
+                } => {
                     allowed = false;
                     reason = deny_reason.clone();
                     break;
@@ -705,7 +718,11 @@ impl ZeroTrustManager {
 
         Ok(AuthorizationResult {
             allowed,
-            reason: if reason.is_empty() { "Authorized".to_string() } else { reason },
+            reason: if reason.is_empty() {
+                "Authorized".to_string()
+            } else {
+                reason
+            },
             required_actions,
             policy_violations: policy_result.violations.clone(),
         })
@@ -729,7 +746,7 @@ impl ZeroTrustManager {
     async fn update_auth_metrics(&self, success: bool, _latency: Duration) {
         let mut metrics = self.metrics.write().await;
         metrics.total_auth_attempts += 1;
-        
+
         if success {
             metrics.successful_auths += 1;
         } else {
@@ -741,30 +758,32 @@ impl ZeroTrustManager {
     async fn update_authorization_metrics(&self, result: &AuthorizationResult, latency: Duration) {
         let mut metrics = self.metrics.write().await;
         metrics.policy_evaluations += 1;
-        
+
         if !result.allowed {
             metrics.policy_violations += 1;
         }
-        
+
         metrics.policy_violations += result.policy_violations.len() as u64;
     }
 
     /// Get Zero-Trust metrics
     pub async fn metrics(&self) -> ZeroTrustMetrics {
         let mut metrics = self.metrics.read().await.clone();
-        
+
         // Update real-time metrics
         metrics.active_sessions = self.active_sessions.len() as u64;
-        
+
         // Calculate average trust score
-        let trust_scores: Vec<f64> = self.security_contexts.iter()
+        let trust_scores: Vec<f64> = self
+            .security_contexts
+            .iter()
             .map(|entry| entry.trust_score)
             .collect();
-        
+
         if !trust_scores.is_empty() {
             metrics.avg_trust_score = trust_scores.iter().sum::<f64>() / trust_scores.len() as f64;
         }
-        
+
         metrics
     }
 
@@ -772,17 +791,20 @@ impl ZeroTrustManager {
     pub async fn revoke_context(&self, context_id: ContextId) -> Result<()> {
         if let Some((_, context)) = self.security_contexts.remove(&context_id) {
             // Revoke identity
-            self.identity_verifier.revoke_identity(context.identity.identity_id).await?;
-            
+            self.identity_verifier
+                .revoke_identity(context.identity.identity_id)
+                .await?;
+
             info!("Revoked security context: {}", context_id);
         }
-        
+
         Ok(())
     }
 
     /// List active security contexts
     pub async fn list_active_contexts(&self) -> Vec<SecurityContext> {
-        self.security_contexts.iter()
+        self.security_contexts
+            .iter()
             .filter(|entry| Instant::now() <= entry.expires_at)
             .map(|entry| entry.clone())
             .collect()
@@ -868,12 +890,17 @@ impl IdentityVerifier {
         }
     }
 
-    pub async fn verify_identity(&self, credentials: &HashMap<String, String>) -> Result<VerifiedIdentity> {
+    pub async fn verify_identity(
+        &self,
+        credentials: &HashMap<String, String>,
+    ) -> Result<VerifiedIdentity> {
         // Simplified identity verification
         Ok(VerifiedIdentity {
             identity_id: uuid::Uuid::new_v4(),
             identity_type: IdentityType::User,
-            principal: credentials.get("username").map_or("unknown".to_string(), |v| v.clone()),
+            principal: credentials
+                .get("username")
+                .map_or("unknown".to_string(), |v| v.clone()),
             attributes: credentials.clone(),
             verification_level: VerificationLevel::Basic,
             provider: "default".to_string(),
@@ -983,17 +1010,61 @@ pub struct VerificationPolicy;
 pub struct CachedIdentity;
 pub struct PolicyEvaluation;
 
-impl MfaManager { pub fn new() -> Self { Self } }
-impl DynamicPolicyUpdater { pub fn new() -> Self { Self } }
-impl BehavioralAnalyzer { pub fn new() -> Self { Self } }
-impl RiskAssessmentEngine { pub fn new() -> Self { Self } }
-impl AnomalyDetector { pub fn new() -> Self { Self } }
-impl ThreatIntelligence { pub fn new() -> Self { Self } }
-impl AttackPatternDetector { pub fn new() -> Self { Self } }
-impl ThreatScoringEngine { pub fn new() -> Self { Self } }
-impl ThreatResponseOrchestrator { pub fn new() -> Self { Self } }
-impl AccessTracker { pub fn new() -> Self { Self } }
-impl JitAccessManager { pub fn new() -> Self { Self } }
+impl MfaManager {
+    pub fn new() -> Self {
+        Self
+    }
+}
+impl DynamicPolicyUpdater {
+    pub fn new() -> Self {
+        Self
+    }
+}
+impl BehavioralAnalyzer {
+    pub fn new() -> Self {
+        Self
+    }
+}
+impl RiskAssessmentEngine {
+    pub fn new() -> Self {
+        Self
+    }
+}
+impl AnomalyDetector {
+    pub fn new() -> Self {
+        Self
+    }
+}
+impl ThreatIntelligence {
+    pub fn new() -> Self {
+        Self
+    }
+}
+impl AttackPatternDetector {
+    pub fn new() -> Self {
+        Self
+    }
+}
+impl ThreatScoringEngine {
+    pub fn new() -> Self {
+        Self
+    }
+}
+impl ThreatResponseOrchestrator {
+    pub fn new() -> Self {
+        Self
+    }
+}
+impl AccessTracker {
+    pub fn new() -> Self {
+        Self
+    }
+}
+impl JitAccessManager {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 impl Default for ZeroTrustMetrics {
     fn default() -> Self {

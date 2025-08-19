@@ -117,7 +117,7 @@ impl Stream {
         let (sender, receiver) = mpsc::unbounded_channel();
         let flow_window = FlowWindow::new(config.flow_window_size);
         let now = Instant::now();
-        
+
         let mut metrics = StreamMetrics::default();
         metrics.created_at = Some(now);
         metrics.last_activity = Some(now);
@@ -145,15 +145,16 @@ impl Stream {
         {
             let state = self.state.read().unwrap();
             match *state {
-                StreamState::Active => {},
+                StreamState::Active => {}
                 StreamState::Paused => {
                     // Wait for backpressure to be released
-                    let _permit = self.backpressure_semaphore.acquire().await
-                        .map_err(|e| AppError::InternalError {
+                    let _permit = self.backpressure_semaphore.acquire().await.map_err(|e| {
+                        AppError::InternalError {
                             component: "stream".to_string(),
                             message: format!("Failed to acquire backpressure permit: {}", e),
-                        })?;
-                },
+                        }
+                    })?;
+                }
                 _ => {
                     return Err(AppError::StreamError {
                         stream_id: self.id,
@@ -170,8 +171,10 @@ impl Stream {
             if !flow_window.consume(message_size) {
                 return Err(AppError::FlowControlViolation {
                     stream_id: self.id,
-                    details: format!("Insufficient flow window: need {}, available {}", 
-                                   message_size, flow_window.available),
+                    details: format!(
+                        "Insufficient flow window: need {}, available {}",
+                        message_size, flow_window.available
+                    ),
                 });
             }
         }
@@ -230,14 +233,12 @@ impl Stream {
                     }
 
                     Ok(Some(message))
-                },
-                Err(mpsc::error::TryRecvError::Empty) => Ok(None),
-                Err(mpsc::error::TryRecvError::Disconnected) => {
-                    Err(AppError::StreamError {
-                        stream_id: self.id,
-                        error_type: "Stream receiver disconnected".to_string(),
-                    })
                 }
+                Err(mpsc::error::TryRecvError::Empty) => Ok(None),
+                Err(mpsc::error::TryRecvError::Disconnected) => Err(AppError::StreamError {
+                    stream_id: self.id,
+                    error_type: "Stream receiver disconnected".to_string(),
+                }),
             }
         } else {
             Err(AppError::StreamError {
@@ -256,7 +257,12 @@ impl Stream {
             old
         };
 
-        tracing::debug!("Stream {} state changed: {:?} -> {:?}", self.id, old_state, new_state);
+        tracing::debug!(
+            "Stream {} state changed: {:?} -> {:?}",
+            self.id,
+            old_state,
+            new_state
+        );
     }
 
     /// Check if stream is active
@@ -301,10 +307,7 @@ impl Stream {
 
 impl StreamMultiplexer {
     /// Create a new stream multiplexer
-    pub fn new(
-        config: MultiplexerConfig,
-        event_handler: Arc<dyn StreamEventHandler>,
-    ) -> Self {
+    pub fn new(config: MultiplexerConfig, event_handler: Arc<dyn StreamEventHandler>) -> Self {
         let flow_control = Arc::new(FlowControlManager::new(config.clone()));
         let priority_scheduler = Arc::new(PriorityScheduler::new());
         let congestion_controller = Arc::new(CongestionController::new());
@@ -334,7 +337,7 @@ impl StreamMultiplexer {
         let config_clone = self.config.clone();
         let cleanup_handle = tokio::spawn(async move {
             let mut cleanup_interval = interval(config_clone.cleanup_interval);
-            
+
             loop {
                 tokio::select! {
                     _ = cleanup_interval.tick() => {
@@ -387,16 +390,22 @@ impl StreamMultiplexer {
         {
             let streams = self.streams.read().unwrap();
             if streams.len() >= self.config.max_streams {
-                return Err(AppError::ResourceExhausted(
-                    format!("Maximum streams ({}) exceeded", self.config.max_streams)
-                ));
+                return Err(AppError::ResourceExhausted(format!(
+                    "Maximum streams ({}) exceeded",
+                    self.config.max_streams
+                )));
             }
         }
 
         let stream_id = Uuid::new_v4();
         let stream_config = config.unwrap_or_else(|| self.config.default_stream_config.clone());
-        
-        let stream = Arc::new(Stream::new(stream_id, stream_type.clone(), priority, stream_config.clone()));
+
+        let stream = Arc::new(Stream::new(
+            stream_id,
+            stream_type.clone(),
+            priority,
+            stream_config.clone(),
+        ));
         stream.update_state(StreamState::Active);
 
         // Add to streams registry
@@ -423,12 +432,9 @@ impl StreamMultiplexer {
     }
 
     /// Send a message on a specific stream
-    pub async fn send_message(
-        &self,
-        stream_id: StreamId,
-        message: ValkyrieMessage,
-    ) -> Result<()> {
-        let stream = self.get_stream(&stream_id)
+    pub async fn send_message(&self, stream_id: StreamId, message: ValkyrieMessage) -> Result<()> {
+        let stream = self
+            .get_stream(&stream_id)
             .ok_or_else(|| AppError::StreamError {
                 stream_id,
                 error_type: "Stream not found".to_string(),
@@ -448,7 +454,8 @@ impl StreamMultiplexer {
 
     /// Receive a message from a specific stream
     pub async fn receive_message(&self, stream_id: StreamId) -> Result<Option<ValkyrieMessage>> {
-        let stream = self.get_stream(&stream_id)
+        let stream = self
+            .get_stream(&stream_id)
             .ok_or_else(|| AppError::StreamError {
                 stream_id,
                 error_type: "Stream not found".to_string(),
@@ -469,7 +476,8 @@ impl StreamMultiplexer {
 
     /// Close a stream
     pub async fn close_stream(&self, stream_id: StreamId, reason: String) -> Result<()> {
-        let stream = self.get_stream(&stream_id)
+        let stream = self
+            .get_stream(&stream_id)
             .ok_or_else(|| AppError::StreamError {
                 stream_id,
                 error_type: "Stream not found".to_string(),
@@ -484,10 +492,8 @@ impl StreamMultiplexer {
         }
 
         // Emit stream closed event
-        self.event_handler.handle_event(StreamEvent::Closed {
-            stream_id,
-            reason,
-        });
+        self.event_handler
+            .handle_event(StreamEvent::Closed { stream_id, reason });
 
         Ok(())
     }
@@ -500,14 +506,15 @@ impl StreamMultiplexer {
 
     /// Get stream metrics
     pub fn get_stream_metrics(&self, stream_id: &StreamId) -> Option<StreamMetrics> {
-        self.get_stream(stream_id).map(|stream| stream.get_metrics())
+        self.get_stream(stream_id)
+            .map(|stream| stream.get_metrics())
     }
 
     /// Get multiplexer statistics
     pub fn get_statistics(&self) -> MultiplexerStatistics {
         let streams = self.streams.read().unwrap();
         let total_streams = streams.len();
-        
+
         let mut active_streams = 0;
         let mut paused_streams = 0;
         let mut total_bytes_sent = 0;
@@ -559,11 +566,11 @@ impl StreamMultiplexer {
                 streams_guard.get(&stream_id).cloned()
             } {
                 let _ = stream.close("Stream timeout".to_string()).await;
-                
+
                 // Remove from registry
                 let mut streams_guard = streams.write().unwrap();
                 streams_guard.remove(&stream_id);
-                
+
                 tracing::info!("Cleaned up expired stream: {}", stream_id);
             }
         }

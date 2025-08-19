@@ -1,7 +1,7 @@
 //! Message handlers for the Valkyrie Protocol
 
+use crate::valkyrie::{Result, ValkyrieMessage};
 use async_trait::async_trait;
-use crate::valkyrie::{ValkyrieMessage, Result};
 
 /// Message handler trait for processing incoming messages
 #[async_trait]

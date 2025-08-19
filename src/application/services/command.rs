@@ -313,10 +313,7 @@ pub struct CreateFileParams {
 }
 
 impl CreateFileCommand {
-    pub fn new(
-        github_service: Arc<dyn GitHubService>,
-        params: CreateFileParams,
-    ) -> Self {
+    pub fn new(github_service: Arc<dyn GitHubService>, params: CreateFileParams) -> Self {
         Self {
             id: Uuid::new_v4(),
             github_service,
@@ -813,7 +810,7 @@ mod tests {
             commit_message: "Add Dockerfile".to_string(),
             branch: "test-branch".to_string(),
         };
-    
+
         let command = CreateFileCommand::new(github_service.clone(), params);
 
         assert!(!command.can_undo()); // File creation is not easily reversible

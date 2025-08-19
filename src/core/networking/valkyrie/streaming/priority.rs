@@ -1,10 +1,10 @@
 use super::*;
-use std::collections::{HashMap, VecDeque};
+use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
-use std::cmp::Ordering;
 // tokio::sync imports removed as unused
 // tokio::time imports removed as unused
 
@@ -119,7 +119,9 @@ impl PartialOrd for ScheduledMessage {
 impl Ord for ScheduledMessage {
     fn cmp(&self, other: &Self) -> Ordering {
         // Higher effective priority comes first (reverse order for max heap)
-        other.effective_priority.partial_cmp(&self.effective_priority)
+        other
+            .effective_priority
+            .partial_cmp(&self.effective_priority)
             .unwrap_or(Ordering::Equal)
             .then_with(|| self.queued_at.cmp(&other.queued_at)) // FIFO for same priority
     }
@@ -327,7 +329,7 @@ impl PriorityScheduler {
     /// Create a new priority scheduler
     pub fn new() -> Self {
         let mut priority_queues = HashMap::new();
-        
+
         // Initialize queues for each priority level
         for priority in [
             StreamPriority::Critical,
@@ -346,7 +348,10 @@ impl PriorityScheduler {
                 (StreamPriority::Normal, 0.6),
                 (StreamPriority::Low, 0.4),
                 (StreamPriority::Background, 0.2),
-            ].iter().cloned().collect(),
+            ]
+            .iter()
+            .cloned()
+            .collect(),
         };
 
         Self {
@@ -384,12 +389,12 @@ impl PriorityScheduler {
         if let Some(queue) = queues.get(&priority) {
             let mut queue_guard = queue.lock().unwrap();
             if queue_guard.len() >= self.config.max_queue_size {
-                return Err(AppError::ResourceExhausted(
-                    format!("Priority queue {:?}: Queue size limit ({}) exceeded", 
-                           priority, self.config.max_queue_size)
-                ));
+                return Err(AppError::ResourceExhausted(format!(
+                    "Priority queue {:?}: Queue size limit ({}) exceeded",
+                    priority, self.config.max_queue_size
+                )));
             }
-            
+
             queue_guard.push_back(scheduled_message);
         } else {
             return Err(AppError::InternalError {
@@ -405,7 +410,11 @@ impl PriorityScheduler {
             *metrics.messages_by_priority.entry(priority).or_insert(0) += 1;
         }
 
-        tracing::debug!("Scheduled message for stream {} with priority {:?}", stream_id, priority);
+        tracing::debug!(
+            "Scheduled message for stream {} with priority {:?}",
+            stream_id,
+            priority
+        );
         Ok(())
     }
 
@@ -415,16 +424,16 @@ impl PriorityScheduler {
             SchedulingAlgorithm::StrictPriority => self.get_next_strict_priority().await,
             SchedulingAlgorithm::WeightedFairQueuing { weights } => {
                 self.get_next_weighted_fair(weights).await
-            },
+            }
             SchedulingAlgorithm::DeficitRoundRobin { quantum } => {
                 self.get_next_deficit_round_robin(quantum).await
-            },
+            }
             SchedulingAlgorithm::HierarchicalTokenBucket { rates, bursts } => {
                 self.get_next_token_bucket(rates, bursts).await
-            },
+            }
             SchedulingAlgorithm::Custom { name, parameters } => {
                 self.get_next_custom(name, parameters).await
-            },
+            }
         }
     }
 
@@ -439,17 +448,18 @@ impl PriorityScheduler {
         ];
 
         let queues = self.priority_queues.read().unwrap();
-        
+
         for priority in priorities {
             if let Some(queue) = queues.get(&priority) {
                 let mut queue_guard = queue.lock().unwrap();
                 if let Some(mut message) = queue_guard.pop_front() {
                     // Apply aging to prevent starvation
                     if self.config.starvation_prevention {
-                        let age_factor = message.queued_at.elapsed().as_secs_f64() * self.config.aging_factor;
+                        let age_factor =
+                            message.queued_at.elapsed().as_secs_f64() * self.config.aging_factor;
                         message.effective_priority += age_factor;
                     }
-                    
+
                     return Some(message);
                 }
             }
@@ -459,7 +469,10 @@ impl PriorityScheduler {
     }
 
     /// Weighted fair queuing implementation
-    async fn get_next_weighted_fair(&self, weights: &HashMap<StreamPriority, f64>) -> Option<ScheduledMessage> {
+    async fn get_next_weighted_fair(
+        &self,
+        weights: &HashMap<StreamPriority, f64>,
+    ) -> Option<ScheduledMessage> {
         let queues = self.priority_queues.read().unwrap();
         let mut candidates = Vec::new();
 
@@ -473,7 +486,7 @@ impl PriorityScheduler {
                 } else {
                     0.0
                 };
-                
+
                 let effective_weight = weight + age_factor;
                 candidates.push((*priority, effective_weight));
             }
@@ -486,9 +499,13 @@ impl PriorityScheduler {
         // Select based on weighted probability
         let total_weight: f64 = candidates.iter().map(|(_, w)| w).sum();
         let mut hasher = DefaultHasher::new();
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos().hash(&mut hasher);
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+            .hash(&mut hasher);
         let mut random_value = (hasher.finish() as f64 / u64::MAX as f64) * total_weight;
-        
+
         for (priority, weight) in candidates {
             random_value -= weight;
             if random_value <= 0.0 {
@@ -503,7 +520,10 @@ impl PriorityScheduler {
     }
 
     /// Deficit round robin implementation
-    async fn get_next_deficit_round_robin(&self, _quantum: &HashMap<StreamPriority, u32>) -> Option<ScheduledMessage> {
+    async fn get_next_deficit_round_robin(
+        &self,
+        _quantum: &HashMap<StreamPriority, u32>,
+    ) -> Option<ScheduledMessage> {
         // Simplified DRR implementation
         // In a full implementation, we would maintain deficit counters per queue
         self.get_next_strict_priority().await
@@ -551,17 +571,21 @@ impl PriorityScheduler {
             let queue_guard = queue.lock().unwrap();
             let queue_size = queue_guard.len();
             let total_bytes: usize = queue_guard.iter().map(|m| m.size).sum();
-            
-            let oldest_message_age = queue_guard.front()
+
+            let oldest_message_age = queue_guard
+                .front()
                 .map(|m| m.queued_at.elapsed())
                 .unwrap_or_default();
 
-            stats.insert(*priority, QueueStatistics {
-                queue_size,
-                total_bytes,
-                oldest_message_age,
-                utilization: queue_size as f64 / self.config.max_queue_size as f64,
-            });
+            stats.insert(
+                *priority,
+                QueueStatistics {
+                    queue_size,
+                    total_bytes,
+                    oldest_message_age,
+                    utilization: queue_size as f64 / self.config.max_queue_size as f64,
+                },
+            );
         }
 
         stats
@@ -606,16 +630,21 @@ impl BandwidthAllocator {
     pub fn allocate_bandwidth(&self, priority: StreamPriority, bandwidth: f64) -> Result<()> {
         let mut allocations = self.allocations.write().unwrap();
         let total_allocated: f64 = allocations.values().sum();
-        
+
         if total_allocated + bandwidth > self.total_bandwidth {
-            return Err(AppError::ResourceExhausted(
-                format!("Insufficient bandwidth: requested {}, available {}", 
-                       bandwidth, self.total_bandwidth - total_allocated)
-            ));
+            return Err(AppError::ResourceExhausted(format!(
+                "Insufficient bandwidth: requested {}, available {}",
+                bandwidth,
+                self.total_bandwidth - total_allocated
+            )));
         }
 
         allocations.insert(priority, bandwidth);
-        tracing::debug!("Allocated {} bandwidth to priority {:?}", bandwidth, priority);
+        tracing::debug!(
+            "Allocated {} bandwidth to priority {:?}",
+            bandwidth,
+            priority
+        );
         Ok(())
     }
 
@@ -623,10 +652,10 @@ impl BandwidthAllocator {
     pub fn is_bandwidth_available(&self, priority: StreamPriority, required: f64) -> bool {
         let allocations = self.allocations.read().unwrap();
         let current_usage = self.current_usage.read().unwrap();
-        
+
         let allocated = allocations.get(&priority).copied().unwrap_or(0.0);
         let used = current_usage.get(&priority).copied().unwrap_or(0.0);
-        
+
         used + required <= allocated
     }
 
@@ -664,7 +693,7 @@ impl QosManager {
                     return false;
                 }
             }
-            
+
             // Additional QoS checks would be implemented here
             true
         } else {
@@ -675,16 +704,20 @@ impl QosManager {
     /// Record QoS metrics
     pub fn record_metrics(&self, priority: StreamPriority, latency: Duration, bandwidth: f64) {
         let mut metrics = self.metrics.lock().unwrap();
-        
+
         // Update bandwidth utilization
         metrics.bandwidth_utilization.insert(priority, bandwidth);
-        
+
         // Update latency percentiles (simplified)
         let percentiles = metrics.latency_percentiles.entry(priority).or_default();
         percentiles.p50 = latency; // Simplified - would need proper percentile calculation
-        
-        tracing::trace!("Recorded QoS metrics for priority {:?}: latency={:?}, bandwidth={}", 
-                       priority, latency, bandwidth);
+
+        tracing::trace!(
+            "Recorded QoS metrics for priority {:?}: latency={:?}, bandwidth={}",
+            priority,
+            latency,
+            bandwidth
+        );
     }
 }
 
@@ -710,7 +743,7 @@ impl SlaMonitor {
         let slas = self.slas.read().unwrap();
         if let Some(sla) = slas.get(&priority) {
             let mut violations = self.violations.lock().unwrap();
-            
+
             // Check latency SLA
             if latency > sla.target_latency {
                 violations.push(SlaViolation {
@@ -722,7 +755,7 @@ impl SlaMonitor {
                     expected_value: sla.target_latency.as_millis() as f64,
                 });
             }
-            
+
             // Check throughput SLA
             if throughput < sla.target_throughput {
                 violations.push(SlaViolation {

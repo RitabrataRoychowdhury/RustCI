@@ -3,9 +3,9 @@
 //! This module provides various lock-free queue implementations optimized for
 //! different use cases in the Valkyrie Protocol.
 
-use super::{LockFreeMetrics, LockFreeConfig, CacheLinePadded, HazardPointer};
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use super::{CacheLinePadded, HazardPointer, LockFreeConfig, LockFreeMetrics};
 use std::ptr;
+use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 
 /// Errors that can occur during queue operations
 #[derive(Debug, thiserror::Error)]
@@ -71,31 +71,31 @@ impl<T> QueueNode<T> {
 pub trait LockFreeQueue<T>: Send + Sync {
     /// Enqueue an item
     fn enqueue(&self, item: T) -> Result<(), QueueError>;
-    
+
     /// Dequeue an item
     fn dequeue(&self) -> Result<T, QueueError>;
-    
+
     /// Try to enqueue without blocking
     fn try_enqueue(&self, item: T) -> Result<(), QueueError>;
-    
+
     /// Try to dequeue without blocking
     fn try_dequeue(&self) -> Result<T, QueueError>;
-    
+
     /// Check if queue is empty
     fn is_empty(&self) -> bool;
-    
+
     /// Get current size (approximate)
     fn len(&self) -> usize;
-    
+
     /// Get queue statistics
     fn stats(&self) -> QueueStats;
-    
+
     /// Clear all items from the queue
     fn clear(&self);
 }
 
 /// Michael & Scott lock-free queue (MPMC - Multi-Producer Multi-Consumer)
-pub struct MpmcQueue<T> 
+pub struct MpmcQueue<T>
 where
     T: Send + Sync,
 {
@@ -111,7 +111,7 @@ where
     hazard_pointers: Vec<HazardPointer<QueueNode<T>>>,
 }
 
-impl<T> MpmcQueue<T> 
+impl<T> MpmcQueue<T>
 where
     T: Send + Sync,
 {
@@ -119,7 +119,7 @@ where
     pub fn new(config: LockFreeConfig) -> Self {
         let sentinel = Box::into_raw(Box::new(QueueNode::sentinel()));
         let num_threads = num_cpus::get() * 2; // Estimate for hazard pointers
-        
+
         Self {
             head: CacheLinePadded::new(AtomicPtr::new(sentinel)),
             tail: CacheLinePadded::new(AtomicPtr::new(sentinel)),
@@ -144,9 +144,8 @@ where
     /// Safely reclaim memory for a node
     fn reclaim_node(&self, node: *mut QueueNode<T>) {
         // Check if any hazard pointer is protecting this node
-        let is_protected = self.hazard_pointers.iter()
-            .any(|hp| hp.is_protected(node));
-        
+        let is_protected = self.hazard_pointers.iter().any(|hp| hp.is_protected(node));
+
         if !is_protected {
             unsafe {
                 let _ = Box::from_raw(node);
@@ -164,7 +163,9 @@ impl<T: Send + Sync> LockFreeQueue<T> for MpmcQueue<T> {
 
         loop {
             if retries >= self.config.max_retries {
-                unsafe { let _ = Box::from_raw(new_node); }
+                unsafe {
+                    let _ = Box::from_raw(new_node);
+                }
                 self.metrics.record_failure();
                 return Err(QueueError::MaxRetriesExceeded { retries });
             }
@@ -272,7 +273,7 @@ impl<T: Send + Sync> LockFreeQueue<T> for MpmcQueue<T> {
 
                     // Read data before CAS
                     let data = unsafe { (*next).data.take() };
-                    
+
                     if data.is_none() {
                         retries += 1;
                         self.config.backoff_strategy.backoff_blocking(retries);
@@ -309,7 +310,7 @@ impl<T: Send + Sync> LockFreeQueue<T> for MpmcQueue<T> {
         // but with a single attempt
         let mut config = self.config.clone();
         config.max_retries = 1;
-        
+
         let temp_queue = MpmcQueue {
             head: CacheLinePadded::new(AtomicPtr::new(self.head.load(Ordering::Acquire))),
             tail: CacheLinePadded::new(AtomicPtr::new(self.tail.load(Ordering::Acquire))),
@@ -317,7 +318,7 @@ impl<T: Send + Sync> LockFreeQueue<T> for MpmcQueue<T> {
             metrics: LockFreeMetrics::default(),
             hazard_pointers: Vec::new(),
         };
-        
+
         temp_queue.enqueue(item)
     }
 
@@ -326,7 +327,7 @@ impl<T: Send + Sync> LockFreeQueue<T> for MpmcQueue<T> {
         // but with a single attempt
         let mut config = self.config.clone();
         config.max_retries = 1;
-        
+
         let temp_queue = MpmcQueue {
             head: CacheLinePadded::new(AtomicPtr::new(self.head.load(Ordering::Acquire))),
             tail: CacheLinePadded::new(AtomicPtr::new(self.tail.load(Ordering::Acquire))),
@@ -334,7 +335,7 @@ impl<T: Send + Sync> LockFreeQueue<T> for MpmcQueue<T> {
             metrics: LockFreeMetrics::default(),
             hazard_pointers: Vec::new(),
         };
-        
+
         temp_queue.dequeue()
     }
 
@@ -349,7 +350,7 @@ impl<T: Send + Sync> LockFreeQueue<T> for MpmcQueue<T> {
         // Note: This is expensive and not guaranteed to be accurate in concurrent scenarios
         let mut count = 0;
         let mut current = self.head.load(Ordering::Acquire);
-        
+
         while !current.is_null() {
             let next = unsafe { (*current).next.load(Ordering::Acquire) };
             if next.is_null() {
@@ -358,7 +359,7 @@ impl<T: Send + Sync> LockFreeQueue<T> for MpmcQueue<T> {
             current = next;
             count += 1;
         }
-        
+
         count
     }
 
@@ -381,14 +382,14 @@ impl<T: Send + Sync> LockFreeQueue<T> for MpmcQueue<T> {
     }
 }
 
-impl<T> Drop for MpmcQueue<T> 
+impl<T> Drop for MpmcQueue<T>
 where
     T: Send + Sync,
 {
     fn drop(&mut self) {
         // Clear all remaining items
         self.clear();
-        
+
         // Clean up sentinel node
         let head = self.head.load(Ordering::Acquire);
         if !head.is_null() {
@@ -399,18 +400,12 @@ where
     }
 }
 
-unsafe impl<T> Send for MpmcQueue<T> 
-where
-    T: Send + Sync,
-{}
+unsafe impl<T> Send for MpmcQueue<T> where T: Send + Sync {}
 
-unsafe impl<T> Sync for MpmcQueue<T> 
-where
-    T: Send + Sync,
-{}
+unsafe impl<T> Sync for MpmcQueue<T> where T: Send + Sync {}
 
 /// Single-Producer Single-Consumer queue (optimized for single-threaded scenarios)
-pub struct SpscQueue<T> 
+pub struct SpscQueue<T>
 where
     T: Send + Sync,
 {
@@ -426,14 +421,14 @@ where
     metrics: LockFreeMetrics,
 }
 
-impl<T> SpscQueue<T> 
+impl<T> SpscQueue<T>
 where
     T: Send + Sync,
 {
     /// Create a new SPSC queue with given capacity (must be power of 2)
     pub fn new(capacity: usize) -> Self {
         assert!(capacity.is_power_of_two(), "Capacity must be power of 2");
-        
+
         Self {
             buffer: (0..capacity).map(|_| None).collect(),
             head: CacheLinePadded::new(AtomicUsize::new(0)),
@@ -448,18 +443,20 @@ impl<T: Send + Sync> LockFreeQueue<T> for SpscQueue<T> {
     fn enqueue(&self, item: T) -> Result<(), QueueError> {
         let tail = self.tail.load(Ordering::Relaxed);
         let next_tail = (tail + 1) & self.mask;
-        
+
         if next_tail == self.head.load(Ordering::Acquire) {
             self.metrics.record_failure();
-            return Err(QueueError::Full { capacity: self.mask + 1 });
+            return Err(QueueError::Full {
+                capacity: self.mask + 1,
+            });
         }
-        
+
         // Safety: We're the only producer, so this index is safe to write
         unsafe {
             let buffer_ptr = self.buffer.as_ptr() as *mut Option<T>;
             (*buffer_ptr.add(tail)) = Some(item);
         }
-        
+
         self.tail.store(next_tail, Ordering::Release);
         self.metrics.record_success();
         Ok(())
@@ -467,18 +464,18 @@ impl<T: Send + Sync> LockFreeQueue<T> for SpscQueue<T> {
 
     fn dequeue(&self) -> Result<T, QueueError> {
         let head = self.head.load(Ordering::Relaxed);
-        
+
         if head == self.tail.load(Ordering::Acquire) {
             self.metrics.record_failure();
             return Err(QueueError::Empty);
         }
-        
+
         // Safety: We're the only consumer, so this index is safe to read
         let item = unsafe {
             let buffer_ptr = self.buffer.as_ptr() as *mut Option<T>;
             (*buffer_ptr.add(head)).take()
         };
-        
+
         if let Some(item) = item {
             self.head.store((head + 1) & self.mask, Ordering::Release);
             self.metrics.record_success();
@@ -527,7 +524,7 @@ impl<T: Send + Sync> LockFreeQueue<T> for SpscQueue<T> {
 }
 
 /// Multi-Producer Single-Consumer queue
-pub struct MpscQueue<T> 
+pub struct MpscQueue<T>
 where
     T: Send + Sync,
 {
@@ -535,7 +532,7 @@ where
     inner: MpmcQueue<T>,
 }
 
-impl<T> MpscQueue<T> 
+impl<T> MpscQueue<T>
 where
     T: Send + Sync,
 {
@@ -589,19 +586,19 @@ mod tests {
     #[test]
     fn test_spsc_queue_basic_operations() {
         let queue = SpscQueue::new(8);
-        
+
         // Test enqueue
         assert!(queue.enqueue(1).is_ok());
         assert!(queue.enqueue(2).is_ok());
         assert_eq!(queue.len(), 2);
         assert!(!queue.is_empty());
-        
+
         // Test dequeue
         assert_eq!(queue.dequeue().unwrap(), 1);
         assert_eq!(queue.dequeue().unwrap(), 2);
         assert_eq!(queue.len(), 0);
         assert!(queue.is_empty());
-        
+
         // Test empty dequeue
         assert!(matches!(queue.dequeue(), Err(QueueError::Empty)));
     }
@@ -609,12 +606,12 @@ mod tests {
     #[test]
     fn test_spsc_queue_capacity() {
         let queue = SpscQueue::new(4);
-        
+
         // Fill to capacity
         for i in 0..3 {
             assert!(queue.enqueue(i).is_ok());
         }
-        
+
         // Should be full now (capacity - 1 due to ring buffer implementation)
         assert!(matches!(queue.enqueue(99), Err(QueueError::Full { .. })));
     }
@@ -625,9 +622,9 @@ mod tests {
         let num_producers = 4;
         let num_consumers = 2;
         let items_per_producer = 100;
-        
+
         let mut handles = Vec::new();
-        
+
         // Spawn producers
         for producer_id in 0..num_producers {
             let queue_clone = Arc::clone(&queue);
@@ -641,52 +638,55 @@ mod tests {
             });
             handles.push(handle);
         }
-        
+
         // Spawn consumers
         let consumed = Arc::new(AtomicUsize::new(0));
         for _ in 0..num_consumers {
             let queue_clone = Arc::clone(&queue);
             let consumed_clone = Arc::clone(&consumed);
-            let handle = thread::spawn(move || {
-                loop {
-                    match queue_clone.dequeue() {
-                        Ok(_) => {
-                            consumed_clone.fetch_add(1, Ordering::Relaxed);
-                        }
-                        Err(QueueError::Empty) => {
-                            if consumed_clone.load(Ordering::Relaxed) >= num_producers * items_per_producer {
-                                break;
-                            }
-                            thread::yield_now();
-                        }
-                        Err(_) => thread::yield_now(),
+            let handle = thread::spawn(move || loop {
+                match queue_clone.dequeue() {
+                    Ok(_) => {
+                        consumed_clone.fetch_add(1, Ordering::Relaxed);
                     }
+                    Err(QueueError::Empty) => {
+                        if consumed_clone.load(Ordering::Relaxed)
+                            >= num_producers * items_per_producer
+                        {
+                            break;
+                        }
+                        thread::yield_now();
+                    }
+                    Err(_) => thread::yield_now(),
                 }
             });
             handles.push(handle);
         }
-        
+
         // Wait for all threads
         for handle in handles {
             handle.join().unwrap();
         }
-        
+
         // Verify all items were consumed
-        assert_eq!(consumed.load(Ordering::Relaxed), num_producers * items_per_producer);
+        assert_eq!(
+            consumed.load(Ordering::Relaxed),
+            num_producers * items_per_producer
+        );
         assert!(queue.is_empty());
     }
 
     #[test]
     fn test_queue_stats() {
         let queue = SpscQueue::new(8);
-        
+
         let initial_stats = queue.stats();
         assert_eq!(initial_stats.size, 0);
         assert_eq!(initial_stats.capacity, 8);
-        
+
         queue.enqueue(1).unwrap();
         queue.enqueue(2).unwrap();
-        
+
         let stats = queue.stats();
         assert_eq!(stats.size, 2);
         assert!(stats.enqueues >= 2);

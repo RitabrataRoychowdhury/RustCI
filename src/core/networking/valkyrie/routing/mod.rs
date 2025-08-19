@@ -1,21 +1,21 @@
 // Advanced Message Routing & Load Balancing System
 // Task 3.1.1.1: Routing Algorithm Framework
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use uuid::Uuid;
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+use uuid::Uuid;
 
-pub mod algorithms;
-pub mod load_balancer;
-pub mod topology;
-pub mod qos;
 pub mod adaptive;
-pub mod config;
+pub mod algorithms;
 pub mod cache;
+pub mod config;
+pub mod load_balancer;
 pub mod metrics;
+pub mod qos;
+pub mod topology;
 
 #[cfg(test)]
 pub mod tests;
@@ -200,7 +200,7 @@ pub trait RoutingStrategy: Send + Sync {
 pub struct PerformanceProfile {
     pub avg_calculation_time: Duration,
     pub memory_usage: u64,
-    pub cpu_intensity: f64, // 0.0 to 1.0
+    pub cpu_intensity: f64,      // 0.0 to 1.0
     pub scalability_factor: f64, // How well it scales with topology size
 }
 
@@ -331,26 +331,29 @@ pub struct RegulatoryConstraints {
 #[derive(Debug, thiserror::Error)]
 pub enum RoutingError {
     #[error("No route found from {source} to {destination}")]
-    NoRouteFound { source: NodeId, destination: NodeId },
-    
+    NoRouteFound { source: String, destination: String },
+
     #[error("Topology not available")]
     TopologyUnavailable,
-    
+
     #[error("Invalid routing context: {reason}")]
     InvalidContext { reason: String },
-    
+
     #[error("QoS requirements cannot be satisfied: {requirements:?}")]
     QoSNotSatisfiable { requirements: QoSRequirements },
-    
+
     #[error("Security constraints violated: {constraint}")]
     SecurityViolation { constraint: String },
-    
+
     #[error("Algorithm error: {algorithm:?} - {error}")]
-    AlgorithmError { algorithm: RoutingAlgorithm, error: String },
-    
+    AlgorithmError {
+        algorithm: RoutingAlgorithm,
+        error: String,
+    },
+
     #[error("Timeout calculating route after {duration:?}")]
     CalculationTimeout { duration: Duration },
-    
+
     #[error("Internal error: {message}")]
     Internal { message: String },
 }
@@ -431,22 +434,23 @@ impl AlgorithmManager {
         topology: &NetworkTopology,
     ) -> Result<Route, RoutingError> {
         let start_time = SystemTime::now();
-        
+
         // Select the best algorithm for this context
         let available_algorithms: Vec<_> = self.strategies.keys().copied().collect();
         let performance_history = self.performance_tracker.get_history().await;
-        
-        let selected_algorithm = self.algorithm_selector
+
+        let selected_algorithm = self
+            .algorithm_selector
             .select_algorithm(context, &available_algorithms, &performance_history)
             .await;
 
         // Get the strategy for the selected algorithm
-        let strategy = self.strategies
-            .get(&selected_algorithm)
-            .ok_or_else(|| RoutingError::AlgorithmError {
+        let strategy = self.strategies.get(&selected_algorithm).ok_or_else(|| {
+            RoutingError::AlgorithmError {
                 algorithm: selected_algorithm,
                 error: "Strategy not found".to_string(),
-            })?;
+            }
+        })?;
 
         // Calculate the route
         let mut route = strategy
@@ -459,7 +463,11 @@ impl AlgorithmManager {
 
         // Track performance
         self.performance_tracker
-            .record_calculation(selected_algorithm, start_time.elapsed().unwrap_or_default(), &route)
+            .record_calculation(
+                selected_algorithm,
+                start_time.elapsed().unwrap_or_default(),
+                &route,
+            )
             .await;
 
         Ok(route)
@@ -491,21 +499,21 @@ impl PerformanceTracker {
     ) {
         let mut history = self.history.write().await;
         let entry = history.entry(algorithm).or_default();
-        
+
         entry.total_calculations += 1;
         entry.successful_calculations += 1;
-        
+
         // Update running average
         let alpha = 0.1; // Exponential moving average factor
         let new_time = duration.as_nanos() as f64;
         let current_avg = entry.avg_calculation_time.as_nanos() as f64;
         let updated_avg = current_avg * (1.0 - alpha) + new_time * alpha;
         entry.avg_calculation_time = Duration::from_nanos(updated_avg as u64);
-        
+
         // Update route quality (simplified metric)
         let quality = 1.0 / (1.0 + route.total_cost);
         entry.avg_route_quality = entry.avg_route_quality * (1.0 - alpha) + quality * alpha;
-        
+
         entry.last_updated = SystemTime::now();
     }
 
@@ -569,8 +577,7 @@ impl NetworkTopology {
     /// Check if two nodes are directly connected
     pub fn are_connected(&self, from: &NodeId, to: &NodeId) -> bool {
         self.links.values().any(|link| {
-            (link.from == *from && link.to == *to) || 
-            (link.from == *to && link.to == *from)
+            (link.from == *from && link.to == *to) || (link.from == *to && link.to == *from)
         })
     }
 
@@ -591,11 +598,7 @@ impl NetworkTopology {
 
 impl RoutingContext {
     /// Create a new routing context
-    pub fn new(
-        source: NodeId,
-        destination: NodeId,
-        qos_requirements: QoSRequirements,
-    ) -> Self {
+    pub fn new(source: NodeId, destination: NodeId, qos_requirements: QoSRequirements) -> Self {
         Self {
             message_id: Uuid::new_v4(),
             source,
@@ -620,7 +623,9 @@ impl RoutingContext {
     /// Get remaining time until deadline
     pub fn remaining_time(&self) -> Option<Duration> {
         self.deadline.map(|deadline| {
-            deadline.duration_since(SystemTime::now()).unwrap_or(Duration::ZERO)
+            deadline
+                .duration_since(SystemTime::now())
+                .unwrap_or(Duration::ZERO)
         })
     }
 }
@@ -651,15 +656,15 @@ impl Default for QoSRequirements {
 }
 
 // Re-export commonly used types
-pub use algorithms::*;
-pub use load_balancer::*;
-pub use topology::*;
-pub use qos::*;
 pub use adaptive::*;
-pub use config::*;
+pub use algorithms::*;
 pub use cache::*;
+pub use config::*;
+pub use load_balancer::*;
 pub use metrics::*;
+pub use qos::*;
+pub use topology::*;
 
 // Additional imports needed
-use sha2;
 use dashmap::DashMap;
+use sha2;

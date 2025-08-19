@@ -2,26 +2,26 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 // tokio::sync imports removed as unused
-use uuid::Uuid;
-use serde::{Deserialize, Serialize};
-use crate::error::{AppError, Result};
 use crate::core::networking::valkyrie::types::ValkyrieMessage;
+use crate::error::{AppError, Result};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-pub mod multiplexer;
+pub mod bandwidth;
+pub mod classifier;
 pub mod flow_control;
+pub mod multiplexer;
 pub mod priority;
 pub mod router;
-pub mod classifier;
-pub mod bandwidth;
 
+pub use flow_control::{FlowControlConfig, FlowControlManager};
 pub use multiplexer::*;
-pub use flow_control::{FlowControlManager, FlowControlConfig};
 pub use priority::*;
 
 // Re-export QoS-aware streaming components
+pub use bandwidth::{BandwidthAllocation, BandwidthAllocator};
+pub use classifier::{ClassificationResult, MessageClassifier};
 pub use router::{QoSStreamRouter, QueuedMessage, RoutingResult};
-pub use classifier::{MessageClassifier, ClassificationResult};
-pub use bandwidth::{BandwidthAllocator, BandwidthAllocation};
 
 // Congestion control components are defined in this module and automatically available
 
@@ -31,8 +31,8 @@ pub type StreamId = Uuid;
 /// QoS classes for message prioritization
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum QoSClass {
-    Critical = 0,    // System-critical messages (heartbeats, health checks)
-    System = 1,      // System management messages
+    Critical = 0,     // System-critical messages (heartbeats, health checks)
+    System = 1,       // System management messages
     JobExecution = 2, // Job execution commands and responses
     DataTransfer = 3, // Large data transfers
     LogsMetrics = 4,  // Logs and metrics (lowest priority)
@@ -243,30 +243,18 @@ pub enum StreamEvent {
         new_state: StreamState,
     },
     /// Data was sent on stream
-    DataSent {
-        stream_id: StreamId,
-        bytes: usize,
-    },
+    DataSent { stream_id: StreamId, bytes: usize },
     /// Data was received on stream
-    DataReceived {
-        stream_id: StreamId,
-        bytes: usize,
-    },
+    DataReceived { stream_id: StreamId, bytes: usize },
     /// Flow control event occurred
     FlowControl {
         stream_id: StreamId,
         event_type: FlowControlEvent,
     },
     /// Stream was closed
-    Closed {
-        stream_id: StreamId,
-        reason: String,
-    },
+    Closed { stream_id: StreamId, reason: String },
     /// Stream error occurred
-    Error {
-        stream_id: StreamId,
-        error: String,
-    },
+    Error { stream_id: StreamId, error: String },
 }
 
 /// Flow control event types
@@ -295,11 +283,24 @@ pub struct DefaultStreamEventHandler;
 impl StreamEventHandler for DefaultStreamEventHandler {
     fn handle_event(&self, event: StreamEvent) {
         match event {
-            StreamEvent::Created { stream_id, stream_type, .. } => {
+            StreamEvent::Created {
+                stream_id,
+                stream_type,
+                ..
+            } => {
                 tracing::info!("Stream created: {} (type: {:?})", stream_id, stream_type);
             }
-            StreamEvent::StateChanged { stream_id, old_state, new_state } => {
-                tracing::debug!("Stream {} state: {:?} -> {:?}", stream_id, old_state, new_state);
+            StreamEvent::StateChanged {
+                stream_id,
+                old_state,
+                new_state,
+            } => {
+                tracing::debug!(
+                    "Stream {} state: {:?} -> {:?}",
+                    stream_id,
+                    old_state,
+                    new_state
+                );
             }
             StreamEvent::DataSent { stream_id, bytes } => {
                 tracing::trace!("Stream {} sent {} bytes", stream_id, bytes);
@@ -307,7 +308,10 @@ impl StreamEventHandler for DefaultStreamEventHandler {
             StreamEvent::DataReceived { stream_id, bytes } => {
                 tracing::trace!("Stream {} received {} bytes", stream_id, bytes);
             }
-            StreamEvent::FlowControl { stream_id, event_type } => {
+            StreamEvent::FlowControl {
+                stream_id,
+                event_type,
+            } => {
                 tracing::debug!("Stream {} flow control: {:?}", stream_id, event_type);
             }
             StreamEvent::Closed { stream_id, reason } => {
@@ -397,9 +401,9 @@ impl CongestionController {
     /// Initialize congestion control for a stream
     pub fn initialize_stream(&self, stream_id: StreamId) -> Result<()> {
         let state = CongestionState {
-            cwnd: 10, // Initial congestion window
-            ssthresh: 65536, // Slow start threshold
-            rtt: Duration::from_millis(100), // Initial RTT estimate
+            cwnd: 10,                           // Initial congestion window
+            ssthresh: 65536,                    // Slow start threshold
+            rtt: Duration::from_millis(100),    // Initial RTT estimate
             rtt_var: Duration::from_millis(50), // RTT variance
             algorithm_state: match self.algorithm {
                 CongestionControlAlgorithm::Reno => CongestionAlgorithm::Reno {
@@ -425,7 +429,7 @@ impl CongestionController {
 
         let mut states = self.stream_states.write().unwrap();
         states.insert(stream_id, state);
-        
+
         tracing::debug!("Initialized congestion control for stream {}", stream_id);
         Ok(())
     }
@@ -441,15 +445,17 @@ impl CongestionController {
                         state.cwnd = state.ssthresh;
                         *fast_recovery = true;
                     }
-                },
-                CongestionAlgorithm::Cubic { w_max, epoch_start, .. } => {
+                }
+                CongestionAlgorithm::Cubic {
+                    w_max, epoch_start, ..
+                } => {
                     *w_max = state.cwnd as f64;
                     state.cwnd = (state.cwnd as f64 * 0.7) as u32; // Beta = 0.7 for Cubic
                     *epoch_start = Some(Instant::now());
-                },
+                }
                 CongestionAlgorithm::Bbr { pacing_rate, .. } => {
                     *pacing_rate *= 0.8; // Reduce pacing rate
-                },
+                }
             }
 
             // Update global metrics
@@ -473,12 +479,13 @@ impl CongestionController {
             let new_rtt_ms = rtt.as_millis() as f64;
             let old_rtt_ms = state.rtt.as_millis() as f64;
             let updated_rtt_ms = (1.0 - alpha) * old_rtt_ms + alpha * new_rtt_ms;
-            
+
             state.rtt = Duration::from_millis(updated_rtt_ms as u64);
-            
+
             // Update RTT variance
             let rtt_var_ms = state.rtt_var.as_millis() as f64;
-            let updated_var_ms = (1.0 - alpha) * rtt_var_ms + alpha * (new_rtt_ms - updated_rtt_ms).abs();
+            let updated_var_ms =
+                (1.0 - alpha) * rtt_var_ms + alpha * (new_rtt_ms - updated_rtt_ms).abs();
             state.rtt_var = Duration::from_millis(updated_var_ms as u64);
 
             // Update global metrics

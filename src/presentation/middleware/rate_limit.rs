@@ -71,43 +71,43 @@ impl RateLimitConfigBuilder {
             per_api_key_limit: Some(1000),
         }
     }
-    
+
     /// Set maximum requests per window
     pub fn max_requests(mut self, max_requests: u32) -> Self {
         self.max_requests = max_requests;
         self
     }
-    
+
     /// Set window duration
     pub fn window_duration(mut self, duration: Duration) -> Self {
         self.window_duration = duration;
         self
     }
-    
+
     /// Enable or disable rate limiting
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self
     }
-    
+
     /// Set per-IP rate limit
     pub fn per_ip_limit(mut self, limit: Option<u32>) -> Self {
         self.per_ip_limit = limit;
         self
     }
-    
+
     /// Set per-user rate limit
     pub fn per_user_limit(mut self, limit: Option<u32>) -> Self {
         self.per_user_limit = limit;
         self
     }
-    
+
     /// Set per-API-key rate limit
     pub fn per_api_key_limit(mut self, limit: Option<u32>) -> Self {
         self.per_api_key_limit = limit;
         self
     }
-    
+
     /// Configure for development environment (more permissive)
     pub fn for_development(mut self) -> Self {
         self.max_requests = 10000;
@@ -116,7 +116,7 @@ impl RateLimitConfigBuilder {
         self.per_api_key_limit = Some(10000);
         self
     }
-    
+
     /// Configure for production environment (more restrictive)
     pub fn for_production(mut self) -> Self {
         self.max_requests = 500;
@@ -125,7 +125,7 @@ impl RateLimitConfigBuilder {
         self.per_api_key_limit = Some(500);
         self
     }
-    
+
     /// Build the final configuration
     pub fn build(self) -> RateLimitConfig {
         RateLimitConfig {
@@ -171,7 +171,7 @@ impl RateLimitBucket {
     /// Check if request is allowed and increment counter
     fn try_consume(&mut self) -> bool {
         let now = Instant::now();
-        
+
         // Reset window if expired
         if now.duration_since(self.window_start) >= self.window_duration {
             self.requests = 0;
@@ -190,7 +190,7 @@ impl RateLimitBucket {
     /// Get remaining requests in current window
     fn remaining(&self) -> u32 {
         let now = Instant::now();
-        
+
         // If window expired, full limit is available
         if now.duration_since(self.window_start) >= self.window_duration {
             self.max_requests
@@ -203,7 +203,7 @@ impl RateLimitBucket {
     fn reset_time(&self) -> Duration {
         let now = Instant::now();
         let elapsed = now.duration_since(self.window_start);
-        
+
         if elapsed >= self.window_duration {
             Duration::from_secs(0)
         } else {
@@ -312,9 +312,18 @@ impl IntoResponse for RateLimitError {
     fn into_response(self) -> Response {
         let mut headers = HeaderMap::new();
         headers.insert("X-RateLimit-Limit", self.limit.to_string().parse().unwrap());
-        headers.insert("X-RateLimit-Remaining", self.remaining.to_string().parse().unwrap());
-        headers.insert("X-RateLimit-Reset", self.reset_time.as_secs().to_string().parse().unwrap());
-        headers.insert("Retry-After", self.reset_time.as_secs().to_string().parse().unwrap());
+        headers.insert(
+            "X-RateLimit-Remaining",
+            self.remaining.to_string().parse().unwrap(),
+        );
+        headers.insert(
+            "X-RateLimit-Reset",
+            self.reset_time.as_secs().to_string().parse().unwrap(),
+        );
+        headers.insert(
+            "Retry-After",
+            self.reset_time.as_secs().to_string().parse().unwrap(),
+        );
 
         let body = serde_json::json!({
             "error": "Rate limit exceeded",
@@ -341,13 +350,16 @@ pub async fn rate_limit_middleware(
 
     // Extract client IP
     let client_ip = extract_client_ip(&req);
-    
+
     // Extract user ID from security context (if authenticated)
-    let user_id = req.extensions().get::<crate::core::networking::security::SecurityContext>()
+    let user_id = req
+        .extensions()
+        .get::<crate::core::networking::security::SecurityContext>()
         .map(|ctx| ctx.user_id.to_string());
 
     // Extract API key from headers
-    let api_key = req.headers()
+    let api_key = req
+        .headers()
         .get("X-API-Key")
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
@@ -377,7 +389,9 @@ pub async fn rate_limit_middleware(
             );
             return Err(AppError::RateLimitExceededSimple(format!(
                 "Rate limit exceeded for IP {}: {} requests per {} seconds",
-                ip, e.limit, e.reset_time.as_secs()
+                ip,
+                e.limit,
+                e.reset_time.as_secs()
             )));
         }
     }
@@ -392,7 +406,9 @@ pub async fn rate_limit_middleware(
             );
             return Err(AppError::RateLimitExceededSimple(format!(
                 "Rate limit exceeded for user {}: {} requests per {} seconds",
-                user_id, e.limit, e.reset_time.as_secs()
+                user_id,
+                e.limit,
+                e.reset_time.as_secs()
             )));
         }
     }
@@ -407,7 +423,8 @@ pub async fn rate_limit_middleware(
             );
             return Err(AppError::RateLimitExceededSimple(format!(
                 "Rate limit exceeded for API key: {} requests per {} seconds",
-                e.limit, e.reset_time.as_secs()
+                e.limit,
+                e.reset_time.as_secs()
             )));
         }
     }
@@ -452,11 +469,15 @@ fn extract_client_ip(req: &Request<Body>) -> Option<IpAddr> {
 /// Create rate limiting middleware with custom configuration
 pub fn create_rate_limit_middleware(
     config: RateLimitConfig,
-) -> impl Fn(State<AppState>, Request<Body>, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, AppError>> + Send>> + Clone {
+) -> impl Fn(
+    State<AppState>,
+    Request<Body>,
+    Next,
+)
+    -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, AppError>> + Send>>
+       + Clone {
     move |state: State<AppState>, req: Request<Body>, next: Next| {
         let _config = config.clone();
-        Box::pin(async move {
-            rate_limit_middleware(state, req, next).await
-        })
+        Box::pin(async move { rate_limit_middleware(state, req, next).await })
     }
 }

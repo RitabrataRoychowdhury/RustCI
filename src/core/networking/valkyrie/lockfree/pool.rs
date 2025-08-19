@@ -3,9 +3,9 @@
 //! This module provides lock-free object pools for efficient memory management
 //! and resource reuse in high-performance scenarios.
 
-use super::{LockFreeMetrics, LockFreeConfig, CacheLinePadded, HazardPointer};
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use super::{CacheLinePadded, HazardPointer, LockFreeConfig, LockFreeMetrics};
 use std::ptr;
+use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 
 /// Errors that can occur during pool operations
 #[derive(Debug, thiserror::Error)]
@@ -65,38 +65,38 @@ impl<T> PoolNode<T> {
 pub trait LockFreePool<T>: Send + Sync {
     /// Allocate an object from the pool
     fn allocate(&self) -> Result<T, PoolError>;
-    
+
     /// Deallocate an object back to the pool
     fn deallocate(&self, item: T) -> Result<(), PoolError>;
-    
+
     /// Try to allocate without blocking
     fn try_allocate(&self) -> Result<T, PoolError>;
-    
+
     /// Try to deallocate without blocking
     fn try_deallocate(&self, item: T) -> Result<(), PoolError>;
-    
+
     /// Check if pool is empty
     fn is_empty(&self) -> bool;
-    
+
     /// Check if pool is full
     fn is_full(&self) -> bool;
-    
+
     /// Get current available count
     fn available(&self) -> usize;
-    
+
     /// Get pool capacity
     fn capacity(&self) -> usize;
-    
+
     /// Get pool statistics
     fn stats(&self) -> PoolStats;
-    
+
     /// Clear all objects from the pool
     fn clear(&self);
 }
 
 /// Lock-free object pool using Treiber stack
-pub struct ObjectPool<T> 
-where 
+pub struct ObjectPool<T>
+where
     T: Send + Sync + 'static,
 {
     /// Head of the free list (stack)
@@ -125,7 +125,7 @@ where
         F: Fn() -> T + Send + Sync + 'static,
     {
         let num_threads = num_cpus::get() * 2;
-        
+
         Self {
             head: CacheLinePadded::new(AtomicPtr::new(ptr::null_mut())),
             available_count: AtomicUsize::new(0),
@@ -148,13 +148,13 @@ where
         F: Fn() -> T + Send + Sync + 'static,
     {
         let pool = Self::new(max_capacity, factory, config);
-        
+
         // Pre-populate the pool
         for _ in 0..initial_count {
             let obj = (pool.factory)();
             let _ = pool.deallocate(obj);
         }
-        
+
         pool
     }
 
@@ -173,9 +173,8 @@ where
     /// Safely reclaim memory for a node
     fn reclaim_node(&self, node: *mut PoolNode<T>) {
         // Check if any hazard pointer is protecting this node
-        let is_protected = self.hazard_pointers.iter()
-            .any(|hp| hp.is_protected(node));
-        
+        let is_protected = self.hazard_pointers.iter().any(|hp| hp.is_protected(node));
+
         if !is_protected {
             unsafe {
                 let _ = Box::from_raw(node);
@@ -220,12 +219,9 @@ where
 
             let next = unsafe { (*head).next.load(Ordering::Acquire) };
 
-            let cas_result = self.head.compare_exchange_weak(
-                head,
-                next,
-                Ordering::Release,
-                Ordering::Relaxed,
-            );
+            let cas_result =
+                self.head
+                    .compare_exchange_weak(head, next, Ordering::Release, Ordering::Relaxed);
 
             self.metrics.record_cas(cas_result.is_ok());
 
@@ -247,7 +243,9 @@ where
         // Check if pool is at capacity
         if self.available_count.load(Ordering::Relaxed) >= self.max_capacity {
             self.metrics.record_failure();
-            return Err(PoolError::Full { capacity: self.max_capacity });
+            return Err(PoolError::Full {
+                capacity: self.max_capacity,
+            });
         }
 
         let new_node = Box::into_raw(Box::new(PoolNode::new(item)));
@@ -255,7 +253,9 @@ where
 
         loop {
             if retries >= self.config.max_retries {
-                unsafe { let _ = Box::from_raw(new_node); }
+                unsafe {
+                    let _ = Box::from_raw(new_node);
+                }
                 self.metrics.record_failure();
                 return Err(PoolError::MaxRetriesExceeded { retries });
             }
@@ -307,12 +307,9 @@ where
 
         let next = unsafe { (*head).next.load(Ordering::Acquire) };
 
-        let cas_result = self.head.compare_exchange(
-            head,
-            next,
-            Ordering::Release,
-            Ordering::Relaxed,
-        );
+        let cas_result =
+            self.head
+                .compare_exchange(head, next, Ordering::Release, Ordering::Relaxed);
 
         self.metrics.record_cas(cas_result.is_ok());
 
@@ -333,22 +330,21 @@ where
         // Check if pool is at capacity
         if self.available_count.load(Ordering::Relaxed) >= self.max_capacity {
             self.metrics.record_failure();
-            return Err(PoolError::Full { capacity: self.max_capacity });
+            return Err(PoolError::Full {
+                capacity: self.max_capacity,
+            });
         }
 
         let new_node = Box::into_raw(Box::new(PoolNode::new(item)));
         let head = self.head.load(Ordering::Acquire);
-        
+
         unsafe {
             (*new_node).next.store(head, Ordering::Relaxed);
         }
 
-        let cas_result = self.head.compare_exchange(
-            head,
-            new_node,
-            Ordering::Release,
-            Ordering::Relaxed,
-        );
+        let cas_result =
+            self.head
+                .compare_exchange(head, new_node, Ordering::Release, Ordering::Relaxed);
 
         self.metrics.record_cas(cas_result.is_ok());
 
@@ -357,7 +353,9 @@ where
             self.metrics.record_success();
             Ok(())
         } else {
-            unsafe { let _ = Box::from_raw(new_node); }
+            unsafe {
+                let _ = Box::from_raw(new_node);
+            }
             self.metrics.record_failure();
             Err(PoolError::MaxRetriesExceeded { retries: 1 })
         }
@@ -382,7 +380,7 @@ where
     fn stats(&self) -> PoolStats {
         let available = self.available();
         let capacity = self.capacity();
-        
+
         PoolStats {
             available,
             capacity,
@@ -402,7 +400,7 @@ where
     }
 }
 
-impl<T> Drop for ObjectPool<T> 
+impl<T> Drop for ObjectPool<T>
 where
     T: Send + Sync + 'static,
 {
@@ -426,7 +424,7 @@ impl BufferPool {
     /// Create a new buffer pool
     pub fn new(buffer_size: usize, max_capacity: usize, config: LockFreeConfig) -> Self {
         let factory = move || vec![0u8; buffer_size];
-        
+
         Self {
             inner: ObjectPool::new(max_capacity, factory, config),
             buffer_size,
@@ -441,7 +439,7 @@ impl BufferPool {
         config: LockFreeConfig,
     ) -> Self {
         let factory = move || vec![0u8; buffer_size];
-        
+
         Self {
             inner: ObjectPool::with_initial_objects(initial_count, max_capacity, factory, config),
             buffer_size,
@@ -503,7 +501,7 @@ impl LockFreePool<Vec<u8>> for BufferPool {
 }
 
 /// Lock-free connection pool for managing network connections
-pub struct ConnectionPool<T> 
+pub struct ConnectionPool<T>
 where
     T: Send + Sync + 'static,
 {
@@ -595,20 +593,20 @@ mod tests {
     #[test]
     fn test_object_pool_basic_operations() {
         let pool = ObjectPool::new(10, || String::from("test"), LockFreeConfig::default());
-        
+
         // Pool should be empty initially
         assert!(pool.is_empty());
         assert_eq!(pool.available(), 0);
-        
+
         // Allocate should create new objects
         let obj1 = pool.allocate().unwrap();
         assert_eq!(obj1, "test");
-        
+
         // Deallocate should add to pool
         pool.deallocate(obj1).unwrap();
         assert_eq!(pool.available(), 1);
         assert!(!pool.is_empty());
-        
+
         // Next allocation should reuse the object
         let obj2 = pool.allocate().unwrap();
         assert_eq!(obj2, "test");
@@ -618,13 +616,13 @@ mod tests {
     #[test]
     fn test_object_pool_capacity_limit() {
         let pool = ObjectPool::new(2, || 42i32, LockFreeConfig::default());
-        
+
         // Fill the pool to capacity
         pool.deallocate(1).unwrap();
         pool.deallocate(2).unwrap();
         assert_eq!(pool.available(), 2);
         assert!(pool.is_full());
-        
+
         // Should reject additional items
         assert!(matches!(pool.deallocate(3), Err(PoolError::Full { .. })));
     }
@@ -632,13 +630,13 @@ mod tests {
     #[test]
     fn test_buffer_pool() {
         let pool = BufferPool::new(1024, 5, LockFreeConfig::default());
-        
+
         assert_eq!(pool.buffer_size(), 1024);
-        
+
         let buffer = pool.allocate().unwrap();
         assert_eq!(buffer.len(), 1024);
         assert_eq!(buffer.capacity(), 1024);
-        
+
         pool.deallocate(buffer).unwrap();
         assert_eq!(pool.available(), 1);
     }
@@ -649,22 +647,26 @@ mod tests {
         struct MockConnection {
             id: usize,
         }
-        
+
         use std::sync::atomic::{AtomicUsize, Ordering};
         let counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = Arc::clone(&counter);
-        
-        let pool = ConnectionPool::new(3, move || {
-            let id = counter_clone.fetch_add(1, Ordering::Relaxed);
-            MockConnection { id }
-        }, LockFreeConfig::default());
-        
+
+        let pool = ConnectionPool::new(
+            3,
+            move || {
+                let id = counter_clone.fetch_add(1, Ordering::Relaxed);
+                MockConnection { id }
+            },
+            LockFreeConfig::default(),
+        );
+
         let conn1 = pool.allocate().unwrap();
         let conn2 = pool.allocate().unwrap();
-        
+
         pool.deallocate(conn1).unwrap();
         pool.deallocate(conn2).unwrap();
-        
+
         assert_eq!(pool.available(), 2);
     }
 
@@ -673,9 +675,9 @@ mod tests {
         let pool = Arc::new(ObjectPool::new(100, || 42i32, LockFreeConfig::default()));
         let num_threads = 8;
         let operations_per_thread = 1000;
-        
+
         let mut handles = Vec::new();
-        
+
         // Spawn threads that allocate and deallocate
         for _ in 0..num_threads {
             let pool_clone = Arc::clone(&pool);
@@ -688,12 +690,12 @@ mod tests {
             });
             handles.push(handle);
         }
-        
+
         // Wait for all threads
         for handle in handles {
             handle.join().unwrap();
         }
-        
+
         // Pool should have some objects available
         let stats = pool.stats();
         assert!(stats.allocations > 0);
@@ -708,33 +710,33 @@ mod tests {
             || String::from("initial"),
             LockFreeConfig::default(),
         );
-        
+
         assert_eq!(pool.available(), 5);
         assert!(!pool.is_empty());
-        
+
         // All initial objects should be available
         for _ in 0..5 {
             let obj = pool.allocate().unwrap();
             assert_eq!(obj, "initial");
         }
-        
+
         assert!(pool.is_empty());
     }
 
     #[test]
     fn test_pool_stats() {
         let pool = ObjectPool::new(5, || 100u32, LockFreeConfig::default());
-        
+
         let initial_stats = pool.stats();
         assert_eq!(initial_stats.available, 0);
         assert_eq!(initial_stats.capacity, 5);
         assert_eq!(initial_stats.utilization, 0.0);
-        
+
         // Perform some operations
         let obj1 = pool.allocate().unwrap();
         let obj2 = pool.allocate().unwrap();
         pool.deallocate(obj1).unwrap();
-        
+
         let stats = pool.stats();
         assert_eq!(stats.available, 1);
         assert_eq!(stats.utilization, 80.0); // (5-1)/5 * 100

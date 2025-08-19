@@ -1,73 +1,70 @@
 //! Universal Adapter System for Valkyrie Protocol
-//! 
+//!
 //! This module implements the Universal Adapter Factory using enterprise design patterns
 //! (Factory, Strategy, Adapter) to provide plug-and-play integration with any infrastructure.
 
-pub mod factory;
-pub mod strategy;
-pub mod http;
 pub mod docker;
+pub mod factory;
+pub mod http;
 pub mod kubernetes;
-pub mod redis;
 pub mod quic_tcp;
+pub mod redis;
+pub mod strategy;
 
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::error::Result;
 
 // Re-export factory components
-pub use factory::{
-    UniversalAdapterFactory, AdapterBuilder, AdapterRequirements, 
-    AdapterInfo
-};
+pub use factory::{AdapterBuilder, AdapterInfo, AdapterRequirements, UniversalAdapterFactory};
 
-// Re-export strategy components  
+// Re-export strategy components
 pub use strategy::{
-    AdapterSelectionStrategy, PerformanceBasedStrategy, ReliabilityBasedStrategy,
-    LatencyOptimizedStrategy, ThroughputOptimizedStrategy
+    AdapterSelectionStrategy, LatencyOptimizedStrategy, PerformanceBasedStrategy,
+    ReliabilityBasedStrategy, ThroughputOptimizedStrategy,
 };
 
 // Re-export specific adapter builders
-pub use http::HttpAdapterBuilder;
 pub use docker::DockerAdapterBuilder;
+pub use http::HttpAdapterBuilder;
 pub use kubernetes::KubernetesAdapterBuilder;
-pub use redis::RedisAdapterBuilder;
 pub use quic_tcp::QuicTcpAdapterBuilder;
+pub use redis::RedisAdapterBuilder;
 
 /// Universal adapter trait for all infrastructure integrations
 #[async_trait]
 pub trait UniversalAdapter: Send + Sync {
     /// Send message with QoS parameters
     async fn send(&self, message: AdapterMessage, qos: QoSParams) -> Result<SendResult>;
-    
+
     /// Receive message with timeout
     async fn receive(&self, timeout: Option<Duration>) -> Result<Option<AdapterMessage>>;
-    
+
     /// Get adapter capabilities
     fn capabilities(&self) -> &AdapterCapabilities;
-    
+
     /// Perform health check
     async fn health_check(&self) -> HealthStatus;
-    
+
     /// Get adapter metrics
     async fn metrics(&self) -> AdapterMetrics;
-    
+
     /// Initialize adapter
     async fn initialize(&mut self) -> Result<()>;
-    
+
     /// Shutdown adapter gracefully
     async fn shutdown(&mut self) -> Result<()>;
-    
+
     /// Handle configuration updates
     async fn update_config(&mut self, config: &AdapterConfig) -> Result<()>;
-    
+
     /// Get adapter type identifier
     fn adapter_type(&self) -> AdapterType;
-    
+
     /// Get adapter ID
     fn adapter_id(&self) -> &AdapterId;
 }

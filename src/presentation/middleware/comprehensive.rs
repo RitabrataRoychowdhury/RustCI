@@ -84,7 +84,10 @@ impl ComprehensiveSecurityPipeline {
             let path = req.uri().path().to_string();
             if path.starts_with("/api/control-plane/") {
                 // Apply stricter rate limits to control plane endpoints
-                debug!("🚦 Applying rate limiting to control plane endpoint: {}", path);
+                debug!(
+                    "🚦 Applying rate limiting to control plane endpoint: {}",
+                    path
+                );
                 // TODO: Implement actual rate limiting logic
             }
         }

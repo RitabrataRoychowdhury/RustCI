@@ -4,22 +4,21 @@
 //! providing a high-level interface for distributed communication with
 //! advanced features like multi-transport support, security, and observability.
 
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
-use serde::{Deserialize, Serialize};
-use chrono::Utc;
 
-use crate::valkyrie::{
-    ValkyrieConfig, TransportManager, SecurityManager, 
-    StreamMultiplexer, ObservabilityManager, Result
-};
 use crate::valkyrie::core::{
+    ConnectionHandle, ConnectionId, ConnectionRegistry, EventBus, Listener, ValkyrieEvent,
     ValkyrieMessage,
-    ConnectionId, ConnectionHandle, ConnectionRegistry, Listener,
-    ValkyrieEvent, EventBus
+};
+use crate::valkyrie::{
+    ObservabilityManager, Result, SecurityManager, StreamMultiplexer, TransportManager,
+    ValkyrieConfig,
 };
 
 /// The main Valkyrie Protocol engine
@@ -50,7 +49,8 @@ impl ValkyrieEngine {
         let transport_manager = Arc::new(TransportManager::new(config.transport.clone())?);
         let security_manager = Arc::new(SecurityManager::new(config.security.clone())?);
         let stream_multiplexer = Arc::new(StreamMultiplexer::new(config.streaming.clone()));
-        let observability_manager = Arc::new(ObservabilityManager::new(config.observability.clone())?);
+        let observability_manager =
+            Arc::new(ObservabilityManager::new(config.observability.clone())?);
         let connection_registry = Arc::new(ConnectionRegistry::new());
         let event_bus = Arc::new(EventBus::new());
         let state = Arc::new(RwLock::new(ProtocolState::Stopped));
@@ -118,9 +118,11 @@ impl ValkyrieEngine {
         let mut state = self.state.write().await;
         *state = ProtocolState::Running;
 
-        self.event_bus.publish(ValkyrieEvent::EngineStarted {
-            timestamp: Utc::now(),
-        }).await;
+        self.event_bus
+            .publish(ValkyrieEvent::EngineStarted {
+                timestamp: Utc::now(),
+            })
+            .await;
 
         Ok(())
     }
@@ -153,21 +155,28 @@ impl ValkyrieEngine {
         let mut state = self.state.write().await;
         *state = ProtocolState::Stopped;
 
-        self.event_bus.publish(ValkyrieEvent::EngineStopped {
-            timestamp: Utc::now(),
-        }).await;
+        self.event_bus
+            .publish(ValkyrieEvent::EngineStopped {
+                timestamp: Utc::now(),
+            })
+            .await;
 
         Ok(())
     }
 
     /// Create a new connection to a remote endpoint
-    pub async fn connect(&self, endpoint: crate::valkyrie::transport::Endpoint) -> Result<ConnectionHandle> {
+    pub async fn connect(
+        &self,
+        endpoint: crate::valkyrie::transport::Endpoint,
+    ) -> Result<ConnectionHandle> {
         let connection_id = ConnectionId::new_v4();
-        
+
         // Establish and authenticate connection
         let transport_connection = self.transport_manager.connect(&endpoint).await?;
-        let _authenticated_connection = self.security_manager
-            .authenticate_connection(transport_connection, &endpoint).await?;
+        let _authenticated_connection = self
+            .security_manager
+            .authenticate_connection(transport_connection, &endpoint)
+            .await?;
 
         // Register connection
         let connection_info = crate::valkyrie::core::ConnectionInfo {
@@ -179,16 +188,24 @@ impl ValkyrieEngine {
             streams: HashMap::new(),
         };
 
-        self.connection_registry.register(connection_id, connection_info).await?;
+        self.connection_registry
+            .register(connection_id, connection_info)
+            .await?;
 
         // Create connection handle
-        let handle = ConnectionHandle::new(connection_id, endpoint, Arc::downgrade(&Arc::new(self.clone())));
-
-        self.event_bus.publish(ValkyrieEvent::ConnectionEstablished {
+        let handle = ConnectionHandle::new(
             connection_id,
-            endpoint: handle.endpoint().clone(),
-            timestamp: Utc::now(),
-        }).await;
+            endpoint,
+            Arc::downgrade(&Arc::new(self.clone())),
+        );
+
+        self.event_bus
+            .publish(ValkyrieEvent::ConnectionEstablished {
+                connection_id,
+                endpoint: handle.endpoint().clone(),
+                timestamp: Utc::now(),
+            })
+            .await;
 
         Ok(handle)
     }
@@ -196,13 +213,18 @@ impl ValkyrieEngine {
     /// Listen for incoming connections
     pub async fn listen(&self, bind_address: std::net::SocketAddr) -> Result<Listener> {
         let listener = self.transport_manager.listen(bind_address).await?;
-        
-        self.event_bus.publish(ValkyrieEvent::ListenerStarted {
-            address: bind_address,
-            timestamp: Utc::now(),
-        }).await;
 
-        Ok(Listener::new(listener, Arc::downgrade(&Arc::new(self.clone()))))
+        self.event_bus
+            .publish(ValkyrieEvent::ListenerStarted {
+                address: bind_address,
+                timestamp: Utc::now(),
+            })
+            .await;
+
+        Ok(Listener::new(
+            listener,
+            Arc::downgrade(&Arc::new(self.clone())),
+        ))
     }
 
     /// Send a message to a specific connection
@@ -212,8 +234,10 @@ impl ValkyrieEngine {
         message: ValkyrieMessage,
     ) -> Result<()> {
         // Route message through the transport manager
-        self.transport_manager.send_message(connection, message).await?;
-        
+        self.transport_manager
+            .send_message(connection, message)
+            .await?;
+
         Ok(())
     }
 
@@ -361,7 +385,7 @@ pub struct EngineStats {
 mod tests {
     use super::*;
     use crate::valkyrie::ValkyrieConfigBuilder;
-    
+
     #[tokio::test]
     async fn test_engine_creation() {
         let config = ValkyrieConfigBuilder::new().build().unwrap();
@@ -369,16 +393,16 @@ mod tests {
         // This would need proper mocking to test
         // assert!(result.is_ok());
     }
-    
+
     #[tokio::test]
     async fn test_engine_lifecycle() {
         let config = ValkyrieConfigBuilder::new().build().unwrap();
         let mut engine = ValkyrieEngine::new(config).unwrap();
-        
+
         // This would need proper mocking to test
         // let start_result = engine.start().await;
         // assert!(start_result.is_ok());
-        
+
         // let stop_result = engine.stop().await;
         // assert!(stop_result.is_ok());
     }

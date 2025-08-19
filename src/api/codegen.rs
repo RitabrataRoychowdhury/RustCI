@@ -3,10 +3,10 @@
 //! This module provides tools for generating language bindings, documentation,
 //! and other artifacts from the Valkyrie Protocol API definitions.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
 
@@ -260,15 +260,24 @@ impl CodeGenerator {
         fs::create_dir_all(&output_dir)?;
 
         // Use existing C bindings generation (if available)
-        #[cfg(any(feature = "python-bindings", feature = "javascript-bindings", feature = "java-bindings"))]
+        #[cfg(any(
+            feature = "python-bindings",
+            feature = "javascript-bindings",
+            feature = "java-bindings"
+        ))]
         {
             let header_content = crate::bindings::c::generate_c_header();
             fs::write(output_dir.join("valkyrie_protocol.h"), header_content)?;
         }
-        #[cfg(not(any(feature = "python-bindings", feature = "javascript-bindings", feature = "java-bindings")))]
+        #[cfg(not(any(
+            feature = "python-bindings",
+            feature = "javascript-bindings",
+            feature = "java-bindings"
+        )))]
         {
             // Generate basic C header without bindings module
-            let header_content = "// Valkyrie Protocol C Header\n// Generated without language bindings\n";
+            let header_content =
+                "// Valkyrie Protocol C Header\n// Generated without language bindings\n";
             fs::write(output_dir.join("valkyrie_protocol.h"), header_content)?;
         }
 
@@ -288,7 +297,8 @@ impl CodeGenerator {
         }
         #[cfg(not(feature = "python-bindings"))]
         {
-            let stubs_content = "# Valkyrie Protocol Python Stubs\n# Generated without Python bindings\n";
+            let stubs_content =
+                "# Valkyrie Protocol Python Stubs\n# Generated without Python bindings\n";
             fs::write(output_dir.join("valkyrie_protocol.pyi"), stubs_content)?;
         }
 
@@ -317,7 +327,7 @@ impl CodeGenerator {
         {
             let ts_defs = "// Valkyrie Protocol TypeScript Definitions\n// Generated without JavaScript bindings\n";
             fs::write(output_dir.join("index.d.ts"), ts_defs)?;
-            
+
             let package_json = r#"{"name": "valkyrie-protocol", "version": "1.0.0"}"#;
             fs::write(output_dir.join("package.json"), package_json)?;
         }
@@ -346,10 +356,10 @@ impl CodeGenerator {
         {
             let go_package = "// Valkyrie Protocol Go Package\n// Generated without Go bindings\n";
             fs::write(output_dir.join("valkyrie.go"), go_package)?;
-            
+
             let go_mod = "module valkyrie-protocol\n\ngo 1.19\n";
             fs::write(output_dir.join("go.mod"), go_mod)?;
-            
+
             let go_test = "// Valkyrie Protocol Go Tests\n// Generated without Go bindings\n";
             fs::write(output_dir.join("valkyrie_test.go"), go_test)?;
         }
@@ -367,7 +377,9 @@ impl CodeGenerator {
         {
             let java_sources = crate::bindings::java::generate_java_sources();
             for (filename, content) in java_sources {
-                let file_path = output_dir.join("src/main/java/com/valkyrie/protocol").join(filename);
+                let file_path = output_dir
+                    .join("src/main/java/com/valkyrie/protocol")
+                    .join(filename);
                 fs::write(file_path, content)?;
             }
 
@@ -376,9 +388,13 @@ impl CodeGenerator {
         }
         #[cfg(not(feature = "java-bindings"))]
         {
-            let java_content = "// Valkyrie Protocol Java Sources\n// Generated without Java bindings\n";
-            fs::write(output_dir.join("src/main/java/com/valkyrie/protocol/ValkyrieProtocol.java"), java_content)?;
-            
+            let java_content =
+                "// Valkyrie Protocol Java Sources\n// Generated without Java bindings\n";
+            fs::write(
+                output_dir.join("src/main/java/com/valkyrie/protocol/ValkyrieProtocol.java"),
+                java_content,
+            )?;
+
             let pom_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
     <modelVersion>4.0.0</modelVersion>
@@ -428,7 +444,7 @@ impl CodeGenerator {
         let kotlin_content = self.generate_kotlin_client()?;
         fs::write(
             output_dir.join("src/main/kotlin/com/valkyrie/protocol/ValkyrieClient.kt"),
-            kotlin_content
+            kotlin_content,
         )?;
 
         let build_gradle = self.generate_gradle_build()?;
@@ -512,14 +528,19 @@ pub use client::*;
                 service.description, service.name
             ));
             for method in &service.methods {
-                let params: Vec<String> = method.parameters.iter()
+                let params: Vec<String> = method
+                    .parameters
+                    .iter()
                     .map(|p| format!("{}: {}", p.name, p.param_type))
                     .collect();
                 let async_keyword = if method.is_async { "async " } else { "" };
                 content.push_str(&format!(
                     "    /// {}\n    {}fn {}(&self, {}) -> Result<{}>;\n",
-                    method.description, async_keyword, method.name,
-                    params.join(", "), method.return_type
+                    method.description,
+                    async_keyword,
+                    method.name,
+                    params.join(", "),
+                    method.return_type
                 ));
             }
             content.push_str("}\n\n");
@@ -951,69 +972,61 @@ pub fn extract_api_definition() -> ApiDefinition {
                 ],
             },
         ],
-        services: vec![
-            ServiceDefinition {
-                name: "ValkyrieClient".to_string(),
-                description: "Main client interface".to_string(),
-                methods: vec![
-                    MethodDefinition {
-                        name: "connect".to_string(),
-                        description: "Connect to a remote endpoint".to_string(),
-                        parameters: vec![
-                            ParameterDefinition {
-                                name: "endpoint_url".to_string(),
-                                description: "URL of the endpoint".to_string(),
-                                param_type: "String".to_string(),
-                                optional: false,
-                                default: None,
-                            },
-                        ],
-                        return_type: "String".to_string(),
-                        is_async: true,
-                        errors: vec!["ConnectionError".to_string()],
-                    },
-                    MethodDefinition {
-                        name: "send_text".to_string(),
-                        description: "Send a text message".to_string(),
-                        parameters: vec![
-                            ParameterDefinition {
-                                name: "connection_id".to_string(),
-                                description: "Connection identifier".to_string(),
-                                param_type: "String".to_string(),
-                                optional: false,
-                                default: None,
-                            },
-                            ParameterDefinition {
-                                name: "text".to_string(),
-                                description: "Text to send".to_string(),
-                                param_type: "String".to_string(),
-                                optional: false,
-                                default: None,
-                            },
-                        ],
-                        return_type: "()".to_string(),
-                        is_async: true,
-                        errors: vec!["SendError".to_string()],
-                    },
-                ],
-            },
-        ],
-        errors: vec![
-            ErrorDefinition {
-                name: "ConnectionError".to_string(),
-                description: "Connection-related error".to_string(),
-                code: 1001,
-                fields: vec![
-                    FieldDefinition {
-                        name: "endpoint".to_string(),
-                        description: "Failed endpoint".to_string(),
-                        field_type: "String".to_string(),
+        services: vec![ServiceDefinition {
+            name: "ValkyrieClient".to_string(),
+            description: "Main client interface".to_string(),
+            methods: vec![
+                MethodDefinition {
+                    name: "connect".to_string(),
+                    description: "Connect to a remote endpoint".to_string(),
+                    parameters: vec![ParameterDefinition {
+                        name: "endpoint_url".to_string(),
+                        description: "URL of the endpoint".to_string(),
+                        param_type: "String".to_string(),
                         optional: false,
                         default: None,
-                    },
-                ],
-            },
-        ],
+                    }],
+                    return_type: "String".to_string(),
+                    is_async: true,
+                    errors: vec!["ConnectionError".to_string()],
+                },
+                MethodDefinition {
+                    name: "send_text".to_string(),
+                    description: "Send a text message".to_string(),
+                    parameters: vec![
+                        ParameterDefinition {
+                            name: "connection_id".to_string(),
+                            description: "Connection identifier".to_string(),
+                            param_type: "String".to_string(),
+                            optional: false,
+                            default: None,
+                        },
+                        ParameterDefinition {
+                            name: "text".to_string(),
+                            description: "Text to send".to_string(),
+                            param_type: "String".to_string(),
+                            optional: false,
+                            default: None,
+                        },
+                    ],
+                    return_type: "()".to_string(),
+                    is_async: true,
+                    errors: vec!["SendError".to_string()],
+                },
+            ],
+        }],
+        errors: vec![ErrorDefinition {
+            name: "ConnectionError".to_string(),
+            description: "Connection-related error".to_string(),
+            code: 1001,
+            fields: vec![FieldDefinition {
+                name: "endpoint".to_string(),
+                description: "Failed endpoint".to_string(),
+                field_type: "String".to_string(),
+                optional: false,
+                default: None,
+            }],
+        }],
     }
 }
 
@@ -1049,9 +1062,9 @@ mod tests {
 
         let api_def = extract_api_definition();
         let generator = CodeGenerator::new(config, api_def);
-        
+
         assert!(generator.generate_language(Language::Rust).is_ok());
-        
+
         // Check that files were created
         let rust_dir = temp_dir.path().join("rust");
         assert!(rust_dir.join("lib.rs").exists());

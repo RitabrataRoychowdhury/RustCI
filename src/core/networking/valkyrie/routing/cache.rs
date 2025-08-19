@@ -2,12 +2,12 @@
 // Task 3.1.9.1: Route Caching
 
 use super::*;
+use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use dashmap::DashMap;
 
 /// Route cache for performance optimization
 pub struct RouteCache {
@@ -57,7 +57,10 @@ impl Clone for CachedRoute {
             created_at: self.created_at,
             ttl: self.ttl,
             hit_count: AtomicU64::new(self.hit_count.load(std::sync::atomic::Ordering::Relaxed)),
-            last_accessed: AtomicU64::new(self.last_accessed.load(std::sync::atomic::Ordering::Relaxed)),
+            last_accessed: AtomicU64::new(
+                self.last_accessed
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            ),
             cache_score: self.cache_score,
             invalidation_triggers: self.invalidation_triggers.clone(),
         }
@@ -157,7 +160,9 @@ impl std::fmt::Debug for InvalidationCondition {
             Self::Always => write!(f, "Always"),
             Self::IfOlderThan(duration) => f.debug_tuple("IfOlderThan").field(duration).finish(),
             Self::IfHitCountBelow(count) => f.debug_tuple("IfHitCountBelow").field(count).finish(),
-            Self::IfCacheScoreBelow(score) => f.debug_tuple("IfCacheScoreBelow").field(score).finish(),
+            Self::IfCacheScoreBelow(score) => {
+                f.debug_tuple("IfCacheScoreBelow").field(score).finish()
+            }
             Self::Custom(_) => write!(f, "Custom(<function>)"),
         }
     }
@@ -190,10 +195,10 @@ pub struct CacheConfig {
 /// Cache eviction policies
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EvictionPolicy {
-    LRU,  // Least Recently Used
-    LFU,  // Least Frequently Used
-    FIFO, // First In, First Out
-    TTL,  // Time To Live based
+    LRU,   // Least Recently Used
+    LFU,   // Least Frequently Used
+    FIFO,  // First In, First Out
+    TTL,   // Time To Live based
     Score, // Cache score based
 }
 
@@ -214,10 +219,7 @@ impl RouteCache {
     pub fn new(config: CacheConfig) -> Self {
         Self {
             cache: Arc::new(DashMap::new()),
-            ttl_manager: Arc::new(TTLManager::new(
-                config.cleanup_interval,
-                config.default_ttl,
-            )),
+            ttl_manager: Arc::new(TTLManager::new(config.cleanup_interval, config.default_ttl)),
             invalidation_manager: Arc::new(InvalidationManager::new()),
             metrics: Arc::new(CacheMetrics::new()),
             config,
@@ -235,10 +237,13 @@ impl RouteCache {
                 // Update access statistics
                 cached_route.hit_count.fetch_add(1, Ordering::Relaxed);
                 cached_route.last_accessed.store(
-                    SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as u64,
+                    SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos() as u64,
                     Ordering::Relaxed,
                 );
-                
+
                 self.metrics.cache_hits.fetch_add(1, Ordering::Relaxed);
                 Some(cached_route.route.clone())
             } else {
@@ -267,7 +272,9 @@ impl RouteCache {
         }
 
         // Determine TTL based on QoS class
-        let ttl = self.ttl_manager.get_ttl_for_qos(&self.qos_class_from_route(&route));
+        let ttl = self
+            .ttl_manager
+            .get_ttl_for_qos(&self.qos_class_from_route(&route));
 
         // Create cached route
         let cached_route = CachedRoute {
@@ -276,7 +283,10 @@ impl RouteCache {
             ttl,
             hit_count: AtomicU64::new(0),
             last_accessed: AtomicU64::new(
-                SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as u64
+                SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos() as u64,
             ),
             cache_score: self.calculate_cache_score(&key),
             invalidation_triggers: self.get_invalidation_triggers(&key),
@@ -288,11 +298,15 @@ impl RouteCache {
 
     /// Invalidate cache entries based on trigger
     pub async fn invalidate(&self, trigger: InvalidationTrigger) {
-        let rules = self.invalidation_manager.get_applicable_rules(&trigger).await;
+        let rules = self
+            .invalidation_manager
+            .get_applicable_rules(&trigger)
+            .await;
         let mut invalidated_count = 0;
 
         for rule in rules {
-            let keys_to_remove: Vec<_> = self.cache
+            let keys_to_remove: Vec<_> = self
+                .cache
                 .iter()
                 .filter(|entry| self.should_invalidate_entry(entry.key(), entry.value(), &rule))
                 .map(|entry| entry.key().clone())
@@ -304,7 +318,9 @@ impl RouteCache {
             }
         }
 
-        self.metrics.invalidations.fetch_add(invalidated_count, Ordering::Relaxed);
+        self.metrics
+            .invalidations
+            .fetch_add(invalidated_count, Ordering::Relaxed);
         self.update_memory_usage();
     }
 
@@ -323,10 +339,10 @@ impl RouteCache {
 
         for pattern in patterns {
             let contexts = self.generate_contexts_from_pattern(pattern, topology);
-            
+
             for context in contexts {
                 let key = self.create_cache_key(&context, topology.version);
-                
+
                 // Skip if already cached
                 if self.cache.contains_key(&key) {
                     continue;
@@ -345,7 +361,9 @@ impl RouteCache {
             }
         }
 
-        self.metrics.precomputations.fetch_add(precomputed_count, Ordering::Relaxed);
+        self.metrics
+            .precomputations
+            .fetch_add(precomputed_count, Ordering::Relaxed);
         Ok(precomputed_count as usize)
     }
 
@@ -374,13 +392,18 @@ impl RouteCache {
                         warmed_count += 1;
                     }
                     Err(e) => {
-                        eprintln!("Cache warming failed for {}->{}: {}", source, destination, e);
+                        eprintln!(
+                            "Cache warming failed for {}->{}: {}",
+                            source, destination, e
+                        );
                     }
                 }
             }
         }
 
-        self.metrics.warming_operations.fetch_add(warmed_count, Ordering::Relaxed);
+        self.metrics
+            .warming_operations
+            .fetch_add(warmed_count, Ordering::Relaxed);
         Ok(warmed_count as usize)
     }
 
@@ -407,7 +430,7 @@ impl RouteCache {
             precomputations: self.metrics.precomputations.load(Ordering::Relaxed),
             warming_operations: self.metrics.warming_operations.load(Ordering::Relaxed),
             average_lookup_time: Duration::from_nanos(
-                self.metrics.average_lookup_time.load(Ordering::Relaxed)
+                self.metrics.average_lookup_time.load(Ordering::Relaxed),
             ),
             memory_usage: self.metrics.memory_usage.load(Ordering::Relaxed),
         }
@@ -423,7 +446,7 @@ impl RouteCache {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(cleanup_interval).await;
-                
+
                 let expired_keys: Vec<_> = cache
                     .iter()
                     .filter(|entry| !Self::is_valid_static(entry.value()))
@@ -437,7 +460,9 @@ impl RouteCache {
                 }
 
                 if removed_count > 0 {
-                    metrics.evictions.fetch_add(removed_count, Ordering::Relaxed);
+                    metrics
+                        .evictions
+                        .fetch_add(removed_count, Ordering::Relaxed);
                 }
 
                 ttl_manager.mark_cleanup_complete().await;
@@ -496,7 +521,7 @@ impl RouteCache {
 
     async fn evict_entries(&self) {
         let eviction_count = self.cache.len() / 10; // Evict 10% of entries
-        
+
         match self.config.eviction_policy {
             EvictionPolicy::LRU => self.evict_lru(eviction_count).await,
             EvictionPolicy::LFU => self.evict_lfu(eviction_count).await,
@@ -507,83 +532,110 @@ impl RouteCache {
     }
 
     async fn evict_lru(&self, count: usize) {
-        let mut entries: Vec<_> = self.cache
+        let mut entries: Vec<_> = self
+            .cache
             .iter()
-            .map(|entry| (entry.key().clone(), entry.value().last_accessed.load(Ordering::Relaxed)))
+            .map(|entry| {
+                (
+                    entry.key().clone(),
+                    entry.value().last_accessed.load(Ordering::Relaxed),
+                )
+            })
             .collect();
-        
+
         entries.sort_by_key(|(_, last_accessed)| *last_accessed);
-        
+
         for (key, _) in entries.into_iter().take(count) {
             self.cache.remove(&key);
         }
-        
-        self.metrics.evictions.fetch_add(count as u64, Ordering::Relaxed);
+
+        self.metrics
+            .evictions
+            .fetch_add(count as u64, Ordering::Relaxed);
     }
 
     async fn evict_lfu(&self, count: usize) {
-        let mut entries: Vec<_> = self.cache
+        let mut entries: Vec<_> = self
+            .cache
             .iter()
-            .map(|entry| (entry.key().clone(), entry.value().hit_count.load(Ordering::Relaxed)))
+            .map(|entry| {
+                (
+                    entry.key().clone(),
+                    entry.value().hit_count.load(Ordering::Relaxed),
+                )
+            })
             .collect();
-        
+
         entries.sort_by_key(|(_, hit_count)| *hit_count);
-        
+
         for (key, _) in entries.into_iter().take(count) {
             self.cache.remove(&key);
         }
-        
-        self.metrics.evictions.fetch_add(count as u64, Ordering::Relaxed);
+
+        self.metrics
+            .evictions
+            .fetch_add(count as u64, Ordering::Relaxed);
     }
 
     async fn evict_fifo(&self, count: usize) {
-        let mut entries: Vec<_> = self.cache
+        let mut entries: Vec<_> = self
+            .cache
             .iter()
             .map(|entry| (entry.key().clone(), entry.value().created_at))
             .collect();
-        
+
         entries.sort_by_key(|(_, created_at)| *created_at);
-        
+
         for (key, _) in entries.into_iter().take(count) {
             self.cache.remove(&key);
         }
-        
-        self.metrics.evictions.fetch_add(count as u64, Ordering::Relaxed);
+
+        self.metrics
+            .evictions
+            .fetch_add(count as u64, Ordering::Relaxed);
     }
 
     async fn evict_ttl(&self, count: usize) {
         let now = Instant::now();
-        let mut entries: Vec<_> = self.cache
+        let mut entries: Vec<_> = self
+            .cache
             .iter()
             .map(|entry| {
-                let remaining_ttl = entry.value().ttl
+                let remaining_ttl = entry
+                    .value()
+                    .ttl
                     .saturating_sub(now.duration_since(entry.value().created_at));
                 (entry.key().clone(), remaining_ttl)
             })
             .collect();
-        
+
         entries.sort_by_key(|(_, remaining_ttl)| *remaining_ttl);
-        
+
         for (key, _) in entries.into_iter().take(count) {
             self.cache.remove(&key);
         }
-        
-        self.metrics.evictions.fetch_add(count as u64, Ordering::Relaxed);
+
+        self.metrics
+            .evictions
+            .fetch_add(count as u64, Ordering::Relaxed);
     }
 
     async fn evict_by_score(&self, count: usize) {
-        let mut entries: Vec<_> = self.cache
+        let mut entries: Vec<_> = self
+            .cache
             .iter()
             .map(|entry| (entry.key().clone(), entry.value().cache_score))
             .collect();
-        
+
         entries.sort_by(|(_, score_a), (_, score_b)| score_a.partial_cmp(score_b).unwrap());
-        
+
         for (key, _) in entries.into_iter().take(count) {
             self.cache.remove(&key);
         }
-        
-        self.metrics.evictions.fetch_add(count as u64, Ordering::Relaxed);
+
+        self.metrics
+            .evictions
+            .fetch_add(count as u64, Ordering::Relaxed);
     }
 
     fn should_invalidate_entry(
@@ -656,10 +708,12 @@ impl RouteCache {
     fn update_average_lookup_time(&self, lookup_time: u64) {
         let current_avg = self.metrics.average_lookup_time.load(Ordering::Relaxed);
         let total_requests = self.metrics.total_requests.load(Ordering::Relaxed);
-        
+
         if total_requests > 0 {
             let new_avg = (current_avg * (total_requests - 1) + lookup_time) / total_requests;
-            self.metrics.average_lookup_time.store(new_avg, Ordering::Relaxed);
+            self.metrics
+                .average_lookup_time
+                .store(new_avg, Ordering::Relaxed);
         }
     }
 
@@ -667,7 +721,9 @@ impl RouteCache {
         // Estimate memory usage (simplified)
         let entry_size = std::mem::size_of::<RouteCacheKey>() + std::mem::size_of::<CachedRoute>();
         let total_memory = self.cache.len() * entry_size;
-        self.metrics.memory_usage.store(total_memory as u64, Ordering::Relaxed);
+        self.metrics
+            .memory_usage
+            .store(total_memory as u64, Ordering::Relaxed);
     }
 }
 
@@ -732,7 +788,10 @@ impl TTLManager {
     }
 
     pub fn get_ttl_for_qos(&self, qos_class: &QoSClass) -> Duration {
-        self.ttl_by_qos.get(qos_class).copied().unwrap_or(self.default_ttl)
+        self.ttl_by_qos
+            .get(qos_class)
+            .copied()
+            .unwrap_or(self.default_ttl)
     }
 
     pub async fn mark_cleanup_complete(&self) {
@@ -749,9 +808,13 @@ impl InvalidationManager {
         }
     }
 
-    pub async fn get_applicable_rules(&self, trigger: &InvalidationTrigger) -> Vec<InvalidationRule> {
+    pub async fn get_applicable_rules(
+        &self,
+        trigger: &InvalidationTrigger,
+    ) -> Vec<InvalidationRule> {
         let rules = self.invalidation_rules.read().await;
-        rules.iter()
+        rules
+            .iter()
             .filter(|rule| rule.trigger == *trigger)
             .cloned()
             .collect()

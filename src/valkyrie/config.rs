@@ -3,10 +3,10 @@
 //! This module provides configuration management for the Valkyrie Protocol
 //! using the Builder pattern for flexible and type-safe configuration.
 
+use crate::valkyrie::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
-use crate::valkyrie::Result;
 
 /// Main Valkyrie Protocol configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -416,7 +416,7 @@ impl ValkyrieConfigBuilder {
                 max_concurrent_streams: 100,
                 max_streams_per_connection: 10,
                 stream_buffer_size: 64 * 1024, // 64KB
-                buffer_size: 64 * 1024, // 64KB (alias)
+                buffer_size: 64 * 1024,        // 64KB (alias)
                 enable_flow_control: true,
                 flow_control: FlowControlConfig {
                     initial_window_size: 65536,
@@ -468,7 +468,7 @@ impl ValkyrieConfigBuilder {
             },
         }
     }
-    
+
     /// Configure for RustCI integration
     pub fn with_rustci_defaults(mut self) -> Self {
         self.features.rustci_integration = true;
@@ -478,7 +478,7 @@ impl ValkyrieConfigBuilder {
         self.performance.worker_threads = Some(4);
         self
     }
-    
+
     /// Enable CI-specific optimizations
     pub fn enable_ci_optimizations(mut self) -> Self {
         self.performance.message_batch_size = 500;
@@ -486,22 +486,26 @@ impl ValkyrieConfigBuilder {
         self.transport.connection_pool_size = 20;
         self
     }
-    
+
     /// Enable container transport
     pub fn enable_container_transport(mut self) -> Self {
         self.features.container_transport = true;
-        if !self.transport.fallback_transports.contains(&"unix".to_string()) {
+        if !self
+            .transport
+            .fallback_transports
+            .contains(&"unix".to_string())
+        {
             self.transport.fallback_transports.push("unix".to_string());
         }
         self
     }
-    
+
     /// Enable Kubernetes transport
     pub fn enable_kubernetes_transport(mut self) -> Self {
         self.features.kubernetes_transport = true;
         self
     }
-    
+
     /// Configure for high throughput
     pub fn with_high_throughput_settings(mut self) -> Self {
         self.performance.enable_zero_copy = true;
@@ -511,50 +515,50 @@ impl ValkyrieConfigBuilder {
         self.transport.enable_compression = true;
         self
     }
-    
+
     /// Configure with default transport
     pub fn with_default_transport(self) -> Self {
         // Already configured in new()
         self
     }
-    
+
     /// Configure with default security
     pub fn with_default_security(self) -> Self {
         // Already configured in new()
         self
     }
-    
+
     /// Configure with default streaming
     pub fn with_default_streaming(self) -> Self {
         // Already configured in new()
         self
     }
-    
+
     /// Configure with default observability
     pub fn with_default_observability(self) -> Self {
         // Already configured in new()
         self
     }
-    
+
     /// Enable zero-copy optimizations
     pub fn enable_zero_copy(mut self) -> Self {
         self.performance.enable_zero_copy = true;
         self
     }
-    
+
     /// Enable SIMD optimizations
     pub fn enable_simd_optimizations(mut self) -> Self {
         self.performance.enable_simd = true;
         self
     }
-    
+
     /// Configure with minimal security (for testing)
     pub fn with_minimal_security(mut self) -> Self {
         self.security.enable_tls = false;
         self.security.enable_mutual_tls = false;
         self
     }
-    
+
     /// Configure with maximum security
     pub fn with_maximum_security(mut self) -> Self {
         self.security.enable_tls = true;
@@ -562,49 +566,49 @@ impl ValkyrieConfigBuilder {
         self.security.enable_post_quantum = true;
         self
     }
-    
+
     /// Enable post-quantum cryptography
     pub fn enable_post_quantum_crypto(mut self) -> Self {
         self.security.enable_post_quantum = true;
         self
     }
-    
+
     /// Enable mutual TLS
     pub fn enable_mutual_tls(mut self) -> Self {
         self.security.enable_mutual_tls = true;
         self
     }
-    
+
     /// Enable audit logging
     pub fn enable_audit_logging(mut self) -> Self {
         self.observability.log_level = "debug".to_string();
         self
     }
-    
+
     /// Set custom feature flag
     pub fn with_feature(mut self, name: &str, enabled: bool) -> Self {
         self.features.custom.insert(name.to_string(), enabled);
         self
     }
-    
+
     /// Set worker thread count
     pub fn with_worker_threads(mut self, count: usize) -> Self {
         self.performance.worker_threads = Some(count);
         self
     }
-    
+
     /// Set connection timeout
     pub fn with_connection_timeout(mut self, timeout: Duration) -> Self {
         self.protocol.connection_timeout = timeout;
         self
     }
-    
+
     /// Set message timeout
     pub fn with_message_timeout(mut self, timeout: Duration) -> Self {
         self.protocol.message_timeout = timeout;
         self
     }
-    
+
     /// Build the final configuration
     pub fn build(self) -> Result<ValkyrieConfig> {
         Ok(ValkyrieConfig {
@@ -629,14 +633,14 @@ impl Default for ValkyrieConfigBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_config_builder_default() {
         let config = ValkyrieConfigBuilder::new().build().unwrap();
         assert_eq!(config.protocol.version, crate::valkyrie::PROTOCOL_VERSION);
         assert_eq!(config.protocol.magic, crate::valkyrie::PROTOCOL_MAGIC);
     }
-    
+
     #[test]
     fn test_config_builder_rustci() {
         let config = ValkyrieConfigBuilder::new()
@@ -646,7 +650,7 @@ mod tests {
         assert!(config.features.rustci_integration);
         assert!(config.features.container_transport);
     }
-    
+
     #[test]
     fn test_config_builder_high_performance() {
         let config = ValkyrieConfigBuilder::new()

@@ -210,24 +210,26 @@ impl Command for MockCreatePRCommand {
     async fn execute(&self) -> Result<CommandResult> {
         self.base.check_should_fail()?;
 
-        Ok(CommandResult::PullRequestCreated(Box::new(GitHubPullRequest {
-            id: 123,
-            number: 1,
-            title: self.pr_request.title.clone(),
-            body: self.pr_request.body.clone(),
-            html_url: "https://github.com/test/test/pull/1".to_string(),
-            state: "open".to_string(),
-            draft: false,
-            merged: false,
-            mergeable: Some(true),
-            head: MockUtils::create_mock_branch("test-branch", "abc123"),
-            base: MockUtils::create_mock_branch("main", "main123"),
-            user: MockUtils::create_mock_github_user(12345, "test-user"),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            merged_at: None,
-            closed_at: None,
-        })))
+        Ok(CommandResult::PullRequestCreated(Box::new(
+            GitHubPullRequest {
+                id: 123,
+                number: 1,
+                title: self.pr_request.title.clone(),
+                body: self.pr_request.body.clone(),
+                html_url: "https://github.com/test/test/pull/1".to_string(),
+                state: "open".to_string(),
+                draft: false,
+                merged: false,
+                mergeable: Some(true),
+                head: MockUtils::create_mock_branch("test-branch", "abc123"),
+                base: MockUtils::create_mock_branch("main", "main123"),
+                user: MockUtils::create_mock_github_user(12345, "test-user"),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                merged_at: None,
+                closed_at: None,
+            },
+        )))
     }
 
     async fn undo(&self) -> Result<()> {

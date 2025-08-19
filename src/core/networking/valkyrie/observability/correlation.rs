@@ -1,10 +1,10 @@
 // Correlation ID tracking for distributed tracing
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 use super::ObservabilityError;
@@ -259,7 +259,7 @@ impl CorrelationTracker {
             // Update statistics
             let mut stats = self.statistics.write().await;
             stats.active_count = stats.active_count.saturating_sub(1);
-            
+
             match status {
                 CorrelationStatus::Completed => stats.completed_count += 1,
                 CorrelationStatus::Failed => stats.failed_count += 1,
@@ -273,10 +273,12 @@ impl CorrelationTracker {
             }
 
             // Recalculate average duration (simplified)
-            let total_completed = stats.completed_count + stats.failed_count + stats.cancelled_count;
+            let total_completed =
+                stats.completed_count + stats.failed_count + stats.cancelled_count;
             if total_completed > 0 {
-                stats.average_duration_seconds = 
-                    (stats.average_duration_seconds * (total_completed - 1) as f64 + duration_seconds) 
+                stats.average_duration_seconds = (stats.average_duration_seconds
+                    * (total_completed - 1) as f64
+                    + duration_seconds)
                     / total_completed as f64;
             }
 
@@ -321,7 +323,8 @@ impl CorrelationTracker {
     ) -> Result<(), ObservabilityError> {
         self.update_context(correlation_id, |context| {
             context.metadata.insert(key.to_string(), value);
-        }).await
+        })
+        .await
     }
 
     /// Start a new trace span
@@ -353,7 +356,8 @@ impl CorrelationTracker {
 
         self.update_context(correlation_id, |context| {
             context.spans.push(span);
-        }).await?;
+        })
+        .await?;
 
         Ok(span_id)
     }
@@ -378,7 +382,8 @@ impl CorrelationTracker {
                     span.duration_us = Some((timestamp - start_time) * 1_000_000);
                 }
             }
-        }).await
+        })
+        .await
     }
 
     /// Add span log
@@ -406,13 +411,15 @@ impl CorrelationTracker {
             if let Some(span) = context.spans.iter_mut().find(|s| s.span_id == span_id) {
                 span.logs.push(log);
             }
-        }).await
+        })
+        .await
     }
 
     /// Get all active correlations
     pub async fn get_active_correlations(&self) -> Vec<CorrelationContext> {
         let contexts = self.contexts.read().await;
-        contexts.values()
+        contexts
+            .values()
             .filter(|ctx| ctx.status == CorrelationStatus::Active)
             .cloned()
             .collect()
@@ -425,7 +432,10 @@ impl CorrelationTracker {
     }
 
     /// Clean up old completed correlations
-    pub async fn cleanup_old_correlations(&self, max_age_seconds: u64) -> Result<usize, ObservabilityError> {
+    pub async fn cleanup_old_correlations(
+        &self,
+        max_age_seconds: u64,
+    ) -> Result<usize, ObservabilityError> {
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| ObservabilityError::Correlation(format!("Time error: {}", e)))?

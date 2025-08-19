@@ -1,14 +1,14 @@
 //! Consensus Manager for Distributed Service Registry
-//! 
+//!
 //! Implements distributed consensus protocols for service registry coordination
 //! across multiple nodes with fault tolerance and consistency guarantees.
 
+use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, Semaphore};
-use dashmap::DashMap;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 use super::{ServiceEntry, ServiceId};
 use crate::error::{Result, ValkyrieError};
@@ -373,7 +373,7 @@ impl ConsensusManager {
         config: ConsensusConfig,
     ) -> Self {
         let node_id = cluster_config.local_node.node_id;
-        
+
         Self {
             protocol,
             node_id,
@@ -413,47 +413,65 @@ impl ConsensusManager {
 
     /// Start Raft consensus protocol
     async fn start_raft(&self) -> Result<()> {
-        info!("Starting Raft consensus protocol for node: {}", self.node_id);
-        
+        info!(
+            "Starting Raft consensus protocol for node: {}",
+            self.node_id
+        );
+
         // Start election timer
         self.start_election_timer().await;
-        
+
         // Start heartbeat timer (if leader)
         self.start_heartbeat_timer().await;
-        
+
         // Start log replication
         self.start_log_replication().await;
-        
+
         Ok(())
     }
 
     /// Start PBFT consensus protocol
     async fn start_pbft(&self) -> Result<()> {
-        info!("Starting PBFT consensus protocol for node: {}", self.node_id);
+        info!(
+            "Starting PBFT consensus protocol for node: {}",
+            self.node_id
+        );
         // PBFT implementation would go here
         Ok(())
     }
 
     /// Start Paxos consensus protocol
     async fn start_paxos(&self) -> Result<()> {
-        info!("Starting Paxos consensus protocol for node: {}", self.node_id);
+        info!(
+            "Starting Paxos consensus protocol for node: {}",
+            self.node_id
+        );
         // Paxos implementation would go here
         Ok(())
     }
 
     /// Start custom consensus protocol
     async fn start_custom(&self) -> Result<()> {
-        info!("Starting custom consensus protocol for node: {}", self.node_id);
+        info!(
+            "Starting custom consensus protocol for node: {}",
+            self.node_id
+        );
         // Custom protocol implementation would go here
         Ok(())
     }
 
     /// Register service through consensus
-    pub async fn register_service(&self, service_id: ServiceId, service: &ServiceEntry) -> Result<()> {
+    pub async fn register_service(
+        &self,
+        service_id: ServiceId,
+        service: &ServiceEntry,
+    ) -> Result<()> {
         let proposal = Proposal {
             proposal_id: uuid::Uuid::new_v4(),
             proposer: self.node_id,
-            proposal_type: ProposalType::ServiceOperation(ServiceOperation::Register(service.clone())),
+            proposal_type: ProposalType::ServiceOperation(ServiceOperation::Register(
+                service.clone(),
+            )),
             data: serde_json::to_vec(service).unwrap_or_default(),
             timestamp: Instant::now(),
             votes: HashMap::new(),
@@ -481,7 +499,7 @@ impl ConsensusManager {
     /// Submit proposal for consensus
     async fn submit_proposal(&self, proposal: Proposal) -> Result<()> {
         let proposal_id = proposal.proposal_id;
-        
+
         // Store pending proposal
         self.pending_proposals.insert(proposal_id, proposal.clone());
 
@@ -491,8 +509,12 @@ impl ConsensusManager {
             term: self.get_current_term().await,
             entry_type: match proposal.proposal_type {
                 ProposalType::ServiceOperation(op) => match op {
-                    ServiceOperation::Register(service) => LogEntryType::ServiceRegistration(service),
-                    ServiceOperation::Deregister(service_id) => LogEntryType::ServiceDeregistration(service_id),
+                    ServiceOperation::Register(service) => {
+                        LogEntryType::ServiceRegistration(service)
+                    }
+                    ServiceOperation::Deregister(service_id) => {
+                        LogEntryType::ServiceDeregistration(service_id)
+                    }
                     ServiceOperation::Update(service) => LogEntryType::ServiceUpdate(service),
                 },
                 _ => LogEntryType::Custom("proposal".to_string(), proposal.data.clone()),
@@ -518,11 +540,11 @@ impl ConsensusManager {
     async fn append_log_entry(&self, entry: LogEntry) -> Result<()> {
         let mut log = self.consensus_log.write().await;
         log.push(entry);
-        
+
         // Update metrics
         let mut metrics = self.metrics.write().await;
         metrics.log_entries += 1;
-        
+
         Ok(())
     }
 
@@ -584,13 +606,13 @@ impl ConsensusManager {
     async fn start_election_timer(&self) {
         let consensus = self.clone();
         let election_timeout = self.config.election_timeout;
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(election_timeout);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 if !consensus.is_leader().await && !consensus.received_heartbeat_recently().await {
                     if let Err(e) = consensus.start_election().await {
                         error!("Election failed: {}", e);
@@ -604,13 +626,13 @@ impl ConsensusManager {
     async fn start_heartbeat_timer(&self) {
         let consensus = self.clone();
         let heartbeat_interval = self.config.heartbeat_interval;
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(heartbeat_interval);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 if consensus.is_leader().await {
                     if let Err(e) = consensus.send_heartbeats().await {
                         error!("Heartbeat failed: {}", e);
@@ -623,13 +645,13 @@ impl ConsensusManager {
     /// Start log replication
     async fn start_log_replication(&self) {
         let consensus = self.clone();
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(10));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 if consensus.is_leader().await {
                     if let Err(e) = consensus.replicate_log_entries().await {
                         error!("Log replication failed: {}", e);
@@ -642,44 +664,50 @@ impl ConsensusManager {
     /// Start election
     async fn start_election(&self) -> Result<()> {
         info!("Starting leader election for node: {}", self.node_id);
-        
+
         let mut state = self.cluster_state.write().await;
         state.current_term += 1;
         state.voted_for = Some(self.node_id);
-        
+
         // Update metrics
         let mut metrics = self.metrics.write().await;
         metrics.leader_elections += 1;
         metrics.current_term = state.current_term;
-        
+
         // In a real implementation, would send RequestVote RPCs to all nodes
         // For now, assume we win the election if we're the only node
         if self.cluster_config.nodes.len() == 1 {
             self.become_leader().await?;
         }
-        
+
         Ok(())
     }
 
     /// Become leader
     async fn become_leader(&self) -> Result<()> {
-        info!("Node {} became leader for term {}", self.node_id, self.get_current_term().await);
-        
+        info!(
+            "Node {} became leader for term {}",
+            self.node_id,
+            self.get_current_term().await
+        );
+
         let mut state = self.cluster_state.write().await;
         state.current_leader = Some(self.node_id);
-        
+
         // Initialize next_index and match_index for all followers
         for node in &self.cluster_config.nodes {
             if node.node_id != self.node_id {
-                state.next_index.insert(node.node_id, self.get_last_log_index().await + 1);
+                state
+                    .next_index
+                    .insert(node.node_id, self.get_last_log_index().await + 1);
                 state.match_index.insert(node.node_id, 0);
             }
         }
-        
+
         // Update metrics
         let mut metrics = self.metrics.write().await;
         metrics.is_leader = true;
-        
+
         Ok(())
     }
 
@@ -717,7 +745,11 @@ impl ConsensusManager {
     /// Get last log index
     async fn get_last_log_index(&self) -> u64 {
         let log = self.consensus_log.read().await;
-        if log.is_empty() { 0 } else { log.len() as u64 - 1 }
+        if log.is_empty() {
+            0
+        } else {
+            log.len() as u64 - 1
+        }
     }
 
     /// Apply log entries to state machine
@@ -741,10 +773,16 @@ impl ConsensusManager {
     }
 
     /// Apply single log entry to state machine
-    async fn apply_log_entry(&self, entry: &LogEntry, state_machine: &mut RegistryStateMachine) -> Result<()> {
+    async fn apply_log_entry(
+        &self,
+        entry: &LogEntry,
+        state_machine: &mut RegistryStateMachine,
+    ) -> Result<()> {
         match &entry.entry_type {
             LogEntryType::ServiceRegistration(service) => {
-                state_machine.services.insert(service.service_id, service.clone());
+                state_machine
+                    .services
+                    .insert(service.service_id, service.clone());
                 info!("Applied service registration: {}", service.service_id);
             }
             LogEntryType::ServiceDeregistration(service_id) => {
@@ -752,7 +790,9 @@ impl ConsensusManager {
                 info!("Applied service deregistration: {}", service_id);
             }
             LogEntryType::ServiceUpdate(service) => {
-                state_machine.services.insert(service.service_id, service.clone());
+                state_machine
+                    .services
+                    .insert(service.service_id, service.clone());
                 info!("Applied service update: {}", service.service_id);
             }
             LogEntryType::ConfigurationChange(_) => {
@@ -775,11 +815,11 @@ impl ConsensusManager {
     /// Get consensus metrics
     pub async fn metrics(&self) -> ConsensusMetrics {
         let mut metrics = self.metrics.read().await.clone();
-        
+
         // Update real-time metrics
         metrics.current_term = self.get_current_term().await;
         metrics.is_leader = self.is_leader().await;
-        
+
         metrics
     }
 

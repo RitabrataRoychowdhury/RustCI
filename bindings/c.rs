@@ -9,7 +9,7 @@ use std::ptr;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
-use crate::api::valkyrie::{ValkyrieClient, ClientConfig, ClientMessage, ClientMessageType};
+use crate::api::valkyrie::{ClientConfig, ClientMessage, ClientMessageType, ValkyrieClient};
 use crate::error::Result;
 
 /// Opaque handle to a Valkyrie client
@@ -74,9 +74,9 @@ pub type ValkyrieMessageCallback = extern "C" fn(
 );
 
 /// Create a new Valkyrie client with default configuration
-/// 
+///
 /// # Safety
-/// 
+///
 /// The returned handle must be freed with `valkyrie_client_destroy`
 #[no_mangle]
 pub extern "C" fn valkyrie_client_create() -> *mut ValkyrieClientHandle {
@@ -84,9 +84,9 @@ pub extern "C" fn valkyrie_client_create() -> *mut ValkyrieClientHandle {
 }
 
 /// Create a new Valkyrie client with custom configuration
-/// 
+///
 /// # Safety
-/// 
+///
 /// - `config` can be null for default configuration
 /// - The returned handle must be freed with `valkyrie_client_destroy`
 #[no_mangle]
@@ -113,9 +113,9 @@ pub extern "C" fn valkyrie_client_create_with_config(
 }
 
 /// Destroy a Valkyrie client and free its resources
-/// 
+///
 /// # Safety
-/// 
+///
 /// - `handle` must be a valid handle returned by `valkyrie_client_create*`
 /// - `handle` must not be used after this call
 #[no_mangle]
@@ -130,9 +130,9 @@ pub extern "C" fn valkyrie_client_destroy(handle: *mut ValkyrieClientHandle) {
 }
 
 /// Connect to a remote endpoint
-/// 
+///
 /// # Safety
-/// 
+///
 /// - `handle` must be a valid client handle
 /// - `endpoint_url` must be a valid null-terminated C string
 /// - `connection_id_out` must point to valid memory for a c_char pointer
@@ -154,24 +154,22 @@ pub extern "C" fn valkyrie_client_connect(
         };
 
         match handle.runtime.block_on(handle.client.connect(url)) {
-            Ok(connection_id) => {
-                match CString::new(connection_id) {
-                    Ok(c_string) => {
-                        *connection_id_out = c_string.into_raw();
-                        ValkyrieErrorCode::Success
-                    }
-                    Err(_) => ValkyrieErrorCode::InternalError,
+            Ok(connection_id) => match CString::new(connection_id) {
+                Ok(c_string) => {
+                    *connection_id_out = c_string.into_raw();
+                    ValkyrieErrorCode::Success
                 }
-            }
+                Err(_) => ValkyrieErrorCode::InternalError,
+            },
             Err(_) => ValkyrieErrorCode::ConnectionFailed,
         }
     }
 }
 
 /// Send a text message to a connection
-/// 
+///
 /// # Safety
-/// 
+///
 /// - `handle` must be a valid client handle
 /// - `connection_id` must be a valid null-terminated C string
 /// - `message` must be a valid null-terminated C string
@@ -196,7 +194,10 @@ pub extern "C" fn valkyrie_client_send_text(
             Err(_) => return ValkyrieErrorCode::InvalidArgument,
         };
 
-        match handle.runtime.block_on(handle.client.send_text(conn_id, msg)) {
+        match handle
+            .runtime
+            .block_on(handle.client.send_text(conn_id, msg))
+        {
             Ok(_) => ValkyrieErrorCode::Success,
             Err(_) => ValkyrieErrorCode::NetworkError,
         }
@@ -204,9 +205,9 @@ pub extern "C" fn valkyrie_client_send_text(
 }
 
 /// Send a binary message to a connection
-/// 
+///
 /// # Safety
-/// 
+///
 /// - `handle` must be a valid client handle
 /// - `connection_id` must be a valid null-terminated C string
 /// - `data` must point to valid memory of at least `data_len` bytes
@@ -229,7 +230,10 @@ pub extern "C" fn valkyrie_client_send_binary(
         };
         let data_slice = std::slice::from_raw_parts(data as *const u8, data_len as usize);
 
-        match handle.runtime.block_on(handle.client.send_data(conn_id, data_slice)) {
+        match handle
+            .runtime
+            .block_on(handle.client.send_data(conn_id, data_slice))
+        {
             Ok(_) => ValkyrieErrorCode::Success,
             Err(_) => ValkyrieErrorCode::NetworkError,
         }
@@ -237,9 +241,9 @@ pub extern "C" fn valkyrie_client_send_binary(
 }
 
 /// Send a custom message to a connection
-/// 
+///
 /// # Safety
-/// 
+///
 /// - `handle` must be a valid client handle
 /// - `connection_id` must be a valid null-terminated C string
 /// - `message` must point to a valid ValkyrieMessageC structure
@@ -265,7 +269,10 @@ pub extern "C" fn valkyrie_client_send_message(
             Err(_) => return ValkyrieErrorCode::InvalidArgument,
         };
 
-        match handle.runtime.block_on(handle.client.send_message(conn_id, rust_message)) {
+        match handle
+            .runtime
+            .block_on(handle.client.send_message(conn_id, rust_message))
+        {
             Ok(_) => ValkyrieErrorCode::Success,
             Err(_) => ValkyrieErrorCode::NetworkError,
         }
@@ -273,9 +280,9 @@ pub extern "C" fn valkyrie_client_send_message(
 }
 
 /// Get client statistics
-/// 
+///
 /// # Safety
-/// 
+///
 /// - `handle` must be a valid client handle
 /// - `stats_out` must point to valid memory for a ValkyrieStatsC structure
 #[no_mangle]
@@ -305,9 +312,9 @@ pub extern "C" fn valkyrie_client_get_stats(
 }
 
 /// Close a specific connection
-/// 
+///
 /// # Safety
-/// 
+///
 /// - `handle` must be a valid client handle
 /// - `connection_id` must be a valid null-terminated C string
 #[no_mangle]
@@ -326,7 +333,10 @@ pub extern "C" fn valkyrie_client_close_connection(
             Err(_) => return ValkyrieErrorCode::InvalidArgument,
         };
 
-        match handle.runtime.block_on(handle.client.close_connection(conn_id)) {
+        match handle
+            .runtime
+            .block_on(handle.client.close_connection(conn_id))
+        {
             Ok(_) => ValkyrieErrorCode::Success,
             Err(_) => ValkyrieErrorCode::NetworkError,
         }
@@ -334,9 +344,9 @@ pub extern "C" fn valkyrie_client_close_connection(
 }
 
 /// Free a connection ID string returned by valkyrie_client_connect
-/// 
+///
 /// # Safety
-/// 
+///
 /// - `connection_id` must be a string returned by `valkyrie_client_connect`
 /// - `connection_id` must not be used after this call
 #[no_mangle]
@@ -385,7 +395,11 @@ unsafe fn c_message_to_rust_message(c_message: &ValkyrieMessageC) -> Result<Clie
         1 => ClientMessageType::Binary,
         2 => ClientMessageType::Json,
         3 => ClientMessageType::Control,
-        _ => return Err(crate::error::AppError::ValidationError("Invalid message type".to_string())),
+        _ => {
+            return Err(crate::error::AppError::ValidationError(
+                "Invalid message type".to_string(),
+            ))
+        }
     };
 
     let priority = match c_message.priority {
@@ -399,14 +413,13 @@ unsafe fn c_message_to_rust_message(c_message: &ValkyrieMessageC) -> Result<Clie
     let payload = if c_message.data.is_null() {
         ClientPayload::Binary(vec![])
     } else {
-        let data_slice = std::slice::from_raw_parts(
-            c_message.data as *const u8,
-            c_message.data_len as usize,
-        );
+        let data_slice =
+            std::slice::from_raw_parts(c_message.data as *const u8, c_message.data_len as usize);
         match message_type {
             ClientMessageType::Text | ClientMessageType::Json => {
-                let text = std::str::from_utf8(data_slice)
-                    .map_err(|e| crate::error::AppError::ValidationError(format!("Invalid UTF-8: {}", e)))?;
+                let text = std::str::from_utf8(data_slice).map_err(|e| {
+                    crate::error::AppError::ValidationError(format!("Invalid UTF-8: {}", e))
+                })?;
                 ClientPayload::Text(text.to_string())
             }
             ClientMessageType::Binary | ClientMessageType::Control => {
@@ -418,9 +431,17 @@ unsafe fn c_message_to_rust_message(c_message: &ValkyrieMessageC) -> Result<Clie
     let correlation_id = if c_message.correlation_id.is_null() {
         None
     } else {
-        Some(CStr::from_ptr(c_message.correlation_id).to_str()
-            .map_err(|e| crate::error::AppError::ValidationError(format!("Invalid correlation ID: {}", e)))?
-            .to_string())
+        Some(
+            CStr::from_ptr(c_message.correlation_id)
+                .to_str()
+                .map_err(|e| {
+                    crate::error::AppError::ValidationError(format!(
+                        "Invalid correlation ID: {}",
+                        e
+                    ))
+                })?
+                .to_string(),
+        )
     };
 
     let ttl = if c_message.ttl_seconds > 0 {
@@ -551,7 +572,8 @@ void valkyrie_free_connection_id(char* connection_id);
 #endif
 
 #endif /* VALKYRIE_PROTOCOL_H */
-"#.to_string()
+"#
+    .to_string()
 }
 
 #[cfg(test)]

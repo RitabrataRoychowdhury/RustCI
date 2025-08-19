@@ -1,7 +1,7 @@
 //! Client configuration for the Valkyrie Protocol API
 
-use std::time::Duration;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 /// Client configuration for the Valkyrie Protocol
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,82 +133,90 @@ impl ClientConfigBuilder {
             config: ClientConfig::default(),
         }
     }
-    
+
     /// Set server endpoint
     pub fn with_endpoint(mut self, endpoint: &str) -> Self {
         self.config.server_endpoint = endpoint.to_string();
         self
     }
-    
+
     /// Set connection timeout
     pub fn with_connection_timeout(mut self, timeout: Duration) -> Self {
         self.config.connection_timeout = timeout;
         self
     }
-    
+
     /// Set message timeout
     pub fn with_message_timeout(mut self, timeout: Duration) -> Self {
         self.config.message_timeout = timeout;
         self
     }
-    
+
     /// Enable TLS
     pub fn with_tls(mut self) -> Self {
         self.config.security.enable_tls = true;
         self
     }
-    
+
     /// Set certificate paths
-    pub fn with_certificates(mut self, cert_path: &str, key_path: &str, ca_cert_path: Option<&str>) -> Self {
+    pub fn with_certificates(
+        mut self,
+        cert_path: &str,
+        key_path: &str,
+        ca_cert_path: Option<&str>,
+    ) -> Self {
         self.config.security.cert_path = Some(cert_path.to_string());
         self.config.security.key_path = Some(key_path.to_string());
         self.config.security.ca_cert_path = ca_cert_path.map(|s| s.to_string());
         self
     }
-    
+
     /// Set authentication method
     pub fn with_auth_method(mut self, auth_method: ClientAuthMethod) -> Self {
         self.config.security.auth_method = auth_method;
         self
     }
-    
+
     /// Enable compression
     pub fn with_compression(mut self, level: u8) -> Self {
         self.config.performance.enable_compression = true;
         self.config.performance.compression_level = level;
         self
     }
-    
+
     /// Set connection pool size
     pub fn with_connection_pool_size(mut self, size: usize) -> Self {
         self.config.performance.connection_pool_size = size;
         self
     }
-    
+
     /// Enable experimental features
     pub fn with_experimental_features(mut self) -> Self {
         self.config.features.experimental = true;
         self
     }
-    
+
     /// Enable metrics
     pub fn with_metrics(mut self) -> Self {
         self.config.features.metrics = true;
         self
     }
-    
+
     /// Enable tracing
     pub fn with_tracing(mut self) -> Self {
         self.config.features.tracing = true;
         self
     }
-    
+
     /// Set custom feature
     pub fn with_custom_feature(mut self, name: &str, enabled: bool) -> Self {
-        self.config.features.custom.insert(name.to_string(), enabled);
+        self.config
+            .features
+            .custom
+            .insert(name.to_string(), enabled);
         self
     }
-    
+
     /// Build the configuration
     pub fn build(self) -> ClientConfig {
         self.config
@@ -224,7 +232,7 @@ impl Default for ClientConfigBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_client_config_default() {
         let config = ClientConfig::default();
@@ -232,7 +240,7 @@ mod tests {
         assert_eq!(config.connection_timeout, Duration::from_secs(30));
         assert!(config.security.enable_tls);
     }
-    
+
     #[test]
     fn test_client_config_builder() {
         let config = ClientConfigBuilder::new()
@@ -241,19 +249,19 @@ mod tests {
             .with_tls()
             .with_compression(9)
             .build();
-        
+
         assert_eq!(config.server_endpoint, "tcp://example.com:9090");
         assert_eq!(config.connection_timeout, Duration::from_secs(60));
         assert!(config.security.enable_tls);
         assert!(config.performance.enable_compression);
         assert_eq!(config.performance.compression_level, 9);
     }
-    
+
     #[test]
     fn test_auth_method() {
         let token_auth = ClientAuthMethod::Token("test-token".to_string());
         assert!(matches!(token_auth, ClientAuthMethod::Token(_)));
-        
+
         let cert_auth = ClientAuthMethod::Certificate;
         assert_eq!(cert_auth, ClientAuthMethod::Certificate);
     }

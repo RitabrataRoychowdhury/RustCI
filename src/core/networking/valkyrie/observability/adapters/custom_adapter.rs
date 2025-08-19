@@ -1,16 +1,14 @@
 // Custom Adapter Framework - Extensible plug-and-play system
 // Enables users to create custom observability adapters with 100μs performance
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
-use super::{
-    MetricData, LogData, TraceData,
-};
+use super::{LogData, MetricData, TraceData};
 
 /// Custom adapter framework for user-defined adapters
 pub struct CustomAdapterFramework {
@@ -29,49 +27,64 @@ pub struct CustomAdapterFramework {
 pub trait CustomObservabilityAdapter: Send + Sync {
     /// Adapter unique identifier
     fn adapter_id(&self) -> &str;
-    
+
     /// Adapter display name
     fn adapter_name(&self) -> &str;
-    
+
     /// Adapter version
     fn adapter_version(&self) -> &str;
-    
+
     /// Adapter author/organization
     fn adapter_author(&self) -> &str;
-    
+
     /// Adapter description
     fn adapter_description(&self) -> &str;
-    
+
     /// Supported data types
     fn supported_data_types(&self) -> Vec<CustomDataType>;
-    
+
     /// Adapter configuration schema
     fn config_schema(&self) -> CustomAdapterConfigSchema;
-    
+
     /// Initialize the adapter with configuration
-    async fn initialize(&mut self, config: HashMap<String, serde_json::Value>) -> Result<(), CustomAdapterError>;
-    
+    async fn initialize(
+        &mut self,
+        config: HashMap<String, serde_json::Value>,
+    ) -> Result<(), CustomAdapterError>;
+
     /// Start the adapter
     async fn start(&mut self) -> Result<(), CustomAdapterError>;
-    
+
     /// Stop the adapter
     async fn stop(&mut self) -> Result<(), CustomAdapterError>;
-    
+
     /// Process metrics data
-    async fn process_metrics(&self, metrics: &[MetricData]) -> Result<CustomProcessingResult, CustomAdapterError>;
-    
+    async fn process_metrics(
+        &self,
+        metrics: &[MetricData],
+    ) -> Result<CustomProcessingResult, CustomAdapterError>;
+
     /// Process logs data
-    async fn process_logs(&self, logs: &[LogData]) -> Result<CustomProcessingResult, CustomAdapterError>;
-    
+    async fn process_logs(
+        &self,
+        logs: &[LogData],
+    ) -> Result<CustomProcessingResult, CustomAdapterError>;
+
     /// Process traces data
-    async fn process_traces(&self, traces: &[TraceData]) -> Result<CustomProcessingResult, CustomAdapterError>;
-    
+    async fn process_traces(
+        &self,
+        traces: &[TraceData],
+    ) -> Result<CustomProcessingResult, CustomAdapterError>;
+
     /// Handle custom query
-    async fn handle_query(&self, query: CustomQuery) -> Result<CustomQueryResult, CustomAdapterError>;
-    
+    async fn handle_query(
+        &self,
+        query: CustomQuery,
+    ) -> Result<CustomQueryResult, CustomAdapterError>;
+
     /// Get adapter health
     async fn health_check(&self) -> CustomAdapterHealth;
-    
+
     /// Get adapter metrics
     async fn get_metrics(&self) -> CustomAdapterMetrics;
 }
@@ -81,15 +94,23 @@ pub trait CustomObservabilityAdapter: Send + Sync {
 pub trait CustomAdapterFactory: Send + Sync {
     /// Factory identifier
     fn factory_id(&self) -> &str;
-    
+
     /// Supported adapter types
     fn supported_types(&self) -> Vec<String>;
-    
+
     /// Create adapter instance
-    async fn create_adapter(&self, adapter_type: &str, config: HashMap<String, serde_json::Value>) -> Result<Box<dyn CustomObservabilityAdapter>, CustomAdapterError>;
-    
+    async fn create_adapter(
+        &self,
+        adapter_type: &str,
+        config: HashMap<String, serde_json::Value>,
+    ) -> Result<Box<dyn CustomObservabilityAdapter>, CustomAdapterError>;
+
     /// Validate adapter configuration
-    fn validate_config(&self, adapter_type: &str, config: &HashMap<String, serde_json::Value>) -> Result<(), CustomAdapterError>;
+    fn validate_config(
+        &self,
+        adapter_type: &str,
+        config: &HashMap<String, serde_json::Value>,
+    ) -> Result<(), CustomAdapterError>;
 }
 
 /// Custom data types supported by adapters
@@ -391,25 +412,25 @@ pub struct GlobalPerformanceMetrics {
 pub enum CustomAdapterError {
     #[error("Configuration error: {0}")]
     Configuration(String),
-    
+
     #[error("Initialization error: {0}")]
     Initialization(String),
-    
+
     #[error("Processing error: {0}")]
     Processing(String),
-    
+
     #[error("Plugin loading error: {0}")]
     PluginLoading(String),
-    
+
     #[error("Security violation: {0}")]
     Security(String),
-    
+
     #[error("Resource limit exceeded: {0}")]
     ResourceLimit(String),
-    
+
     #[error("Timeout error: {0}")]
     Timeout(String),
-    
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -426,13 +447,17 @@ impl CustomAdapterFramework {
     }
 
     /// Register a custom adapter
-    pub async fn register_adapter(&self, adapter: Box<dyn CustomObservabilityAdapter>) -> Result<(), CustomAdapterError> {
+    pub async fn register_adapter(
+        &self,
+        adapter: Box<dyn CustomObservabilityAdapter>,
+    ) -> Result<(), CustomAdapterError> {
         let adapter_id = adapter.adapter_id().to_string();
         let mut adapters = self.custom_adapters.write().await;
-        
+
         if adapters.contains_key(&adapter_id) {
             return Err(CustomAdapterError::Configuration(format!(
-                "Adapter with ID '{}' is already registered", adapter_id
+                "Adapter with ID '{}' is already registered",
+                adapter_id
             )));
         }
 
@@ -441,13 +466,17 @@ impl CustomAdapterFramework {
     }
 
     /// Register an adapter factory
-    pub async fn register_factory(&self, factory: Box<dyn CustomAdapterFactory>) -> Result<(), CustomAdapterError> {
+    pub async fn register_factory(
+        &self,
+        factory: Box<dyn CustomAdapterFactory>,
+    ) -> Result<(), CustomAdapterError> {
         let factory_id = factory.factory_id().to_string();
         let mut factories = self.adapter_factories.write().await;
-        
+
         if factories.contains_key(&factory_id) {
             return Err(CustomAdapterError::Configuration(format!(
-                "Factory with ID '{}' is already registered", factory_id
+                "Factory with ID '{}' is already registered",
+                factory_id
             )));
         }
 
@@ -463,15 +492,14 @@ impl CustomAdapterFramework {
         config: HashMap<String, serde_json::Value>,
     ) -> Result<Box<dyn CustomObservabilityAdapter>, CustomAdapterError> {
         let factories = self.adapter_factories.read().await;
-        
-        let factory = factories.get(factory_id)
-            .ok_or_else(|| CustomAdapterError::Configuration(format!(
-                "Factory '{}' not found", factory_id
-            )))?;
+
+        let factory = factories.get(factory_id).ok_or_else(|| {
+            CustomAdapterError::Configuration(format!("Factory '{}' not found", factory_id))
+        })?;
 
         // Validate configuration
         factory.validate_config(adapter_type, &config)?;
-        
+
         // Create adapter
         factory.create_adapter(adapter_type, config).await
     }
@@ -482,7 +510,10 @@ impl CustomAdapterFramework {
     }
 
     /// Get adapter by ID
-    pub async fn get_adapter(&self, _adapter_id: &str) -> Option<Box<dyn CustomObservabilityAdapter>> {
+    pub async fn get_adapter(
+        &self,
+        _adapter_id: &str,
+    ) -> Option<Box<dyn CustomObservabilityAdapter>> {
         let _adapters = self.custom_adapters.read().await;
         // Note: This is simplified - in practice we'd need to handle trait objects differently
         None // Placeholder
@@ -512,9 +543,13 @@ impl CustomAdapterFramework {
 
         for (adapter_id, adapter) in adapters.iter() {
             let start_time = Instant::now();
-            
+
             // Process metrics if adapter supports them
-            if adapter.supported_data_types().contains(&CustomDataType::Metrics) && !metrics.is_empty() {
+            if adapter
+                .supported_data_types()
+                .contains(&CustomDataType::Metrics)
+                && !metrics.is_empty()
+            {
                 match adapter.process_metrics(metrics).await {
                     Ok(result) => results.push(result),
                     Err(e) => {
@@ -525,7 +560,11 @@ impl CustomAdapterFramework {
             }
 
             // Process logs if adapter supports them
-            if adapter.supported_data_types().contains(&CustomDataType::Logs) && !logs.is_empty() {
+            if adapter
+                .supported_data_types()
+                .contains(&CustomDataType::Logs)
+                && !logs.is_empty()
+            {
                 match adapter.process_logs(logs).await {
                     Ok(result) => results.push(result),
                     Err(e) => {
@@ -535,7 +574,11 @@ impl CustomAdapterFramework {
             }
 
             // Process traces if adapter supports them
-            if adapter.supported_data_types().contains(&CustomDataType::Traces) && !traces.is_empty() {
+            if adapter
+                .supported_data_types()
+                .contains(&CustomDataType::Traces)
+                && !traces.is_empty()
+            {
                 match adapter.process_traces(traces).await {
                     Ok(result) => results.push(result),
                     Err(e) => {
@@ -546,7 +589,8 @@ impl CustomAdapterFramework {
 
             // Record performance
             let latency_us = start_time.elapsed().as_micros() as u64;
-            self.record_adapter_performance(adapter_id, latency_us, false).await;
+            self.record_adapter_performance(adapter_id, latency_us, false)
+                .await;
         }
 
         Ok(results)
@@ -555,8 +599,9 @@ impl CustomAdapterFramework {
     /// Record adapter performance
     async fn record_adapter_performance(&self, adapter_id: &str, latency_us: u64, is_error: bool) {
         let mut monitor = self.performance_monitor.write().await;
-        
-        let performance_data = monitor.adapter_performance
+
+        let performance_data = monitor
+            .adapter_performance
             .entry(adapter_id.to_string())
             .or_insert_with(|| AdapterPerformanceData {
                 latency_samples: vec![0; 1000],
@@ -567,10 +612,11 @@ impl CustomAdapterFramework {
             });
 
         performance_data.latency_samples[performance_data.sample_index] = latency_us;
-        performance_data.sample_index = (performance_data.sample_index + 1) % performance_data.latency_samples.len();
+        performance_data.sample_index =
+            (performance_data.sample_index + 1) % performance_data.latency_samples.len();
         performance_data.total_operations += 1;
         performance_data.last_update = Instant::now();
-        
+
         if is_error {
             performance_data.error_count += 1;
         }
@@ -598,9 +644,9 @@ impl PluginLoader {
                 sandbox_enabled: true,
                 resource_limits: PluginResourceLimits {
                     max_memory_bytes: 100 * 1024 * 1024, // 100MB
-                    max_cpu_percent: 10.0, // 10%
-                    max_network_bps: 10 * 1024 * 1024, // 10MB/s
-                    max_disk_io_bps: 5 * 1024 * 1024, // 5MB/s
+                    max_cpu_percent: 10.0,               // 10%
+                    max_network_bps: 10 * 1024 * 1024,   // 10MB/s
+                    max_disk_io_bps: 5 * 1024 * 1024,    // 5MB/s
                 },
             },
         }
@@ -610,10 +656,10 @@ impl PluginLoader {
     pub async fn load_plugin(&self, plugin_path: &str) -> Result<String, CustomAdapterError> {
         // Validate plugin security
         self.validate_plugin_security(plugin_path).await?;
-        
+
         // Load plugin metadata
         let metadata = self.load_plugin_metadata(plugin_path).await?;
-        
+
         // Create plugin handle (simplified)
         let plugin_handle = PluginHandle {
             id: Uuid::new_v4().to_string(),
@@ -648,7 +694,10 @@ impl PluginLoader {
     }
 
     /// Load plugin metadata
-    async fn load_plugin_metadata(&self, _plugin_path: &str) -> Result<PluginMetadata, CustomAdapterError> {
+    async fn load_plugin_metadata(
+        &self,
+        _plugin_path: &str,
+    ) -> Result<PluginMetadata, CustomAdapterError> {
         // Simplified metadata loading
         // In a real implementation, this would parse the plugin manifest
         Ok(PluginMetadata {

@@ -1,5 +1,7 @@
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 /// Security audit logging system for the Valkyrie Protocol
-/// 
+///
 /// This module provides:
 /// - Tamper-proof audit logs with cryptographic integrity
 /// - Structured logging with correlation IDs
@@ -7,19 +9,16 @@
 /// - Compliance reporting (SOX, HIPAA, PCI-DSS)
 /// - Log retention and archival policies
 /// - Distributed log aggregation
-
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
-use sha2::{Sha256, Digest};
+use tokio::sync::RwLock;
 
+use super::{AuthMethod, SecurityEventType, SecuritySeverity};
 use crate::core::networking::node_communication::NodeId;
 use crate::error::Result;
-use super::{AuthMethod, SecurityEventType, SecuritySeverity};
 
 /// Security audit logger with tamper-proof capabilities
 pub struct SecurityAuditLogger {
@@ -141,22 +140,22 @@ impl SecurityAuditEntry {
     /// Calculate integrity hash for tamper detection
     pub fn calculate_integrity_hash(&self, previous_hash: Option<&str>) -> String {
         let mut hasher = Sha256::new();
-        
+
         // Include all fields in hash calculation
         hasher.update(self.id.as_bytes());
         hasher.update(self.timestamp.to_rfc3339().as_bytes());
         hasher.update(format!("{:?}", self.event_type).as_bytes());
-        
+
         if let Some(ref node_id) = self.node_id {
             hasher.update(node_id.as_bytes());
         }
-        
+
         hasher.update(self.source_ip.as_bytes());
-        
+
         if let Some(ref method) = self.method {
             hasher.update(format!("{:?}", method).as_bytes());
         }
-        
+
         // Include details in sorted order for consistency
         let mut sorted_details: Vec<_> = self.details.iter().collect();
         sorted_details.sort_by_key(|(k, _)| *k);
@@ -164,14 +163,14 @@ impl SecurityAuditEntry {
             hasher.update(key.as_bytes());
             hasher.update(value.as_bytes());
         }
-        
+
         hasher.update(format!("{:?}", self.severity).as_bytes());
-        
+
         // Chain with previous hash for tamper detection
         if let Some(prev_hash) = previous_hash {
             hasher.update(prev_hash.as_bytes());
         }
-        
+
         format!("{:x}", hasher.finalize())
     }
 }
@@ -200,7 +199,7 @@ impl IntegrityChain {
         let integrity_hash = entry.calculate_integrity_hash(self.last_hash.as_deref());
         entry.integrity_hash = Some(integrity_hash.clone());
         entry.previous_hash = self.last_hash.clone();
-        
+
         self.last_hash = Some(integrity_hash);
         self.chain_length += 1;
     }
@@ -211,10 +210,10 @@ impl IntegrityChain {
         }
 
         let mut previous_hash = Some(self.genesis_hash.clone());
-        
+
         for entry in entries {
             let expected_hash = entry.calculate_integrity_hash(previous_hash.as_deref());
-            
+
             if let Some(ref actual_hash) = entry.integrity_hash {
                 if actual_hash != &expected_hash {
                     return Ok(false);
@@ -222,7 +221,7 @@ impl IntegrityChain {
             } else {
                 return Ok(false);
             }
-            
+
             previous_hash = entry.integrity_hash.clone();
         }
 
@@ -259,7 +258,7 @@ impl CorrelationTracker {
     pub fn create_correlation(&mut self, root_event_id: String) -> String {
         let correlation_id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now();
-        
+
         let context = CorrelationContext {
             correlation_id: correlation_id.clone(),
             root_event_id,
@@ -268,8 +267,9 @@ impl CorrelationTracker {
             last_activity: now,
             metadata: HashMap::new(),
         };
-        
-        self.active_correlations.insert(correlation_id.clone(), context);
+
+        self.active_correlations
+            .insert(correlation_id.clone(), context);
         correlation_id
     }
 
@@ -283,7 +283,10 @@ impl CorrelationTracker {
     pub fn cleanup_expired(&mut self) {
         let now = chrono::Utc::now();
         self.active_correlations.retain(|_, context| {
-            now.signed_duration_since(context.last_activity).to_std().unwrap_or(Duration::ZERO) < self.correlation_timeout
+            now.signed_duration_since(context.last_activity)
+                .to_std()
+                .unwrap_or(Duration::ZERO)
+                < self.correlation_timeout
         });
     }
 }
@@ -317,7 +320,9 @@ impl SecurityAuditLogger {
                 disk_usage_bytes: 0,
                 compression_ratio: 1.0,
             })),
-            correlation_tracker: Arc::new(RwLock::new(CorrelationTracker::new(Duration::from_secs(3600)))),
+            correlation_tracker: Arc::new(RwLock::new(CorrelationTracker::new(
+                Duration::from_secs(3600),
+            ))),
         };
 
         // Start background tasks
@@ -362,37 +367,51 @@ impl SecurityAuditLogger {
         let duration = start_time.elapsed();
         let mut metrics = self.metrics.write().await;
         metrics.total_entries += 1;
-        
+
         let severity_key = format!("{:?}", entry.severity);
         *metrics.entries_by_severity.entry(severity_key).or_insert(0) += 1;
-        
+
         let type_key = format!("{:?}", entry.event_type);
         *metrics.entries_by_type.entry(type_key).or_insert(0) += 1;
-        
-        metrics.average_write_time_ms = (metrics.average_write_time_ms * (metrics.total_entries - 1) as f64 + duration.as_millis() as f64) / metrics.total_entries as f64;
+
+        metrics.average_write_time_ms = (metrics.average_write_time_ms
+            * (metrics.total_entries - 1) as f64
+            + duration.as_millis() as f64)
+            / metrics.total_entries as f64;
 
         Ok(())
     }
 
     /// Write audit entry to file
     async fn write_to_file(&self, entry: &SecurityAuditEntry) -> Result<()> {
-        let json_entry = serde_json::to_string(entry)
-            .map_err(|e| crate::error::AppError::SecurityError(format!("Failed to serialize audit entry: {}", e)))?;
+        let json_entry = serde_json::to_string(entry).map_err(|e| {
+            crate::error::AppError::SecurityError(format!("Failed to serialize audit entry: {}", e))
+        })?;
 
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&self.config.log_file_path)
             .await
-            .map_err(|e| crate::error::AppError::SecurityError(format!("Failed to open audit log file: {}", e)))?;
+            .map_err(|e| {
+                crate::error::AppError::SecurityError(format!(
+                    "Failed to open audit log file: {}",
+                    e
+                ))
+            })?;
 
         file.write_all(format!("{}\n", json_entry).as_bytes())
             .await
-            .map_err(|e| crate::error::AppError::SecurityError(format!("Failed to write to audit log: {}", e)))?;
+            .map_err(|e| {
+                crate::error::AppError::SecurityError(format!(
+                    "Failed to write to audit log: {}",
+                    e
+                ))
+            })?;
 
-        file.flush()
-            .await
-            .map_err(|e| crate::error::AppError::SecurityError(format!("Failed to flush audit log: {}", e)))?;
+        file.flush().await.map_err(|e| {
+            crate::error::AppError::SecurityError(format!("Failed to flush audit log: {}", e))
+        })?;
 
         Ok(())
     }
@@ -411,9 +430,13 @@ impl SecurityAuditLogger {
     }
 
     /// Get entries by event type
-    pub async fn get_entries_by_type(&self, event_type: SecurityEventType) -> Vec<SecurityAuditEntry> {
+    pub async fn get_entries_by_type(
+        &self,
+        event_type: SecurityEventType,
+    ) -> Vec<SecurityAuditEntry> {
         let entries = self.log_entries.read().await;
-        entries.iter()
+        entries
+            .iter()
             .filter(|entry| entry.event_type == event_type)
             .cloned()
             .collect()
@@ -422,7 +445,8 @@ impl SecurityAuditLogger {
     /// Get entries for a specific node
     pub async fn get_entries_for_node(&self, node_id: &NodeId) -> Vec<SecurityAuditEntry> {
         let entries = self.log_entries.read().await;
-        entries.iter()
+        entries
+            .iter()
             .filter(|entry| entry.node_id.as_ref() == Some(node_id))
             .cloned()
             .collect()
@@ -431,7 +455,8 @@ impl SecurityAuditLogger {
     /// Count events by type
     pub async fn count_events_by_type(&self, event_type: SecurityEventType) -> u64 {
         let entries = self.log_entries.read().await;
-        entries.iter()
+        entries
+            .iter()
             .filter(|entry| entry.event_type == event_type)
             .count() as u64
     }
@@ -444,9 +469,14 @@ impl SecurityAuditLogger {
     }
 
     /// Generate compliance report
-    pub async fn generate_compliance_report(&self, start_date: chrono::DateTime<chrono::Utc>, end_date: chrono::DateTime<chrono::Utc>) -> ComplianceReport {
+    pub async fn generate_compliance_report(
+        &self,
+        start_date: chrono::DateTime<chrono::Utc>,
+        end_date: chrono::DateTime<chrono::Utc>,
+    ) -> ComplianceReport {
         let entries = self.log_entries.read().await;
-        let filtered_entries: Vec<_> = entries.iter()
+        let filtered_entries: Vec<_> = entries
+            .iter()
             .filter(|entry| entry.timestamp >= start_date && entry.timestamp <= end_date)
             .collect();
 
@@ -472,10 +502,12 @@ impl SecurityAuditLogger {
             *report.events_by_severity.entry(severity_key).or_insert(0) += 1;
 
             match entry.event_type {
-                SecurityEventType::AuthenticationSuccess | SecurityEventType::AuthenticationFailure => {
+                SecurityEventType::AuthenticationSuccess
+                | SecurityEventType::AuthenticationFailure => {
                     report.authentication_events += 1;
                 }
-                SecurityEventType::AuthorizationSuccess | SecurityEventType::AuthorizationFailure => {
+                SecurityEventType::AuthorizationSuccess
+                | SecurityEventType::AuthorizationFailure => {
                     report.authorization_events += 1;
                 }
                 SecurityEventType::IntrusionDetected | SecurityEventType::PolicyViolation => {
@@ -490,7 +522,8 @@ impl SecurityAuditLogger {
 
         // Calculate compliance score (simplified)
         report.compliance_score = if report.integrity_verified {
-            let violation_ratio = report.security_violations as f64 / report.total_events.max(1) as f64;
+            let violation_ratio =
+                report.security_violations as f64 / report.total_events.max(1) as f64;
             (1.0 - violation_ratio).max(0.0) * 100.0
         } else {
             0.0
@@ -521,15 +554,19 @@ impl SecurityAuditLogger {
                 "127.0.0.1".to_string(),
                 SecuritySeverity::Info,
             );
-            
+
             // Try to serialize the entry
-            serde_json::to_string(&test_entry)
-                .map_err(|e| crate::error::AppError::SecurityError(format!("Health check failed: {}", e)))?;
+            serde_json::to_string(&test_entry).map_err(|e| {
+                crate::error::AppError::SecurityError(format!("Health check failed: {}", e))
+            })?;
         }
 
         // Verify integrity
         if !self.verify_integrity().await? {
-            return Err(crate::error::AppError::SecurityError("Audit log integrity verification failed".to_string()).into());
+            return Err(crate::error::AppError::SecurityError(
+                "Audit log integrity verification failed".to_string(),
+            )
+            .into());
         }
 
         Ok(())

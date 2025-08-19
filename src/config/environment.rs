@@ -341,23 +341,21 @@ impl ConfigBuilder {
 
     pub fn build_server_config(&self) -> Result<crate::config::ServerConfig> {
         Ok(crate::config::ServerConfig {
-            host: self.env_config.get_or_default("HOST", "0.0.0.0"),
+            bind_address: format!("{}:{}", 
+                self.env_config.get_or_default("HOST", "0.0.0.0"),
+                self.env_config.get_int::<u16>("PORT")?
+            ),
             port: self.env_config.get_int("PORT")?,
-            workers: {
-                let workers: u32 = self.env_config.get_int("WORKERS")?;
-                if workers == 0 {
-                    None
-                } else {
-                    Some(workers as usize)
-                }
-            },
             max_connections: self.env_config.get_int("MAX_CONNECTIONS")?,
-            request_timeout_seconds: self.env_config.get_int("REQUEST_TIMEOUT")?,
-            graceful_shutdown_timeout_seconds: self
+            connection_timeout_ms: self.env_config.get_int("REQUEST_TIMEOUT").unwrap_or(30) * 1000,
+            enable_tls: self.env_config.get_bool("TLS_ENABLED").unwrap_or(false),
+            tls_cert_path: self.env_config.get("TLS_CERT_PATH").cloned(),
+            tls_key_path: self.env_config.get("TLS_KEY_PATH").cloned(),
+            enable_graceful_shutdown: Some(true),
+            graceful_shutdown_timeout: Some(self
                 .env_config
                 .get_int("GRACEFUL_SHUTDOWN_TIMEOUT")
-                .unwrap_or(30),
-            tls: self.build_tls_config()?,
+                .unwrap_or(30)),
         })
     }
 
@@ -376,23 +374,7 @@ impl ConfigBuilder {
         })
     }
 
-    fn build_tls_config(&self) -> Result<Option<crate::config::TlsConfig>> {
-        if let (Some(cert_path), Some(key_path)) = (
-            self.env_config.get("TLS_CERT_PATH"),
-            self.env_config.get("TLS_KEY_PATH"),
-        ) {
-            Ok(Some(crate::config::TlsConfig {
-                cert_path: cert_path.clone(),
-                key_path: key_path.clone(),
-                require_client_cert: self
-                    .env_config
-                    .get_bool("TLS_REQUIRE_CLIENT_CERT")
-                    .unwrap_or(false),
-            }))
-        } else {
-            Ok(None)
-        }
-    }
+
 
     pub fn get_environment(&self) -> &Environment {
         &self.env_config.environment

@@ -1,9 +1,9 @@
 //! Docker API Adapter Implementation
-//! 
+//!
 //! Provides Docker API adapter for container orchestration through Valkyrie Protocol.
 
-use super::*;
 use super::factory::AdapterBuilder;
+use super::*;
 use crate::error::{Result, ValkyrieError};
 
 /// Docker API Adapter (placeholder implementation)
@@ -24,7 +24,7 @@ impl DockerAdapter {
             capabilities: Self::create_capabilities(),
         })
     }
-    
+
     fn create_capabilities() -> AdapterCapabilities {
         AdapterCapabilities {
             adapter_type: AdapterType::Docker,
@@ -62,10 +62,7 @@ impl DockerAdapter {
                 supports_keepalive: true,
                 supports_pooling: true,
             },
-            supported_operations: vec![
-                AdapterOperation::Send,
-                AdapterOperation::Receive,
-            ],
+            supported_operations: vec![AdapterOperation::Send, AdapterOperation::Receive],
         }
     }
 }
@@ -82,40 +79,40 @@ impl UniversalAdapter for DockerAdapter {
             response: None,
         })
     }
-    
+
     async fn receive(&self, _timeout: Option<Duration>) -> Result<Option<AdapterMessage>> {
         Ok(None)
     }
-    
+
     fn capabilities(&self) -> &AdapterCapabilities {
         &self.capabilities
     }
-    
+
     async fn health_check(&self) -> HealthStatus {
         HealthStatus::Healthy
     }
-    
+
     async fn metrics(&self) -> AdapterMetrics {
         AdapterMetrics::default()
     }
-    
+
     async fn initialize(&mut self) -> Result<()> {
         Ok(())
     }
-    
+
     async fn shutdown(&mut self) -> Result<()> {
         Ok(())
     }
-    
+
     async fn update_config(&mut self, config: &AdapterConfig) -> Result<()> {
         self.config = config.clone();
         Ok(())
     }
-    
+
     fn adapter_type(&self) -> AdapterType {
         AdapterType::Docker
     }
-    
+
     fn adapter_id(&self) -> &AdapterId {
         &self.id
     }
@@ -127,20 +124,20 @@ impl AdapterBuilder for DockerAdapterBuilder {
         let adapter = DockerAdapter::new(config.clone()).await?;
         Ok(Box::new(adapter))
     }
-    
+
     fn adapter_type(&self) -> AdapterType {
         AdapterType::Docker
     }
-    
+
     fn validate_config(&self, config: &AdapterConfig) -> Result<()> {
         if config.adapter_type != AdapterType::Docker {
             return Err(ValkyrieError::InvalidConfiguration(
-                "Adapter type must be Docker".to_string()
+                "Adapter type must be Docker".to_string(),
             ));
         }
         Ok(())
     }
-    
+
     fn default_config(&self) -> AdapterConfig {
         AdapterConfig {
             adapter_type: AdapterType::Docker,

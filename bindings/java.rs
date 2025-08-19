@@ -3,16 +3,16 @@
 //! This module provides Java bindings using JNI, enabling Java applications
 //! to use the Valkyrie Protocol through a native Java interface.
 
-use jni::objects::{JClass, JObject, JString, JValue, JByteArray};
-use jni::sys::{jboolean, jint, jlong, jstring, jobject, jbyteArray};
+use jni::objects::{JByteArray, JClass, JObject, JString, JValue};
+use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject, jstring};
 use jni::{JNIEnv, JavaVM};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 
 use crate::api::valkyrie::{
-    ValkyrieClient, ClientConfig, ClientMessage, ClientMessageType,
-    ClientMessagePriority, ClientPayload
+    ClientConfig, ClientMessage, ClientMessagePriority, ClientMessageType, ClientPayload,
+    ValkyrieClient,
 };
 
 /// Java wrapper for ValkyrieClient
@@ -80,19 +80,20 @@ pub extern "system" fn Java_com_valkyrie_protocol_ValkyrieClient_nativeConnect(
     endpoint_url: JString,
 ) -> jstring {
     let client = unsafe { &*(client_ptr as *const JavaValkyrieClient) };
-    
+
     let endpoint_str: String = match env.get_string(endpoint_url) {
         Ok(s) => s.into(),
         Err(_) => return std::ptr::null_mut(),
     };
 
-    match client.runtime.block_on(client.client.connect(&endpoint_str)) {
-        Ok(connection_id) => {
-            match env.new_string(connection_id) {
-                Ok(jstr) => jstr.into_inner(),
-                Err(_) => std::ptr::null_mut(),
-            }
-        }
+    match client
+        .runtime
+        .block_on(client.client.connect(&endpoint_str))
+    {
+        Ok(connection_id) => match env.new_string(connection_id) {
+            Ok(jstr) => jstr.into_inner(),
+            Err(_) => std::ptr::null_mut(),
+        },
         Err(_) => std::ptr::null_mut(),
     }
 }
@@ -107,18 +108,21 @@ pub extern "system" fn Java_com_valkyrie_protocol_ValkyrieClient_nativeSendText(
     message: JString,
 ) -> jboolean {
     let client = unsafe { &*(client_ptr as *const JavaValkyrieClient) };
-    
+
     let conn_id: String = match env.get_string(connection_id) {
         Ok(s) => s.into(),
         Err(_) => return 0,
     };
-    
+
     let msg: String = match env.get_string(message) {
         Ok(s) => s.into(),
         Err(_) => return 0,
     };
 
-    match client.runtime.block_on(client.client.send_text(&conn_id, &msg)) {
+    match client
+        .runtime
+        .block_on(client.client.send_text(&conn_id, &msg))
+    {
         Ok(_) => 1,
         Err(_) => 0,
     }
@@ -134,18 +138,21 @@ pub extern "system" fn Java_com_valkyrie_protocol_ValkyrieClient_nativeSendBinar
     data: JByteArray,
 ) -> jboolean {
     let client = unsafe { &*(client_ptr as *const JavaValkyrieClient) };
-    
+
     let conn_id: String = match env.get_string(connection_id) {
         Ok(s) => s.into(),
         Err(_) => return 0,
     };
-    
+
     let data_bytes = match env.convert_byte_array(data) {
         Ok(bytes) => bytes,
         Err(_) => return 0,
     };
 
-    match client.runtime.block_on(client.client.send_data(&conn_id, &data_bytes)) {
+    match client
+        .runtime
+        .block_on(client.client.send_data(&conn_id, &data_bytes))
+    {
         Ok(_) => 1,
         Err(_) => 0,
     }
@@ -159,20 +166,20 @@ pub extern "system" fn Java_com_valkyrie_protocol_ValkyrieClient_nativeGetStats(
     client_ptr: jlong,
 ) -> jobject {
     let client = unsafe { &*(client_ptr as *const JavaValkyrieClient) };
-    
+
     let stats = client.runtime.block_on(client.client.get_stats());
-    
+
     // Create Java ValkyrieStats object
     let stats_class = match env.find_class("com/valkyrie/protocol/ValkyrieStats") {
         Ok(class) => class,
         Err(_) => return std::ptr::null_mut(),
     };
-    
+
     let constructor = match env.get_method_id(stats_class, "<init>", "(IIJJJJ)V") {
         Ok(method) => method,
         Err(_) => return std::ptr::null_mut(),
     };
-    
+
     let args = [
         JValue::Int(stats.active_connections as i32),
         JValue::Int(stats.handlers_registered as i32),
@@ -181,7 +188,7 @@ pub extern "system" fn Java_com_valkyrie_protocol_ValkyrieClient_nativeGetStats(
         JValue::Long(stats.engine_stats.transport.bytes_sent as i64),
         JValue::Long(stats.engine_stats.transport.bytes_received as i64),
     ];
-    
+
     match env.new_object(stats_class, constructor, &args) {
         Ok(obj) => obj.into_inner(),
         Err(_) => std::ptr::null_mut(),
@@ -197,13 +204,16 @@ pub extern "system" fn Java_com_valkyrie_protocol_ValkyrieClient_nativeCloseConn
     connection_id: JString,
 ) -> jboolean {
     let client = unsafe { &*(client_ptr as *const JavaValkyrieClient) };
-    
+
     let conn_id: String = match env.get_string(connection_id) {
         Ok(s) => s.into(),
         Err(_) => return 0,
     };
 
-    match client.runtime.block_on(client.client.close_connection(&conn_id)) {
+    match client
+        .runtime
+        .block_on(client.client.close_connection(&conn_id))
+    {
         Ok(_) => 1,
         Err(_) => 0,
     }
@@ -228,17 +238,19 @@ pub extern "system" fn Java_com_valkyrie_protocol_ValkyrieClient_nativeDestroy(
 fn create_client_with_default_config() -> Result<JavaValkyrieClient, Box<dyn std::error::Error>> {
     let runtime = Runtime::new()?;
     let client = runtime.block_on(ValkyrieClient::new(ClientConfig::default()))?;
-    
+
     Ok(JavaValkyrieClient {
         client: Arc::new(client),
         runtime: Arc::new(runtime),
     })
 }
 
-fn create_client_with_config(config: ClientConfig) -> Result<JavaValkyrieClient, Box<dyn std::error::Error>> {
+fn create_client_with_config(
+    config: ClientConfig,
+) -> Result<JavaValkyrieClient, Box<dyn std::error::Error>> {
     let runtime = Runtime::new()?;
     let client = runtime.block_on(ValkyrieClient::new(config))?;
-    
+
     Ok(JavaValkyrieClient {
         client: Arc::new(client),
         runtime: Arc::new(runtime),
@@ -248,12 +260,30 @@ fn create_client_with_config(config: ClientConfig) -> Result<JavaValkyrieClient,
 /// Generate Java source code
 pub fn generate_java_sources() -> Vec<(String, String)> {
     vec![
-        ("ValkyrieClient.java".to_string(), generate_valkyrie_client_java()),
-        ("ValkyrieConfig.java".to_string(), generate_valkyrie_config_java()),
-        ("ValkyrieMessage.java".to_string(), generate_valkyrie_message_java()),
-        ("ValkyrieStats.java".to_string(), generate_valkyrie_stats_java()),
-        ("BroadcastResult.java".to_string(), generate_broadcast_result_java()),
-        ("ValkyrieException.java".to_string(), generate_valkyrie_exception_java()),
+        (
+            "ValkyrieClient.java".to_string(),
+            generate_valkyrie_client_java(),
+        ),
+        (
+            "ValkyrieConfig.java".to_string(),
+            generate_valkyrie_config_java(),
+        ),
+        (
+            "ValkyrieMessage.java".to_string(),
+            generate_valkyrie_message_java(),
+        ),
+        (
+            "ValkyrieStats.java".to_string(),
+            generate_valkyrie_stats_java(),
+        ),
+        (
+            "BroadcastResult.java".to_string(),
+            generate_broadcast_result_java(),
+        ),
+        (
+            "ValkyrieException.java".to_string(),
+            generate_valkyrie_exception_java(),
+        ),
     ]
 }
 
@@ -470,7 +500,8 @@ public class ValkyrieClient implements AutoCloseable {
     private native boolean nativeCloseConnection(long clientPtr, String connectionId);
     private native void nativeDestroy(long clientPtr);
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 fn generate_valkyrie_config_java() -> String {
@@ -583,7 +614,8 @@ public class ValkyrieConfig {
         this.maxConnections = maxConnections;
     }
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 fn generate_valkyrie_message_java() -> String {
@@ -746,7 +778,8 @@ public class ValkyrieMessage {
         this.metadata = metadata;
     }
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 fn generate_valkyrie_stats_java() -> String {
@@ -819,7 +852,8 @@ public class ValkyrieStats {
         );
     }
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 fn generate_broadcast_result_java() -> String {
@@ -865,7 +899,8 @@ public class BroadcastResult {
                            total, successful, failed);
     }
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 fn generate_valkyrie_exception_java() -> String {
@@ -896,7 +931,8 @@ public class ValkyrieException extends RuntimeException {
         super(message, cause);
     }
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Generate Maven POM file
@@ -1020,8 +1056,9 @@ mod tests {
     fn test_java_source_generation() {
         let sources = generate_java_sources();
         assert_eq!(sources.len(), 6);
-        
-        let client_source = sources.iter()
+
+        let client_source = sources
+            .iter()
             .find(|(name, _)| name == "ValkyrieClient.java")
             .unwrap();
         assert!(client_source.1.contains("public class ValkyrieClient"));

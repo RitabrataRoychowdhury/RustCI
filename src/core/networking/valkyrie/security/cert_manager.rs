@@ -1,5 +1,7 @@
+use base64ct::Encoding;
+use serde::{Deserialize, Serialize};
 /// Certificate management system for the Valkyrie Protocol
-/// 
+///
 /// This module provides:
 /// - X.509 certificate lifecycle management
 /// - Automatic certificate rotation
@@ -7,13 +9,10 @@
 /// - Certificate revocation lists (CRL)
 /// - OCSP (Online Certificate Status Protocol) support
 /// - Hardware security module (HSM) integration
-
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use base64ct::Encoding;
 
 use crate::core::networking::node_communication::NodeId;
 use crate::error::Result;
@@ -183,13 +182,13 @@ impl CertificateManager {
     pub async fn issue_certificate(&self, request: CertificateRequest) -> Result<CertificateInfo> {
         // Generate key pair
         let (public_key, private_key) = self.generate_key_pair().await?;
-        
+
         // Create certificate
         let certificate_pem = self.create_certificate(&request, &public_key).await?;
-        
+
         // Calculate fingerprint
         let fingerprint = self.calculate_fingerprint(&certificate_pem)?;
-        
+
         let cert_info = CertificateInfo {
             fingerprint: fingerprint.clone(),
             subject_id: request.subject_id.clone(),
@@ -198,7 +197,8 @@ impl CertificateManager {
             issuer: "Valkyrie CA".to_string(),
             serial_number: uuid::Uuid::new_v4().to_string(),
             issued_at: chrono::Utc::now(),
-            expires_at: chrono::Utc::now() + chrono::Duration::days(self.config.cert_validity_days as i64),
+            expires_at: chrono::Utc::now()
+                + chrono::Duration::days(self.config.cert_validity_days as i64),
             key_usage: request.key_usage.clone(),
             extended_key_usage: request.extended_key_usage.clone(),
             roles: request.roles.clone(),
@@ -210,7 +210,10 @@ impl CertificateManager {
         };
 
         // Store certificate
-        self.certificates.write().await.insert(fingerprint, cert_info.clone());
+        self.certificates
+            .write()
+            .await
+            .insert(fingerprint, cert_info.clone());
 
         // Update metrics
         let mut metrics = self.metrics.write().await;
@@ -232,13 +235,19 @@ impl CertificateManager {
             // Check if certificate is still valid
             let now = chrono::Utc::now();
             if cert_info.expires_at < now {
-                return Err(crate::error::AppError::SecurityError("Certificate has expired".to_string()).into());
+                return Err(crate::error::AppError::SecurityError(
+                    "Certificate has expired".to_string(),
+                )
+                .into());
             }
 
             // Check if certificate is revoked
             let revoked = self.revoked_certificates.read().await;
             if revoked.contains_key(&fingerprint) {
-                return Err(crate::error::AppError::SecurityError("Certificate has been revoked".to_string()).into());
+                return Err(crate::error::AppError::SecurityError(
+                    "Certificate has been revoked".to_string(),
+                )
+                .into());
             }
 
             Ok(cert_info.clone())
@@ -248,7 +257,10 @@ impl CertificateManager {
     }
 
     /// Get certificate by fingerprint
-    pub async fn get_certificate_by_fingerprint(&self, fingerprint: &str) -> Result<Option<CertificateInfo>> {
+    pub async fn get_certificate_by_fingerprint(
+        &self,
+        fingerprint: &str,
+    ) -> Result<Option<CertificateInfo>> {
         let certificates = self.certificates.read().await;
         Ok(certificates.get(fingerprint).cloned())
     }
@@ -267,7 +279,10 @@ impl CertificateManager {
             revoked_by: "system".to_string(),
         };
 
-        self.revoked_certificates.write().await.insert(fingerprint.to_string(), revocation_info);
+        self.revoked_certificates
+            .write()
+            .await
+            .insert(fingerprint.to_string(), revocation_info);
 
         // Update metrics
         let mut metrics = self.metrics.write().await;
@@ -307,18 +322,24 @@ impl CertificateManager {
 
             Ok(new_cert)
         } else {
-            Err(crate::error::AppError::SecurityError("Certificate not found for renewal".to_string()).into())
+            Err(crate::error::AppError::SecurityError(
+                "Certificate not found for renewal".to_string(),
+            )
+            .into())
         }
     }
 
     /// Get certificates expiring soon
     pub async fn get_expiring_certificates(&self, threshold: Duration) -> Vec<CertificateInfo> {
         let certificates = self.certificates.read().await;
-        let threshold_time = chrono::Utc::now() + chrono::Duration::from_std(threshold).unwrap_or_default();
+        let threshold_time =
+            chrono::Utc::now() + chrono::Duration::from_std(threshold).unwrap_or_default();
 
-        certificates.values()
+        certificates
+            .values()
             .filter(|cert| {
-                matches!(cert.status, CertificateStatus::Active) && cert.expires_at <= threshold_time
+                matches!(cert.status, CertificateStatus::Active)
+                    && cert.expires_at <= threshold_time
             })
             .cloned()
             .collect()
@@ -339,34 +360,43 @@ impl CertificateManager {
         // In a real implementation, this would generate actual RSA/ECDSA key pairs
         // For now, we'll return placeholder values
         use base64ct::Encoding;
-        let public_key = format!("-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----", 
-            base64ct::Base64::encode_string("placeholder-public-key".as_bytes()));
-        let private_key = format!("-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----", 
-            base64ct::Base64::encode_string("placeholder-private-key".as_bytes()));
-        
+        let public_key = format!(
+            "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----",
+            base64ct::Base64::encode_string("placeholder-public-key".as_bytes())
+        );
+        let private_key = format!(
+            "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----",
+            base64ct::Base64::encode_string("placeholder-private-key".as_bytes())
+        );
+
         Ok((public_key, private_key))
     }
 
     /// Create certificate from request and public key
-    async fn create_certificate(&self, request: &CertificateRequest, public_key: &str) -> Result<String> {
+    async fn create_certificate(
+        &self,
+        request: &CertificateRequest,
+        public_key: &str,
+    ) -> Result<String> {
         // In a real implementation, this would create an actual X.509 certificate
         // For now, we'll return a placeholder certificate
         let certificate = format!(
             "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
-            base64ct::Base64::encode_string(format!(
-                "subject={},issuer=Valkyrie CA,public_key={},validity={}",
-                request.common_name,
-                public_key,
-                self.config.cert_validity_days
-            ).as_bytes())
+            base64ct::Base64::encode_string(
+                format!(
+                    "subject={},issuer=Valkyrie CA,public_key={},validity={}",
+                    request.common_name, public_key, self.config.cert_validity_days
+                )
+                .as_bytes()
+            )
         );
-        
+
         Ok(certificate)
     }
 
     /// Calculate certificate fingerprint
     fn calculate_fingerprint(&self, certificate_pem: &str) -> Result<String> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(certificate_pem.as_bytes());
         Ok(format!("{:x}", hasher.finalize()))
@@ -376,8 +406,10 @@ impl CertificateManager {
     fn der_to_pem(&self, der_data: &[u8]) -> Result<String> {
         // In a real implementation, this would properly convert DER to PEM
         // For now, we'll return a placeholder
-        Ok(format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----", 
-            base64ct::Base64::encode_string(der_data)))
+        Ok(format!(
+            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
+            base64ct::Base64::encode_string(der_data)
+        ))
     }
 
     /// Start background maintenance tasks
@@ -395,13 +427,17 @@ impl CertificateManager {
                 let mut interval = tokio::time::interval(Duration::from_secs(24 * 3600)); // Daily check
                 loop {
                     interval.tick().await;
-                    
-                    let threshold = Duration::from_secs(config_clone.renewal_threshold_days as u64 * 24 * 3600);
+
+                    let threshold =
+                        Duration::from_secs(config_clone.renewal_threshold_days as u64 * 24 * 3600);
                     let certs = certificates_clone.read().await;
-                    let threshold_time = chrono::Utc::now() + chrono::Duration::from_std(threshold).unwrap_or_default();
+                    let threshold_time = chrono::Utc::now()
+                        + chrono::Duration::from_std(threshold).unwrap_or_default();
 
                     for (fingerprint, cert) in certs.iter() {
-                        if matches!(cert.status, CertificateStatus::Active) && cert.expires_at <= threshold_time {
+                        if matches!(cert.status, CertificateStatus::Active)
+                            && cert.expires_at <= threshold_time
+                        {
                             // Mark for renewal (in a real implementation, this would trigger actual renewal)
                             println!("Certificate {} needs renewal", fingerprint);
                         }
@@ -415,14 +451,14 @@ impl CertificateManager {
             let mut interval = tokio::time::interval(Duration::from_secs(300)); // 5 minutes
             loop {
                 interval.tick().await;
-                
+
                 let certs = certificates.read().await;
                 let now = chrono::Utc::now();
-                
+
                 let mut active = 0;
                 let mut expired = 0;
                 let mut total_lifetime_days = 0.0;
-                
+
                 for cert in certs.values() {
                     match cert.status {
                         CertificateStatus::Active => {
@@ -435,16 +471,17 @@ impl CertificateManager {
                         CertificateStatus::Expired => expired += 1,
                         _ => {}
                     }
-                    
+
                     let lifetime = cert.expires_at.signed_duration_since(cert.issued_at);
                     total_lifetime_days += lifetime.num_days() as f64;
                 }
-                
+
                 let mut metrics_guard = metrics.write().await;
                 metrics_guard.active_certificates = active;
                 metrics_guard.expired_certificates = expired;
                 if certs.len() > 0 {
-                    metrics_guard.average_cert_lifetime_days = total_lifetime_days / certs.len() as f64;
+                    metrics_guard.average_cert_lifetime_days =
+                        total_lifetime_days / certs.len() as f64;
                 }
             }
         });
@@ -454,15 +491,19 @@ impl CertificateManager {
     pub async fn health_check(&self) -> Result<()> {
         // Check if CA certificate and key are accessible
         if !std::path::Path::new(&self.config.ca_cert_path).exists() {
-            return Err(crate::error::AppError::SecurityError(
-                format!("CA certificate not found at {}", self.config.ca_cert_path)
-            ).into());
+            return Err(crate::error::AppError::SecurityError(format!(
+                "CA certificate not found at {}",
+                self.config.ca_cert_path
+            ))
+            .into());
         }
 
         if !std::path::Path::new(&self.config.ca_key_path).exists() {
-            return Err(crate::error::AppError::SecurityError(
-                format!("CA private key not found at {}", self.config.ca_key_path)
-            ).into());
+            return Err(crate::error::AppError::SecurityError(format!(
+                "CA private key not found at {}",
+                self.config.ca_key_path
+            ))
+            .into());
         }
 
         Ok(())
@@ -493,7 +534,10 @@ impl CertificateRequest {
             subject_id,
             common_name,
             subject_alt_names: Vec::new(),
-            key_usage: vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
+            key_usage: vec![
+                "digitalSignature".to_string(),
+                "keyEncipherment".to_string(),
+            ],
             extended_key_usage: vec!["clientAuth".to_string(), "serverAuth".to_string()],
             roles: Vec::new(),
             permissions: Vec::new(),

@@ -1,6 +1,7 @@
 // High-performance network server for plug-and-play observability adapters
 // Enables external systems to connect directly to Valkyrie with 100μs performance
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -8,13 +9,9 @@ use std::time::{Duration, Instant};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use tokio::time::timeout;
-use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
-use super::{
-    ObservabilityError, AdapterProtocol, HealthStatus,
-    AdapterPerformanceMetrics,
-};
+use super::{AdapterPerformanceMetrics, AdapterProtocol, HealthStatus, ObservabilityError};
 
 /// High-performance network server for observability adapters
 pub struct ObservabilityNetworkServer {
@@ -131,8 +128,11 @@ pub struct ConnectionHandler {
 #[async_trait::async_trait]
 pub trait ProtocolHandler: Send + Sync {
     /// Handle incoming request
-    async fn handle_request(&self, request: ProtocolRequest) -> Result<ProtocolResponse, ObservabilityError>;
-    
+    async fn handle_request(
+        &self,
+        request: ProtocolRequest,
+    ) -> Result<ProtocolResponse, ObservabilityError>;
+
     /// Get handler capabilities
     fn capabilities(&self) -> ProtocolCapabilities;
 }
@@ -218,7 +218,7 @@ impl RequestPerformanceTracker {
         self.latency_samples_us[self.sample_index] = latency_us;
         self.sample_index = (self.sample_index + 1) % self.latency_samples_us.len();
         self.total_requests += 1;
-        
+
         if is_error {
             self.error_count += 1;
         }
@@ -228,7 +228,7 @@ impl RequestPerformanceTracker {
     pub fn get_metrics(&self) -> ServerPerformanceMetrics {
         let mut sorted_latencies = self.latency_samples_us.clone();
         sorted_latencies.sort_unstable();
-        
+
         let avg_latency = if !sorted_latencies.is_empty() {
             sorted_latencies.iter().sum::<u64>() as f64 / sorted_latencies.len() as f64
         } else {
@@ -260,8 +260,8 @@ impl RequestPerformanceTracker {
             p99_request_latency_us: p99_latency,
             requests_per_second,
             connections_per_second: 0.0, // Would be calculated separately
-            bytes_per_second: 0.0, // Would be calculated separately
-            active_connections: 0, // Would be provided by server
+            bytes_per_second: 0.0,       // Would be calculated separately
+            active_connections: 0,       // Would be provided by server
             connection_success_rate: 1.0 - error_rate,
             error_rate,
         }
@@ -295,8 +295,9 @@ impl ObservabilityNetworkServer {
     /// Start the network server
     pub async fn start(&self) -> Result<(), ObservabilityError> {
         let bind_addr = format!("{}:{}", self.bind_address, self.port);
-        let listener = TcpListener::bind(&bind_addr).await
-            .map_err(|e| ObservabilityError::Internal(format!("Failed to bind to {}: {}", bind_addr, e)))?;
+        let listener = TcpListener::bind(&bind_addr).await.map_err(|e| {
+            ObservabilityError::Internal(format!("Failed to bind to {}: {}", bind_addr, e))
+        })?;
 
         // Update server state
         {
@@ -364,7 +365,9 @@ impl ObservabilityNetworkServer {
                                 connections_clone,
                                 handler_clone,
                                 state_clone,
-                            ).await {
+                            )
+                            .await
+                            {
                                 eprintln!("Connection handling error: {}", e);
                             }
                         });
@@ -383,7 +386,7 @@ impl ObservabilityNetworkServer {
     pub async fn stop(&self) -> Result<(), ObservabilityError> {
         let mut state = self.server_state.write().await;
         state.running = false;
-        
+
         // Close all active connections
         let mut connections = self.connections.write().await;
         connections.clear();
@@ -400,11 +403,11 @@ impl ObservabilityNetworkServer {
         server_state: Arc<RwLock<ServerState>>,
     ) -> Result<(), ObservabilityError> {
         let mut buffer = vec![0; 8192]; // 8KB buffer for high performance
-        
+
         loop {
             // Set timeout for 100μs target performance
             let read_result = timeout(Duration::from_micros(100), stream.readable()).await;
-            
+
             match read_result {
                 Ok(_) => {
                     // Connection is readable, process request
@@ -415,14 +418,14 @@ impl ObservabilityNetworkServer {
                         }
                         Ok(n) => {
                             let request_start = Instant::now();
-                            
+
                             // Parse request (simplified HTTP-like protocol)
                             let request_data = &buffer[..n];
                             let request = Self::parse_request(connection_id, request_data)?;
-                            
+
                             // Handle request
                             let response = handler.handle_request(request).await?;
-                            
+
                             // Send response
                             let response_data = Self::serialize_response(&response)?;
                             if let Err(e) = stream.try_write(&response_data) {
@@ -433,7 +436,7 @@ impl ObservabilityNetworkServer {
                             // Record performance (targeting 100μs)
                             let request_duration = request_start.elapsed();
                             let latency_us = request_duration.as_micros() as u64;
-                            
+
                             // Update connection stats
                             {
                                 let mut connections_guard = connections.write().await;
@@ -487,11 +490,14 @@ impl ObservabilityNetworkServer {
     }
 
     /// Parse incoming request (simplified protocol)
-    fn parse_request(connection_id: Uuid, data: &[u8]) -> Result<ProtocolRequest, ObservabilityError> {
+    fn parse_request(
+        connection_id: Uuid,
+        data: &[u8],
+    ) -> Result<ProtocolRequest, ObservabilityError> {
         // Simplified HTTP-like request parsing for maximum performance
         let request_str = String::from_utf8_lossy(data);
         let lines: Vec<&str> = request_str.lines().collect();
-        
+
         if lines.is_empty() {
             return Err(ObservabilityError::Internal("Empty request".to_string()));
         }
@@ -499,12 +505,14 @@ impl ObservabilityNetworkServer {
         // Parse request line (METHOD PATH HTTP/1.1)
         let request_line_parts: Vec<&str> = lines[0].split_whitespace().collect();
         if request_line_parts.len() < 2 {
-            return Err(ObservabilityError::Internal("Invalid request line".to_string()));
+            return Err(ObservabilityError::Internal(
+                "Invalid request line".to_string(),
+            ));
         }
 
         let method = request_line_parts[0].to_string();
         let path_and_query = request_line_parts[1];
-        
+
         // Split path and query parameters
         let (path, query_params) = if let Some(query_start) = path_and_query.find('?') {
             let path = path_and_query[..query_start].to_string();
@@ -518,13 +526,13 @@ impl ObservabilityNetworkServer {
         // Parse headers
         let mut headers = HashMap::new();
         let mut body_start = 1;
-        
+
         for (i, line) in lines.iter().enumerate().skip(1) {
             if line.is_empty() {
                 body_start = i + 1;
                 break;
             }
-            
+
             if let Some(colon_pos) = line.find(':') {
                 let key = line[..colon_pos].trim().to_lowercase();
                 let value = line[colon_pos + 1..].trim().to_string();
@@ -554,7 +562,7 @@ impl ObservabilityNetworkServer {
     /// Parse query parameters
     fn parse_query_params(query_str: &str) -> HashMap<String, String> {
         let mut params = HashMap::new();
-        
+
         for param in query_str.split('&') {
             if let Some(eq_pos) = param.find('=') {
                 let key = param[..eq_pos].to_string();
@@ -562,41 +570,41 @@ impl ObservabilityNetworkServer {
                 params.insert(key, value);
             }
         }
-        
+
         params
     }
 
     /// Serialize response to bytes
     fn serialize_response(response: &ProtocolResponse) -> Result<Vec<u8>, ObservabilityError> {
         let mut response_data = Vec::new();
-        
+
         // Status line
         let status_line = format!("HTTP/1.1 {} OK\r\n", response.status_code);
         response_data.extend_from_slice(status_line.as_bytes());
-        
+
         // Headers
         for (key, value) in &response.headers {
             let header_line = format!("{}: {}\r\n", key, value);
             response_data.extend_from_slice(header_line.as_bytes());
         }
-        
+
         // Content-Length header
         let content_length = format!("Content-Length: {}\r\n", response.body.len());
         response_data.extend_from_slice(content_length.as_bytes());
-        
+
         // End of headers
         response_data.extend_from_slice(b"\r\n");
-        
+
         // Body
         response_data.extend_from_slice(&response.body);
-        
+
         Ok(response_data)
     }
 
     /// Get server health status
     pub async fn health(&self) -> HealthStatus {
         let state = self.server_state.read().await;
-        
+
         if state.running {
             let connections = self.connections.read().await;
             if connections.len() < self.max_connections {
@@ -613,13 +621,13 @@ impl ObservabilityNetworkServer {
     pub async fn performance_metrics(&self) -> AdapterPerformanceMetrics {
         let performance = self.performance_metrics.read().await;
         let state = self.server_state.read().await;
-        
+
         AdapterPerformanceMetrics {
             avg_latency_us: performance.avg_request_latency_us,
             p95_latency_us: performance.p95_request_latency_us,
             p99_latency_us: performance.p99_request_latency_us,
             throughput_ops: performance.requests_per_second,
-            memory_usage_bytes: 0, // Would be calculated separately
+            memory_usage_bytes: 0,  // Would be calculated separately
             cpu_usage_percent: 0.0, // Would be calculated separately
             network_bytes_sent: state.total_bytes,
             network_bytes_received: state.total_bytes,
@@ -637,22 +645,29 @@ impl ConnectionHandler {
     }
 
     /// Register protocol handler
-    pub async fn register_handler(&self, protocol: AdapterProtocol, handler: Box<dyn ProtocolHandler>) {
+    pub async fn register_handler(
+        &self,
+        protocol: AdapterProtocol,
+        handler: Box<dyn ProtocolHandler>,
+    ) {
         let mut handlers = self.handlers.write().await;
         handlers.insert(protocol, handler);
     }
 
     /// Handle incoming request
-    pub async fn handle_request(&self, request: ProtocolRequest) -> Result<ProtocolResponse, ObservabilityError> {
+    pub async fn handle_request(
+        &self,
+        request: ProtocolRequest,
+    ) -> Result<ProtocolResponse, ObservabilityError> {
         let start_time = Instant::now();
-        
+
         // Determine protocol from request
         let protocol = self.detect_protocol(&request);
-        
+
         // Get appropriate handler
         let handlers = self.handlers.read().await;
         let handler = handlers.get(&protocol);
-        
+
         let response = if let Some(handler) = handler {
             handler.handle_request(request).await?
         } else {
@@ -673,9 +688,14 @@ impl ConnectionHandler {
         // Detect protocol based on path, headers, or content
         if request.path.starts_with("/metrics") {
             AdapterProtocol::Http // Prometheus
-        } else if request.path.starts_with("/v1/traces") || request.path.starts_with("/v1/metrics") {
+        } else if request.path.starts_with("/v1/traces") || request.path.starts_with("/v1/metrics")
+        {
             AdapterProtocol::Grpc // OpenTelemetry
-        } else if request.headers.get("user-agent").map_or(false, |ua| ua.contains("Jaeger")) {
+        } else if request
+            .headers
+            .get("user-agent")
+            .map_or(false, |ua| ua.contains("Jaeger"))
+        {
             AdapterProtocol::Http // Jaeger
         } else if request.headers.get("authorization").is_some() {
             AdapterProtocol::Https // Grafana (typically uses auth)

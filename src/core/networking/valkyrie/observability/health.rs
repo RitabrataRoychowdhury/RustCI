@@ -1,12 +1,11 @@
 // Health monitoring system
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio::time::interval;
-use serde::{Serialize, Deserialize};
-
 
 use super::ObservabilityError;
 
@@ -167,7 +166,7 @@ impl HealthMonitor {
 
             while *running_flag.read().await {
                 check_interval.tick().await;
-                
+
                 let checks_guard = checks.read().await;
                 let checks_to_run: Vec<_> = checks_guard.values().cloned().collect();
                 drop(checks_guard);
@@ -214,10 +213,10 @@ impl HealthMonitor {
     pub async fn unregister_check(&self, check_id: &str) -> Result<(), ObservabilityError> {
         let mut checks = self.checks.write().await;
         let mut results = self.results.write().await;
-        
+
         checks.remove(check_id);
         results.remove(check_id);
-        
+
         Ok(())
     }
 
@@ -236,7 +235,7 @@ impl HealthMonitor {
     /// Get overall system health status
     pub async fn overall_status(&self) -> HealthStatus {
         let results = self.results.read().await;
-        
+
         if results.is_empty() {
             return HealthStatus::Unknown;
         }
@@ -271,7 +270,7 @@ impl HealthMonitor {
     pub async fn summary(&self) -> HealthSummary {
         let results = self.results.read().await;
         let overall_status = self.overall_status().await;
-        
+
         let mut healthy_checks = 0;
         let mut degraded_checks = 0;
         let mut unhealthy_checks = 0;
@@ -311,24 +310,22 @@ impl HealthMonitor {
             .as_secs();
 
         let (status, message, data) = match &check.check_type {
-            HealthCheckType::Ping { endpoint } => {
-                Self::execute_ping_check(endpoint).await
-            }
-            HealthCheckType::Http { url, expected_status } => {
-                Self::execute_http_check(url, *expected_status).await
-            }
-            HealthCheckType::TcpPort { host, port } => {
-                Self::execute_tcp_check(host, *port).await
-            }
+            HealthCheckType::Ping { endpoint } => Self::execute_ping_check(endpoint).await,
+            HealthCheckType::Http {
+                url,
+                expected_status,
+            } => Self::execute_http_check(url, *expected_status).await,
+            HealthCheckType::TcpPort { host, port } => Self::execute_tcp_check(host, *port).await,
             HealthCheckType::Memory { max_usage_percent } => {
                 Self::execute_memory_check(*max_usage_percent).await
             }
             HealthCheckType::Cpu { max_usage_percent } => {
                 Self::execute_cpu_check(*max_usage_percent).await
             }
-            HealthCheckType::Disk { path, min_free_percent } => {
-                Self::execute_disk_check(path, *min_free_percent).await
-            }
+            HealthCheckType::Disk {
+                path,
+                min_free_percent,
+            } => Self::execute_disk_check(path, *min_free_percent).await,
             HealthCheckType::Command { command, args } => {
                 Self::execute_command_check(command, args).await
             }
@@ -345,7 +342,7 @@ impl HealthMonitor {
         // Get previous result for consecutive counts
         let (consecutive_failures, consecutive_successes) = match status {
             HealthStatus::Healthy => (0, 1), // Reset failures, increment successes
-            _ => (1, 0), // Increment failures, reset successes
+            _ => (1, 0),                     // Increment failures, reset successes
         };
 
         HealthCheckResult {
@@ -361,7 +358,9 @@ impl HealthMonitor {
     }
 
     /// Execute ping check
-    async fn execute_ping_check(endpoint: &str) -> (HealthStatus, String, HashMap<String, serde_json::Value>) {
+    async fn execute_ping_check(
+        endpoint: &str,
+    ) -> (HealthStatus, String, HashMap<String, serde_json::Value>) {
         // Simple connectivity check (simplified implementation)
         match tokio::net::TcpStream::connect(endpoint).await {
             Ok(_) => (
@@ -416,7 +415,7 @@ impl HealthMonitor {
     ) -> (HealthStatus, String, HashMap<String, serde_json::Value>) {
         // Memory usage check (simplified implementation)
         let usage_percent = 50.0; // Placeholder value
-        
+
         let status = if usage_percent > max_usage_percent {
             HealthStatus::Unhealthy
         } else if usage_percent > max_usage_percent * 0.8 {
@@ -426,15 +425,12 @@ impl HealthMonitor {
         };
 
         let mut data = HashMap::new();
-        data.insert("usage_percent".to_string(), serde_json::Value::Number(
-            serde_json::Number::from_f64(usage_percent).unwrap()
-        ));
+        data.insert(
+            "usage_percent".to_string(),
+            serde_json::Value::Number(serde_json::Number::from_f64(usage_percent).unwrap()),
+        );
 
-        (
-            status,
-            format!("Memory usage: {:.1}%", usage_percent),
-            data,
-        )
+        (status, format!("Memory usage: {:.1}%", usage_percent), data)
     }
 
     /// Execute CPU usage check
@@ -443,7 +439,7 @@ impl HealthMonitor {
     ) -> (HealthStatus, String, HashMap<String, serde_json::Value>) {
         // CPU usage check (simplified implementation)
         let usage_percent = 30.0; // Placeholder value
-        
+
         let status = if usage_percent > max_usage_percent {
             HealthStatus::Unhealthy
         } else if usage_percent > max_usage_percent * 0.8 {
@@ -453,15 +449,12 @@ impl HealthMonitor {
         };
 
         let mut data = HashMap::new();
-        data.insert("usage_percent".to_string(), serde_json::Value::Number(
-            serde_json::Number::from_f64(usage_percent).unwrap()
-        ));
+        data.insert(
+            "usage_percent".to_string(),
+            serde_json::Value::Number(serde_json::Number::from_f64(usage_percent).unwrap()),
+        );
 
-        (
-            status,
-            format!("CPU usage: {:.1}%", usage_percent),
-            data,
-        )
+        (status, format!("CPU usage: {:.1}%", usage_percent), data)
     }
 
     /// Execute disk space check
@@ -471,7 +464,7 @@ impl HealthMonitor {
     ) -> (HealthStatus, String, HashMap<String, serde_json::Value>) {
         // Disk space check (simplified implementation)
         let free_percent = 75.0; // Placeholder value
-        
+
         let status = if free_percent < min_free_percent {
             HealthStatus::Unhealthy
         } else if free_percent < min_free_percent * 1.2 {
@@ -481,9 +474,10 @@ impl HealthMonitor {
         };
 
         let mut data = HashMap::new();
-        data.insert("free_percent".to_string(), serde_json::Value::Number(
-            serde_json::Number::from_f64(free_percent).unwrap()
-        ));
+        data.insert(
+            "free_percent".to_string(),
+            serde_json::Value::Number(serde_json::Number::from_f64(free_percent).unwrap()),
+        );
 
         (
             status,
@@ -541,7 +535,9 @@ impl HealthMonitor {
             id: "system_memory".to_string(),
             name: "System Memory Usage".to_string(),
             description: "Monitor system memory usage".to_string(),
-            check_type: HealthCheckType::Memory { max_usage_percent: 90.0 },
+            check_type: HealthCheckType::Memory {
+                max_usage_percent: 90.0,
+            },
             config: HealthCheckConfig {
                 parameters: HashMap::new(),
                 environment: HashMap::new(),
@@ -560,7 +556,9 @@ impl HealthMonitor {
             id: "system_cpu".to_string(),
             name: "System CPU Usage".to_string(),
             description: "Monitor system CPU usage".to_string(),
-            check_type: HealthCheckType::Cpu { max_usage_percent: 95.0 },
+            check_type: HealthCheckType::Cpu {
+                max_usage_percent: 95.0,
+            },
             config: HealthCheckConfig {
                 parameters: HashMap::new(),
                 environment: HashMap::new(),

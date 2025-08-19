@@ -443,11 +443,11 @@ impl RunnerCapabilityDetector {
         // Detect protocol support
         if self.config.parallel_detection {
             // Run detections in parallel
-            let _protocol_task = self.detect_protocol_support(endpoint);
-            let _hardware_task = self.detect_hardware_capabilities(endpoint);
-            let _software_task = self.detect_software_capabilities(endpoint);
-            let _performance_task = self.detect_performance_capabilities(endpoint);
-            let _network_task = self.detect_network_capabilities(endpoint);
+            let protocol_task = self.detect_protocol_support(endpoint);
+            let hardware_task = self.detect_hardware_capabilities(endpoint);
+            let software_task = self.detect_software_capabilities(endpoint);
+            let performance_task = self.detect_performance_capabilities(endpoint);
+            let network_task = self.detect_network_capabilities(endpoint);
             let security_task = self.detect_security_capabilities(endpoint);
             
             let (protocol, hardware, software, performance, network, security) = tokio::try_join!(

@@ -1,15 +1,15 @@
 // RustCI core compilation tests
 // Verifies that core RustCI components compile and work correctly
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use std::collections::HashMap;
 
 /// Test basic RustCI error handling
 #[tokio::test]
 async fn test_rustci_error_handling() {
     use RustAutoDevOps::error::{AppError, Result};
-    
+
     // Test that we can create and handle different error types
     let validation_error = AppError::ValidationError("Test validation error".to_string());
     let database_error = AppError::DatabaseError("Test database error".to_string());
@@ -17,16 +17,19 @@ async fn test_rustci_error_handling() {
         component: "test".to_string(),
         message: "Test internal error".to_string(),
     };
-    
+
     // Test error conversion
     let result: Result<()> = Err(validation_error);
     assert!(result.is_err());
-    
+
     // Test new error types
     let security_context_error = AppError::SecurityContextNotFound("Test context".to_string());
     let congestion_error = AppError::CongestionControl("Test congestion".to_string());
-    
-    assert!(matches!(security_context_error, AppError::SecurityContextNotFound(_)));
+
+    assert!(matches!(
+        security_context_error,
+        AppError::SecurityContextNotFound(_)
+    ));
     assert!(matches!(congestion_error, AppError::CongestionControl(_)));
 }
 
@@ -34,7 +37,7 @@ async fn test_rustci_error_handling() {
 #[tokio::test]
 async fn test_rustci_configuration() {
     use RustAutoDevOps::config::app_config::AppConfig;
-    
+
     // Test that we can create basic configuration
     let config = AppConfig {
         database_url: "mongodb://localhost:27017".to_string(),
@@ -53,7 +56,7 @@ async fn test_rustci_configuration() {
         enable_tracing: true,
         jaeger_endpoint: Some("http://localhost:14268/api/traces".to_string()),
     };
-    
+
     assert_eq!(config.server_port, 8080);
     assert!(config.enable_metrics);
     assert!(config.enable_tracing);
@@ -62,8 +65,8 @@ async fn test_rustci_configuration() {
 /// Test RustCI job system
 #[tokio::test]
 async fn test_rustci_job_system() {
-    use RustAutoDevOps::core::jobs::async_jobs::{JobMetadata, JobStatus, JobResult};
-    
+    use RustAutoDevOps::core::jobs::async_jobs::{JobMetadata, JobResult, JobStatus};
+
     // Test job metadata creation
     let metadata = JobMetadata {
         correlation_id: Some("test-correlation".to_string()),
@@ -79,14 +82,17 @@ async fn test_rustci_job_system() {
             tags
         },
     };
-    
-    assert_eq!(metadata.correlation_id, Some("test-correlation".to_string()));
+
+    assert_eq!(
+        metadata.correlation_id,
+        Some("test-correlation".to_string())
+    );
     assert_eq!(metadata.user_id, Some("user-123".to_string()));
-    
+
     // Test job status
     let status = JobStatus::Pending;
     assert_eq!(status, JobStatus::Pending);
-    
+
     let running_status = JobStatus::Running;
     assert_eq!(running_status, JobStatus::Running);
 }
@@ -94,24 +100,22 @@ async fn test_rustci_job_system() {
 /// Test RustCI runner system
 #[tokio::test]
 async fn test_rustci_runner_system() {
-    use RustAutoDevOps::infrastructure::runners::{
-        RunnerStatus, RunnerCapability, RunnerMetadata
-    };
-    
+    use RustAutoDevOps::infrastructure::runners::{RunnerCapability, RunnerMetadata, RunnerStatus};
+
     // Test runner status
     let status = RunnerStatus::Available;
     assert_eq!(status, RunnerStatus::Available);
-    
+
     // Test runner capabilities
     let capabilities = vec![
         RunnerCapability::Docker,
         RunnerCapability::Kubernetes,
         RunnerCapability::Native,
     ];
-    
+
     assert!(capabilities.contains(&RunnerCapability::Docker));
     assert!(capabilities.contains(&RunnerCapability::Kubernetes));
-    
+
     // Test runner metadata
     let metadata = RunnerMetadata {
         name: "test-runner".to_string(),
@@ -124,9 +128,13 @@ async fn test_rustci_runner_system() {
             tags
         },
         max_concurrent_jobs: 5,
-        supported_job_types: vec!["build".to_string(), "test".to_string(), "deploy".to_string()],
+        supported_job_types: vec![
+            "build".to_string(),
+            "test".to_string(),
+            "deploy".to_string(),
+        ],
     };
-    
+
     assert_eq!(metadata.name, "test-runner");
     assert_eq!(metadata.max_concurrent_jobs, 5);
     assert!(metadata.supported_job_types.contains(&"build".to_string()));
@@ -135,8 +143,8 @@ async fn test_rustci_runner_system() {
 /// Test RustCI pipeline system
 #[tokio::test]
 async fn test_rustci_pipeline_system() {
-    use RustAutoDevOps::ci::config::{PipelineConfig, StageConfig, JobConfig};
-    
+    use RustAutoDevOps::ci::config::{JobConfig, PipelineConfig, StageConfig};
+
     // Test pipeline configuration
     let job_config = JobConfig {
         name: "test-job".to_string(),
@@ -155,14 +163,14 @@ async fn test_rustci_pipeline_system() {
         dependencies: vec![],
         tags: vec!["rust".to_string(), "build".to_string()],
     };
-    
+
     let stage_config = StageConfig {
         name: "build".to_string(),
         jobs: vec![job_config],
         when: None,
         dependencies: vec![],
     };
-    
+
     let pipeline_config = PipelineConfig {
         version: "1.0".to_string(),
         stages: vec![stage_config],
@@ -174,7 +182,7 @@ async fn test_rustci_pipeline_system() {
         image: None,
         services: vec![],
     };
-    
+
     assert_eq!(pipeline_config.version, "1.0");
     assert_eq!(pipeline_config.stages.len(), 1);
     assert_eq!(pipeline_config.stages[0].name, "build");
@@ -184,14 +192,14 @@ async fn test_rustci_pipeline_system() {
 #[tokio::test]
 async fn test_rustci_workspace_system() {
     use RustAutoDevOps::application::services::workspace::WorkspaceService;
-    
+
     // Test that workspace service can be created (tests compilation)
     // Note: We're not actually creating a real service here, just testing compilation
-    
+
     // Test workspace-related types
     let workspace_id = uuid::Uuid::new_v4();
     let user_id = uuid::Uuid::new_v4();
-    
+
     assert_ne!(workspace_id, user_id);
 }
 
@@ -200,14 +208,14 @@ async fn test_rustci_workspace_system() {
 async fn test_rustci_api_handlers_compilation() {
     // Test that we can import and reference the handler modules
     // This tests that they compile correctly
-    
+
     use RustAutoDevOps::application::handlers::{
-        ci, cluster, control_plane, dockerfile, pr, repository, runner, workspace
+        ci, cluster, control_plane, dockerfile, pr, repository, runner, workspace,
     };
-    
+
     // Just test that the modules exist and compile
     // We're not testing actual functionality here, just compilation
-    
+
     assert!(true); // Placeholder assertion
 }
 
@@ -215,9 +223,9 @@ async fn test_rustci_api_handlers_compilation() {
 #[tokio::test]
 async fn test_rustci_middleware_compilation() {
     use RustAutoDevOps::presentation::middleware::{
-        comprehensive, pipeline_manager, rate_limit, security_pipeline
+        comprehensive, pipeline_manager, rate_limit, security_pipeline,
     };
-    
+
     // Test that middleware modules compile
     assert!(true); // Placeholder assertion
 }
@@ -226,7 +234,7 @@ async fn test_rustci_middleware_compilation() {
 #[tokio::test]
 async fn test_rustci_database_types() {
     use RustAutoDevOps::domain::entities::{cluster, runner};
-    
+
     // Test that entity modules compile
     assert!(true); // Placeholder assertion
 }
@@ -238,7 +246,7 @@ async fn test_rustci_valkyrie_integration() {
     use RustAutoDevOps::application::services::valkyrie_integration::ValkyrieIntegrationService;
     use RustAutoDevOps::config::valkyrie_integration::ValkyrieIntegrationConfig;
     use RustAutoDevOps::infrastructure::runners::valkyrie_adapter::ValkyrieRunnerAdapter;
-    
+
     // Test that Valkyrie integration components compile
     let config = ValkyrieIntegrationConfig {
         enabled: true,
@@ -251,7 +259,7 @@ async fn test_rustci_valkyrie_integration() {
         performance_monitoring_enabled: true,
         health_check_interval: Duration::from_secs(30),
     };
-    
+
     // Test service creation
     let service_result = ValkyrieIntegrationService::new(config);
     assert!(service_result.is_ok());
@@ -260,12 +268,12 @@ async fn test_rustci_valkyrie_integration() {
 /// Test that all major RustCI components can be imported and used together
 #[tokio::test]
 async fn test_rustci_full_integration() {
-    use RustAutoDevOps::error::AppError;
     use RustAutoDevOps::config::app_config::AppConfig;
     use RustAutoDevOps::core::networking::valkyrie::observability::adapter_system::{
-        ObservabilityManager, ObservabilityConfig, LogLevel
+        LogLevel, ObservabilityConfig, ObservabilityManager,
     };
-    
+    use RustAutoDevOps::error::AppError;
+
     // Test that we can create a basic RustCI setup
     let app_config = AppConfig {
         database_url: "mongodb://localhost:27017".to_string(),
@@ -284,25 +292,30 @@ async fn test_rustci_full_integration() {
         enable_tracing: true,
         jaeger_endpoint: Some("http://localhost:14268/api/traces".to_string()),
     };
-    
+
     // Test observability integration
     let obs_config = ObservabilityConfig::default();
     let obs_manager = ObservabilityManager::with_config(obs_config);
-    
+
     // Test that we can use observability for RustCI operations
-    obs_manager.record_counter("rustci_requests_total", 1, &[("endpoint", "/api/v1/jobs")]).await;
-    obs_manager.log(LogLevel::Info, "RustCI system initialized", &[
-        ("version", "1.0.0"),
-        ("environment", "test")
-    ]).await;
-    
+    obs_manager
+        .record_counter("rustci_requests_total", 1, &[("endpoint", "/api/v1/jobs")])
+        .await;
+    obs_manager
+        .log(
+            LogLevel::Info,
+            "RustCI system initialized",
+            &[("version", "1.0.0"), ("environment", "test")],
+        )
+        .await;
+
     // Test error handling
     let error = AppError::ValidationError("Test error".to_string());
     assert!(matches!(error, AppError::ValidationError(_)));
-    
+
     // Test that everything integrates
     assert_eq!(app_config.server_port, 8080);
-    
+
     let health = obs_manager.get_adapter_health().await;
     assert!(!health.is_empty());
 }

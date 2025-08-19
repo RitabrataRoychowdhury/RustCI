@@ -2,8 +2,8 @@
 // Task 3.1.1.2 & 3.1.1.3: Shortest Path and Load-Aware Algorithms
 
 use super::*;
-use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
@@ -109,12 +109,8 @@ pub trait CostModel: Send + Sync {
 /// Trait for machine learning models
 #[async_trait::async_trait]
 pub trait MLModel: Send + Sync {
-    async fn predict_route_quality(
-        &self,
-        route: &Route,
-        context: &RoutingContext,
-    ) -> f64;
-    
+    async fn predict_route_quality(&self, route: &Route, context: &RoutingContext) -> f64;
+
     async fn train(&mut self, training_data: &[TrainingExample]);
 }
 
@@ -167,11 +163,12 @@ impl DijkstraStrategy {
     ) -> Result<Route, RoutingError> {
         let mut path = Vec::new();
         let mut current = *destination;
-        
+
         // Reconstruct path from destination to source
         while current != *source {
             path.push(current);
-            current = *previous.get(&current)
+            current = *previous
+                .get(&current)
                 .ok_or_else(|| RoutingError::NoRouteFound {
                     source: *source,
                     destination: *destination,
@@ -190,9 +187,11 @@ impl DijkstraStrategy {
         for window in path.windows(2) {
             let from = window[0];
             let to = window[1];
-            
+
             // Find the link between these nodes
-            let link = topology.links.values()
+            let link = topology
+                .links
+                .values()
                 .find(|link| link.from == from && link.to == to)
                 .ok_or_else(|| RoutingError::Internal {
                     message: format!("Link not found between {} and {}", from, to),
@@ -206,7 +205,9 @@ impl DijkstraStrategy {
                 latency: link.latency,
                 bandwidth: link.bandwidth,
                 reliability: link.reliability,
-                security_level: topology.nodes.get(&to)
+                security_level: topology
+                    .nodes
+                    .get(&to)
                     .map(|n| n.security_level)
                     .unwrap_or(SecurityLevel::Internal),
             };
@@ -215,7 +216,7 @@ impl DijkstraStrategy {
             total_latency += hop.latency;
             min_bandwidth = min_bandwidth.min(hop.bandwidth);
             reliability_product *= hop.reliability;
-            
+
             hops.push(hop);
         }
 
@@ -244,7 +245,7 @@ impl RoutingStrategy for DijkstraStrategy {
         topology: &NetworkTopology,
     ) -> Result<Route, RoutingError> {
         let start_time = Instant::now();
-        
+
         // Check if source and destination exist
         if !topology.nodes.contains_key(source) {
             return Err(RoutingError::InvalidContext {
@@ -286,17 +287,23 @@ impl RoutingStrategy for DijkstraStrategy {
 
         // Initialize distances
         for node_id in topology.nodes.keys() {
-            let distance = if node_id == source { 0.0 } else { f64::INFINITY };
+            let distance = if node_id == source {
+                0.0
+            } else {
+                f64::INFINITY
+            };
             distances.insert(*node_id, distance);
             unvisited.push((std::cmp::Reverse(OrderedFloat(distance)), *node_id));
         }
 
-        while let Some((std::cmp::Reverse(OrderedFloat(current_distance)), current_node)) = unvisited.pop() {
+        while let Some((std::cmp::Reverse(OrderedFloat(current_distance)), current_node)) =
+            unvisited.pop()
+        {
             // Skip if we've already visited this node
             if visited.contains(&current_node) {
                 continue;
             }
-            
+
             visited.insert(current_node);
 
             // If we reached the destination, we're done
@@ -319,14 +326,15 @@ impl RoutingStrategy for DijkstraStrategy {
             // Examine neighbors
             for link in topology.get_outgoing_links(&current_node) {
                 let neighbor = link.to;
-                
+
                 // Skip if already visited
                 if visited.contains(&neighbor) {
                     continue;
                 }
 
                 // Calculate cost for this link
-                let link_cost = self.cost_calculator
+                let link_cost = self
+                    .cost_calculator
                     .calculate_cost(link, context, None)
                     .await;
 
@@ -348,7 +356,8 @@ impl RoutingStrategy for DijkstraStrategy {
             });
         }
 
-        self.reconstruct_path(source, destination, &previous, topology).await
+        self.reconstruct_path(source, destination, &previous, topology)
+            .await
     }
 
     fn get_algorithm_type(&self) -> RoutingAlgorithm {
@@ -408,10 +417,11 @@ impl RoutingStrategy for LoadAwareStrategy {
 
         // Initialize scores
         g_score.insert(*source, 0.0);
-        let h_score = self.heuristic_calculator
-            .calculate_heuristic(source, destination, topology, context);
+        let h_score =
+            self.heuristic_calculator
+                .calculate_heuristic(source, destination, topology, context);
         f_score.insert(*source, h_score);
-        
+
         open_set.push((std::cmp::Reverse(OrderedFloat(h_score)), *source));
 
         while let Some((_, current)) = open_set.pop() {
@@ -419,12 +429,14 @@ impl RoutingStrategy for LoadAwareStrategy {
             if closed_set.contains(&current) {
                 continue;
             }
-            
+
             closed_set.insert(current);
 
             // Check if we reached the destination
             if current == *destination {
-                return self.reconstruct_astar_path(source, destination, &came_from, topology).await;
+                return self
+                    .reconstruct_astar_path(source, destination, &came_from, topology)
+                    .await;
             }
 
             // Check timeout
@@ -437,16 +449,17 @@ impl RoutingStrategy for LoadAwareStrategy {
             // Examine neighbors
             for link in topology.get_outgoing_links(&current) {
                 let neighbor = link.to;
-                
+
                 if closed_set.contains(&neighbor) {
                     continue;
                 }
 
                 // Get current load for this link
                 let current_load = self.load_monitor.get_link_load(&link.id).await;
-                
+
                 // Calculate load-aware cost
-                let link_cost = self.cost_calculator
+                let link_cost = self
+                    .cost_calculator
                     .calculate_cost(link, context, current_load)
                     .await;
 
@@ -455,12 +468,16 @@ impl RoutingStrategy for LoadAwareStrategy {
                 if tentative_g_score < *g_score.get(&neighbor).unwrap_or(&f64::INFINITY) {
                     came_from.insert(neighbor, current);
                     g_score.insert(neighbor, tentative_g_score);
-                    
-                    let h_score = self.heuristic_calculator
-                        .calculate_heuristic(&neighbor, destination, topology, context);
+
+                    let h_score = self.heuristic_calculator.calculate_heuristic(
+                        &neighbor,
+                        destination,
+                        topology,
+                        context,
+                    );
                     let f = tentative_g_score + h_score;
                     f_score.insert(neighbor, f);
-                    
+
                     open_set.push((std::cmp::Reverse(OrderedFloat(f)), neighbor));
                 }
             }
@@ -504,10 +521,11 @@ impl LoadAwareStrategy {
     ) -> Result<Route, RoutingError> {
         let mut path = Vec::new();
         let mut current = *destination;
-        
+
         while current != *source {
             path.push(current);
-            current = *came_from.get(&current)
+            current = *came_from
+                .get(&current)
                 .ok_or_else(|| RoutingError::NoRouteFound {
                     source: *source,
                     destination: *destination,
@@ -526,16 +544,23 @@ impl LoadAwareStrategy {
         for window in path.windows(2) {
             let from = window[0];
             let to = window[1];
-            
-            let link = topology.links.values()
+
+            let link = topology
+                .links
+                .values()
                 .find(|link| link.from == from && link.to == to)
                 .ok_or_else(|| RoutingError::Internal {
                     message: format!("Link not found between {} and {}", from, to),
                 })?;
 
             // Get current load and adjust metrics
-            let current_load = self.load_monitor.get_link_load(&link.id).await.unwrap_or(0.0);
-            let load_adjusted_cost = self.cost_calculator
+            let current_load = self
+                .load_monitor
+                .get_link_load(&link.id)
+                .await
+                .unwrap_or(0.0);
+            let load_adjusted_cost = self
+                .cost_calculator
                 .calculate_cost(link, &RoutingContext::default(), Some(current_load))
                 .await;
 
@@ -547,7 +572,9 @@ impl LoadAwareStrategy {
                 latency: link.latency,
                 bandwidth: link.bandwidth,
                 reliability: link.reliability * (1.0 - current_load * 0.1), // Reduce reliability with load
-                security_level: topology.nodes.get(&to)
+                security_level: topology
+                    .nodes
+                    .get(&to)
                     .map(|n| n.security_level)
                     .unwrap_or(SecurityLevel::Internal),
             };
@@ -556,7 +583,7 @@ impl LoadAwareStrategy {
             total_latency += hop.latency;
             min_bandwidth = min_bandwidth.min(hop.bandwidth);
             reliability_product *= hop.reliability;
-            
+
             hops.push(hop);
         }
 
@@ -593,12 +620,12 @@ impl CostCalculator for DefaultCostCalculator {
         current_load: Option<f64>,
     ) -> f64 {
         let mut cost = link.cost;
-        
+
         // Adjust for current load
         if let Some(load) = current_load {
             cost *= 1.0 + load * 2.0; // Exponential cost increase with load
         }
-        
+
         // Adjust for QoS requirements
         match context.qos_requirements.priority {
             MessagePriority::Critical => cost *= 0.5, // Prefer faster routes
@@ -607,28 +634,28 @@ impl CostCalculator for DefaultCostCalculator {
             MessagePriority::Low => cost *= 1.2,
             MessagePriority::Background => cost *= 1.5,
         }
-        
+
         // Adjust for latency requirements
         if let Some(max_latency) = context.qos_requirements.max_latency {
             if link.latency > max_latency {
                 cost *= 10.0; // Heavy penalty for exceeding latency requirements
             }
         }
-        
+
         // Adjust for bandwidth requirements
         if let Some(min_bandwidth) = context.qos_requirements.min_bandwidth {
             if link.bandwidth < min_bandwidth {
                 cost *= 5.0; // Penalty for insufficient bandwidth
             }
         }
-        
+
         // Adjust for reliability requirements
         if let Some(min_reliability) = context.qos_requirements.reliability_threshold {
             if link.reliability < min_reliability {
                 cost *= 3.0; // Penalty for insufficient reliability
             }
         }
-        
+
         cost
     }
 }
@@ -647,7 +674,7 @@ impl HeuristicCalculator for DefaultHeuristicCalculator {
         // Simple heuristic: use minimum possible cost based on direct distance
         let from_node = topology.nodes.get(from);
         let to_node = topology.nodes.get(to);
-        
+
         match (from_node, to_node) {
             (Some(from_node), Some(to_node)) => {
                 // If nodes are in the same region, use low cost
@@ -708,10 +735,6 @@ impl LoadMonitor for SimpleLoadMonitor {
 
 impl Default for RoutingContext {
     fn default() -> Self {
-        Self::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            QoSRequirements::default(),
-        )
+        Self::new(Uuid::new_v4(), Uuid::new_v4(), QoSRequirements::default())
     }
 }

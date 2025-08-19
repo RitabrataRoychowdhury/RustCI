@@ -12,6 +12,8 @@ pub mod runner_migration;
 pub mod runner_pool;
 
 // Re-export commonly used types
-pub use runner_pool::{RunnerPoolManager, DefaultRunnerPoolManager};
-pub use runner_discovery::{RunnerDiscoveryService, DefaultRunnerDiscoveryService};
-pub use distributed_health_monitoring::{DistributedHealthMonitor, DefaultDistributedHealthMonitor};
+pub use distributed_health_monitoring::{
+    DefaultDistributedHealthMonitor, DistributedHealthMonitor,
+};
+pub use runner_discovery::{DefaultRunnerDiscoveryService, RunnerDiscoveryService};
+pub use runner_pool::{DefaultRunnerPoolManager, RunnerPoolManager};
