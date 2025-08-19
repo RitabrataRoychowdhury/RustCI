@@ -5,6 +5,7 @@
 use super::factory::AdapterBuilder;
 use super::*;
 use crate::error::{Result, ValkyrieError};
+use std::sync::Arc;
 
 /// Docker API Adapter (placeholder implementation)
 pub struct DockerAdapter {
@@ -120,9 +121,9 @@ impl UniversalAdapter for DockerAdapter {
 
 #[async_trait::async_trait]
 impl AdapterBuilder for DockerAdapterBuilder {
-    async fn build(&self, config: &AdapterConfig) -> Result<Box<dyn UniversalAdapter>> {
+    async fn build(&self, config: &AdapterConfig) -> Result<Arc<dyn UniversalAdapter>> {
         let adapter = DockerAdapter::new(config.clone()).await?;
-        Ok(Box::new(adapter))
+        Ok(Arc::new(adapter))
     }
 
     fn adapter_type(&self) -> AdapterType {
@@ -148,3 +149,4 @@ impl AdapterBuilder for DockerAdapterBuilder {
         }
     }
 }
+

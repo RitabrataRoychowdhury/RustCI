@@ -5,9 +5,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use uuid::Uuid;
+use chrono::{DateTime};
 
 use crate::application::services::valkyrie_integration::ValkyrieIntegrationService;
 use crate::config::valkyrie_integration::ValkyrieIntegrationConfig;
@@ -51,7 +52,7 @@ pub struct IntegrationState {
     pub fallback_mode_active: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum IntegrationMode {
     Full,     // Full Valkyrie integration
     Fallback, // HTTP fallback mode
@@ -59,7 +60,7 @@ pub enum IntegrationMode {
     Degraded, // Partial functionality
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum HealthStatus {
     Healthy,
     Degraded,
@@ -695,14 +696,16 @@ impl ValkyrieControlPlaneHandler {
             payload,
             requirements,
             metadata,
-            created_at: Instant::now(),
-            deadline: request.deadline.and_then(|d| {
-                // Parse ISO 8601 timestamp and convert to Instant
-                // For now, just add a default duration
-                Some(Instant::now() + Duration::from_secs(3600))
+            created_at: SystemTime::now(),
+            deadline: request.deadline.as_ref().and_then(|d| {
+                // Parse ISO 8601 string to SystemTime
+                DateTime::parse_from_rfc3339(d)
+                    .ok()
+                    .map(|dt| UNIX_EPOCH + Duration::from_secs(dt.timestamp() as u64))
+                    .or_else(|| Some(SystemTime::now() + Duration::from_secs(3600))) // fallback
             }),
-            routing_hints: None, // Would be converted from request.routing_hints
-            qos_requirements: None, // Would be converted from request.qos_requirements
+            routing_hints: None,       // Would be converted from request.routing_hints
+            qos_requirements: None,    // Would be converted from request.qos_requirements
         })
     }
 
