@@ -167,10 +167,12 @@ impl UniversalAdapterFactory {
         builder.validate_config(&requirements.config)?;
 
         // 4. Build adapter
-        let mut adapter = builder.build(&requirements.config).await?;
+    let adapter = builder.build(&requirements.config).await?;
 
         // 5. Initialize adapter
-        adapter.initialize().await?;
+        // You cannot mutate through Arc<dyn UniversalAdapter>, so call initialize() directly.
+        // If initialize() requires &mut self, you must redesign UniversalAdapter to allow initialization via &self.
+    adapter.initialize().await?;
 
         // 6. Register and monitor adapter
         let adapter_id = *adapter.adapter_id();
@@ -194,9 +196,8 @@ impl UniversalAdapterFactory {
             }
         })?;
 
-        // We need to return Arc<dyn UniversalAdapter>, so let's change the return type
-        // For now, let's create a new Arc from the stored adapter
-        Ok(Arc::new(DummyAdapter { id: adapter_id }))
+        // Return the actual stored adapter (already Arc<dyn UniversalAdapter>)
+        Ok(stored_adapter.value().clone())
     }
 
     /// Get available adapter types with capabilities
@@ -223,9 +224,7 @@ impl UniversalAdapterFactory {
     pub async fn remove_adapter(&self, adapter_id: AdapterId) -> Result<()> {
         if let Some((_, adapter)) = self.active_adapters.remove(&adapter_id) {
             // Graceful shutdown
-            if let Ok(mut adapter) = Arc::try_unwrap(adapter) {
-                adapter.shutdown().await?;
-            }
+            adapter.shutdown().await?;
             info!("Removed adapter: {}", adapter_id);
         }
         Ok(())

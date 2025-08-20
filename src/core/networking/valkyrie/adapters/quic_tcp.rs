@@ -125,9 +125,9 @@ impl UniversalAdapter for QuicTcpAdapter {
 
 #[async_trait::async_trait]
 impl AdapterBuilder for QuicTcpAdapterBuilder {
-    async fn build(&self, config: &AdapterConfig) -> Result<Box<dyn UniversalAdapter>> {
+    async fn build(&self, config: &AdapterConfig) -> Result<std::sync::Arc<dyn UniversalAdapter>> {
         let adapter = QuicTcpAdapter::new(config.clone()).await?;
-        Ok(Box::new(adapter))
+        Ok(std::sync::Arc::new(adapter))
     }
 
     fn adapter_type(&self) -> AdapterType {

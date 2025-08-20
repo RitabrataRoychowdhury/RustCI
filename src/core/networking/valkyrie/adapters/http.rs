@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
+use base64::Engine;
 
 use super::factory::AdapterBuilder;
 use super::*;
@@ -513,9 +514,9 @@ impl HttpAdapterBuilder {
 
 #[async_trait]
 impl AdapterBuilder for HttpAdapterBuilder {
-    async fn build(&self, config: &AdapterConfig) -> Result<Box<dyn UniversalAdapter>> {
+    async fn build(&self, config: &AdapterConfig) -> Result<Arc<dyn UniversalAdapter>> {
         let adapter = HttpAdapter::new(config.clone()).await?;
-        Ok(Box::new(adapter))
+        Ok(Arc::new(adapter))
     }
 
     fn adapter_type(&self) -> AdapterType {

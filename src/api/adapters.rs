@@ -366,6 +366,11 @@ mod tests {
         assert!(result.is_ok());
 
         let engine_message = result.unwrap();
-        assert_eq!(engine_message.payload, b"Hello, World!");
+        match &engine_message.payload {
+            crate::valkyrie::core::message::MessagePayload::Binary(data) => {
+                assert_eq!(data, b"Hello, World!");
+            }
+            _ => panic!("Expected Binary payload"),
+        }
     }
 }

@@ -203,14 +203,14 @@ pub struct CongestionState {
     pub level: f64,
     /// Congestion factors
     pub factors: Vec<CongestionFactor>,
-    /// Detection timestamp
-    pub detected_at: Option<Instant>,
+    /// Detection timestamp (UNIX timestamp in milliseconds)
+    pub detected_at: Option<u64>,
     /// Expected recovery time
     pub expected_recovery: Option<Duration>,
 }
 
 /// Congestion factor
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CongestionFactor {
     /// Factor type
     pub factor_type: CongestionFactorType,
@@ -221,7 +221,7 @@ pub struct CongestionFactor {
 }
 
 /// Congestion factor types
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum CongestionFactorType {
     BandwidthUtilization,
     QueueDepth,
@@ -881,7 +881,12 @@ impl CongestionDetector {
         state.factors = factors;
 
         if congested && state.detected_at.is_none() {
-            state.detected_at = Some(Instant::now());
+            state.detected_at = Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+            );
         } else if !congested {
             state.detected_at = None;
         }

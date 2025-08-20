@@ -581,10 +581,12 @@ impl IntelligentRunnerSelector {
             qos_requirements: job.qos_requirements.clone().unwrap_or_default(),
             security_context: Default::default(),
             routing_hints: crate::core::networking::valkyrie::routing::RoutingHints {
-                preferred_nodes: job.routing_hints.as_ref().map(|h| h.preferred_runners.clone()).unwrap_or_default(),
-                excluded_nodes: job.routing_hints.as_ref().map(|h| h.excluded_runners.clone()).unwrap_or_default(),
-                geographic_preference: job.routing_hints.as_ref().and_then(|h| h.geographic_preference.clone()),
-                performance_requirements: None,
+                avoid_nodes: job.routing_hints.as_ref().map(|h| h.excluded_runners.clone()).unwrap_or_default(),
+                preferred_regions: job.requirements.preferred_regions.clone(),
+                preferred_transports: Vec::new(),
+                cost_weight: None,
+                latency_weight: None,
+                reliability_weight: None,
             },
             deadline: job.deadline,
             created_at: SystemTime::now(),
@@ -592,9 +594,18 @@ impl IntelligentRunnerSelector {
         
         // TODO: Implement routing client integration
         // TODO: Implement routing calculation
-        Ok(())
-            .await
-            .map_err(ValkyrieAdapterError::Routing)
+        Ok(Route {
+            id: todo!(),
+            path: todo!(),
+            hops: todo!(),
+            total_cost: todo!(),
+            estimated_latency: todo!(),
+            reliability_score: todo!(),
+            bandwidth_available: todo!(),
+            expires_at: todo!(),
+            created_at: SystemTime::now(),
+            metadata: todo!(),
+        })
     }
     
     /// Calculate QoS guarantees for the selection

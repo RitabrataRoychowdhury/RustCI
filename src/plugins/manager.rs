@@ -67,7 +67,7 @@ impl PluginManager {
     pub async fn initialize(&self) -> Result<()> {
         if !self.config.enabled {
             info!("Plugin system is disabled");
-            return Ok();
+            return Ok(());
         }
 
         info!("Initializing plugin manager");
@@ -114,13 +114,16 @@ impl PluginManager {
         // Register the plugin
         self.registry.register_plugin(plugin).await?;
 
+        // Clone config so we can use it after update_plugin_config
+        let config_clone = config.clone();
+
         // Update configuration
         self.registry
             .update_plugin_config(&plugin_id, config)
             .await?;
 
         // Start the plugin if auto-start is enabled
-        if config.auto_start {
+        if config_clone.auto_start {
             self.start_plugin(&plugin_id).await?;
         }
 

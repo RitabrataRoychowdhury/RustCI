@@ -406,10 +406,11 @@ mod tests {
     async fn test_opentelemetry_feature_disabled() {
         let result = OpenTelemetryAdapterFactory::create_default().await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("OpenTelemetry feature not enabled"));
+        let err = match result {
+            Err(e) => e,
+            Ok(_) => panic!("Expected error, got Ok"),
+        };
+        assert!(err.to_string().contains("OpenTelemetry feature not enabled"));
     }
 
     #[test]

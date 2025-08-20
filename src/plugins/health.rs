@@ -233,7 +233,7 @@ impl PluginHealthMonitor {
     pub async fn start(&self) -> Result<()> {
         if !self.config.enabled {
             info!("Plugin health monitoring is disabled");
-            return Ok();
+            return Ok(());
         }
 
         info!("Starting plugin health monitoring");

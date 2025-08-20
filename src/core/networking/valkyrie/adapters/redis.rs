@@ -124,9 +124,9 @@ impl UniversalAdapter for RedisAdapter {
 
 #[async_trait::async_trait]
 impl AdapterBuilder for RedisAdapterBuilder {
-    async fn build(&self, config: &AdapterConfig) -> Result<Box<dyn UniversalAdapter>> {
+    async fn build(&self, config: &AdapterConfig) -> Result<std::sync::Arc<dyn UniversalAdapter>> {
         let adapter = RedisAdapter::new(config.clone()).await?;
-        Ok(Box::new(adapter))
+        Ok(std::sync::Arc::new(adapter))
     }
 
     fn adapter_type(&self) -> AdapterType {

@@ -285,7 +285,7 @@ impl AdapterSelectionStrategy for PerformanceBasedStrategy {
             }
             None => {
                 warn!("No suitable adapter found for requirements");
-                Err(ValkyrieError::NoSuitableAdapter)
+                Err(ValkyrieError::NoSuitableAdapter("No suitable adapter found".to_string()))
             }
         }
     }
@@ -353,7 +353,7 @@ impl AdapterSelectionStrategy for ReliabilityBasedStrategy {
             }
         }
 
-        best_adapter.ok_or(ValkyrieError::NoSuitableAdapter)
+        best_adapter.ok_or(ValkyrieError::NoSuitableAdapter("No suitable adapter found".to_string()))
     }
 
     fn strategy_name(&self) -> &str {
