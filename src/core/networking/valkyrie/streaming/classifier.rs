@@ -809,7 +809,7 @@ impl MessageClassifier {
             ClassificationRule {
                 id: "critical-health".to_string(),
                 name: "Critical Health Checks".to_string(),
-                condition: ClassificationCondition::MessageType(AdapterMessageType::HealthCheck),
+                condition: ClassificationCondition::MessageType(AdapterMessageType::Heartbeat),
                 target_class: QoSClass::Critical,
                 weight: 1.0,
                 priority: 0,

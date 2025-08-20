@@ -268,14 +268,25 @@ impl From<serde_yaml::Error> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
-            AppError::AuthError(msg) => (StatusCode::UNAUTHORIZED, msg),
-            AppError::ValidationError(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::DatabaseError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            AppError::ExternalServiceError(msg) => (StatusCode::BAD_GATEWAY, msg),
-            AppError::InternalServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+            // Authentication & Authorization
+            AppError::AuthError(msg) | AppError::AuthenticationError(msg) => {
+                (StatusCode::UNAUTHORIZED, msg)
+            }
+            AppError::AuthorizationError(msg) | AppError::PermissionDenied(msg) => {
+                (StatusCode::FORBIDDEN, msg)
+            }
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
-            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
+
+            // Validation & Input
+            AppError::ValidationError(msg) | AppError::BadRequest(msg) | AppError::InvalidInput(msg) => {
+                (StatusCode::BAD_REQUEST, msg)
+            }
+
+            // Resource & Lookup
+            AppError::NotFound(msg) | AppError::RepositoryNotFound(msg) => (StatusCode::NOT_FOUND, msg),
+            AppError::WorkspaceNotFound => (StatusCode::NOT_FOUND, "Workspace not found".to_string()),
+
+            // File handling
             AppError::FileUploadError(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::FileSizeExceeded { actual, limit } => (
                 StatusCode::PAYLOAD_TOO_LARGE,
@@ -285,28 +296,62 @@ impl IntoResponse for AppError {
                 ),
             ),
             AppError::UnsupportedFileType(msg) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, msg),
-            // New error types
-            AppError::GitHubApiError(msg) => (StatusCode::BAD_GATEWAY, msg),
-            AppError::DockerValidationError(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg),
-            AppError::ProjectTypeDetectionFailed(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg),
-            AppError::DockerfileGenerationFailed(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg),
+
+            // External & IO
+            AppError::IoError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            AppError::DatabaseError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            AppError::ExternalServiceError(msg) | AppError::GitHubApiError(msg) => {
+                (StatusCode::BAD_GATEWAY, msg)
+            }
+            AppError::KubernetesError(msg) => (StatusCode::BAD_GATEWAY, msg),
+            AppError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
+
+            // Timeouts & Concurrency
+            AppError::TimeoutError(msg) | AppError::Timeout(msg) => {
+                (StatusCode::REQUEST_TIMEOUT, msg)
+            }
+            AppError::ConcurrencyError(msg) => (StatusCode::CONFLICT, msg),
+            AppError::RateLimitExceeded { limit, window } => (
+                StatusCode::TOO_MANY_REQUESTS,
+                format!("Rate limit exceeded: {} requests per {}", limit, window),
+            ),
+            AppError::RateLimitExceededSimple(msg)
+            | AppError::ResourceExhausted(msg)
+            | AppError::CongestionControl(msg) => (StatusCode::TOO_MANY_REQUESTS, msg),
+
+            // Security & Encryption
             AppError::EncryptionError(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal encryption error".to_string(),
             ),
-            AppError::WorkspaceNotFound => {
-                (StatusCode::NOT_FOUND, "Workspace not found".to_string())
+            AppError::SecurityError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            AppError::SecurityContextNotFound(msg) => (StatusCode::NOT_FOUND, msg),
+            AppError::SecurityContextExpired(msg) => (StatusCode::UNAUTHORIZED, msg),
+
+            // Internal Failures
+            AppError::InternalServerError(msg) | AppError::InternalError { message: msg, .. } => {
+                (StatusCode::INTERNAL_SERVER_ERROR, msg)
             }
-            AppError::RepositoryNotFound(msg) => (StatusCode::NOT_FOUND, msg),
-            AppError::AuthenticationError(msg) => (StatusCode::UNAUTHORIZED, msg),
-            AppError::AuthorizationError(msg) => (StatusCode::FORBIDDEN, msg),
-            // Connector-specific error types
-            AppError::PermissionDenied(msg) => (StatusCode::FORBIDDEN, msg),
-            AppError::KubernetesError(msg) => (StatusCode::BAD_GATEWAY, msg),
-            AppError::ConnectorConfigError(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg),
-            AppError::Unimplemented(msg) => (StatusCode::NOT_IMPLEMENTED, msg),
-            AppError::NotImplemented(msg) => (StatusCode::NOT_IMPLEMENTED, msg),
-            // Core architecture error types
+            AppError::Unimplemented(msg) | AppError::NotImplemented(msg) => {
+                (StatusCode::NOT_IMPLEMENTED, msg)
+            }
+            AppError::ConfigError(msg) | AppError::ConfigurationError(msg) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, msg)
+            }
+
+            // Serialization & Compression
+            AppError::SerializationError(msg) | AppError::CompressionError(msg) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, msg)
+            }
+
+            // Connector-specific
+            AppError::DockerValidationError(msg)
+            | AppError::ProjectTypeDetectionFailed(msg)
+            | AppError::DockerfileGenerationFailed(msg)
+            | AppError::ConnectorConfigError(msg)
+            | AppError::InvalidPipelineType(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg),
+
+            // Complex/Internal cases (queries, repos, sagas, events, streams)
             AppError::CommandExecutionError { command } => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Command execution failed: {}", command),
@@ -327,28 +372,10 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Service dependency not found: {}", service),
             ),
-            AppError::EventHandlingError {
-                event_type,
-                handler,
-            } => (
+            AppError::EventHandlingError { event_type, handler } => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Event handling failed: {} - {}", event_type, handler),
             ),
-            AppError::ConfigurationError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            AppError::RateLimitExceeded { limit, window } => (
-                StatusCode::TOO_MANY_REQUESTS,
-                format!("Rate limit exceeded: {} requests per {}", limit, window),
-            ),
-            AppError::RateLimitExceededSimple(msg) => (StatusCode::TOO_MANY_REQUESTS, msg),
-            AppError::ConfigError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            AppError::ResourceExhausted(msg) => (StatusCode::TOO_MANY_REQUESTS, msg),
-            AppError::ConcurrencyError(msg) => (StatusCode::CONFLICT, msg),
-            AppError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
-            AppError::TimeoutError(msg) => (StatusCode::REQUEST_TIMEOUT, msg),
-            AppError::InvalidPipelineType(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::SerializationError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            AppError::CompressionError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            AppError::SecurityError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             AppError::StreamError { stream_id, error_type } => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Stream error: {}: {}", stream_id, error_type),
@@ -357,14 +384,12 @@ impl IntoResponse for AppError {
                 StatusCode::TOO_MANY_REQUESTS,
                 format!("Flow control violation: {}: {}", stream_id, details),
             ),
-            AppError::InternalError { component, message } => (
+
+            // Default catch-all for any future or unhandled AppError variants
+            other => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Internal error: {}: {}", component, message),
+                format!("Unhandled error: {}", other),
             ),
-            // Zero-trust security errors
-            AppError::SecurityContextNotFound(msg) => (StatusCode::NOT_FOUND, msg),
-            AppError::SecurityContextExpired(msg) => (StatusCode::UNAUTHORIZED, msg),
-            AppError::CongestionControl(msg) => (StatusCode::TOO_MANY_REQUESTS, msg),
         };
 
         let body = Json(json!({

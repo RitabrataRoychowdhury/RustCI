@@ -132,6 +132,7 @@ jni = { version = "0.21", optional = true }
 # CLI argument parsing (used in valkyrie-codegen binary)
 clap = { version = "4.0", features = ["derive"] }
 colored = "2.0"
+humantime-serde = "1.1.1"
 
 [dev-dependencies]
 # Testing framework

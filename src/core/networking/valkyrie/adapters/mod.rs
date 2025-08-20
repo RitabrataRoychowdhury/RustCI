@@ -207,7 +207,7 @@ pub enum AdapterType {
 pub type AdapterId = Uuid;
 
 /// Message types for adapter communication
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Hash)]
 pub enum AdapterMessageType {
     Request,
     Response,
@@ -219,7 +219,7 @@ pub enum AdapterMessageType {
 }
 
 /// Message priority levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 pub enum MessagePriority {
     Critical = 0,
     High = 1,

@@ -206,7 +206,7 @@ pub struct CongestionState {
 }
 
 /// Congestion control algorithms
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CongestionAlgorithm {
     /// TCP Reno-like algorithm
     Reno {
@@ -217,11 +217,13 @@ pub enum CongestionAlgorithm {
     Cubic {
         w_max: f64,
         k: f64,
+        #[serde(skip)]
         epoch_start: Option<Instant>,
     },
     /// BBR (Bottleneck Bandwidth and RTT) algorithm
     Bbr {
         bandwidth: f64,
+        #[serde(with = "humantime_serde")]
         min_rtt: Duration,
         pacing_rate: f64,
     },
