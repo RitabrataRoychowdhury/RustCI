@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::core::networking::valkyrie::adapters::*;
 use crate::core::networking::valkyrie::streaming::QoSClass;
@@ -71,10 +71,10 @@ pub struct ServiceEntry {
     /// Service capabilities
     pub capabilities: ServiceCapabilities,
     /// Registration timestamp
-    #[serde(skip)]
+    #[serde(skip, default = "Instant::now")]
     pub registered_at: Instant,
     /// Last heartbeat
-    #[serde(skip)]
+    #[serde(skip, default = "Instant::now")]
     pub last_heartbeat: Instant,
     /// Service tags for discovery
     pub tags: HashMap<String, String>,
@@ -121,7 +121,7 @@ pub struct ServiceEndpoint {
     /// Load balancing weight
     pub weight: u32,
     /// Last health check
-    #[serde(skip)]
+    #[serde(skip, default = "Instant::now")]
     pub last_health_check: Instant,
     /// Endpoint latency
     pub latency: Option<Duration>,
@@ -239,7 +239,7 @@ pub struct RetryPolicy {
 }
 
 /// Backoff strategies
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BackoffStrategy {
     /// Fixed delay
     Fixed,

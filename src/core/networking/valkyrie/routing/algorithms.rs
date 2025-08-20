@@ -170,8 +170,8 @@ impl DijkstraStrategy {
             current = *previous
                 .get(&current)
                 .ok_or_else(|| RoutingError::NoRouteFound {
-                    source: *source,
-                    destination: *destination,
+                    src: source.to_string(),
+                    dst: destination.to_string(),
                 })?;
         }
         path.push(*source);
@@ -351,8 +351,8 @@ impl RoutingStrategy for DijkstraStrategy {
         // Check if destination is reachable
         if !previous.contains_key(destination) && source != destination {
             return Err(RoutingError::NoRouteFound {
-                source: *source,
-                destination: *destination,
+                src: source.to_string(),
+                dst: destination.to_string(),
             });
         }
 
@@ -484,8 +484,8 @@ impl RoutingStrategy for LoadAwareStrategy {
         }
 
         Err(RoutingError::NoRouteFound {
-            source: *source,
-            destination: *destination,
+            src: source.to_string(),
+            dst: destination.to_string(),
         })
     }
 
@@ -527,8 +527,8 @@ impl LoadAwareStrategy {
             current = *came_from
                 .get(&current)
                 .ok_or_else(|| RoutingError::NoRouteFound {
-                    source: *source,
-                    destination: *destination,
+                    src: source.to_string(),
+                    dst: destination.to_string(),
                 })?;
         }
         path.push(*source);

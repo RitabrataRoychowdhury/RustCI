@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, Semaphore};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use super::{EndpointId, ServiceEndpoint, ServiceId};
 use crate::error::{Result, ValkyrieError};
@@ -60,7 +60,7 @@ pub enum HealthStatus {
 }
 
 /// Degradation severity levels
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DegradationSeverity {
     Low,
     Medium,

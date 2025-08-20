@@ -16,6 +16,7 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::core::cluster::node_registry::NodeRegistry;
+use crate::core::networking::transport::NetworkConditions;
 use crate::core::networking::transport::Transport;
 use crate::domain::entities::{ClusterNode, NodeId, NodeRole, NodeStatus, RunnerType};
 use crate::error::{AppError, Result};
@@ -734,7 +735,7 @@ mod tests {
 
         async fn optimize_for_conditions(
             &self,
-            _conditions: &crate::core::networking::valkyrie::types::NetworkConditions,
+            _conditions: &NetworkConditions,
         ) -> TransportConfig {
             Default::default()
         }

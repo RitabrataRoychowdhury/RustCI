@@ -12,10 +12,17 @@ use tracing::{debug, error, info, warn};
 
 use super::bandwidth::{BandwidthAllocation, BandwidthAllocator};
 use super::classifier::MessageClassifier;
-use super::flow_control::FlowControlManager;
 use super::QoSClass;
 use crate::core::networking::valkyrie::adapters::*;
 use crate::error::{Result, ValkyrieError};
+use std::convert::TryInto;
+
+use crate::core::networking::valkyrie::streaming::flow_control::{
+    FlowControlConfig, FlowControlManager,
+};
+use crate::core::networking::valkyrie::streaming::multiplexer::MultiplexerConfig;
+use crate::core::networking::valkyrie::streaming::StreamConfig;
+use crate::core::networking::valkyrie::streaming::StreamPriority;
 
 /// QoS-Aware Stream Router with intelligent message routing
 pub struct QoSStreamRouter {
@@ -275,7 +282,24 @@ impl QoSStreamRouter {
             classifier: Arc::new(
                 crate::core::networking::valkyrie::streaming::classifier::MessageClassifier::new(),
             ),
-            flow_control: Arc::new(FlowControlManager::new()),
+            flow_control: Arc::new(FlowControlManager::new(MultiplexerConfig {
+                max_streams: config.max_concurrent_streams, // reuse QoSRouterConfig field
+
+                default_stream_config: StreamConfig {
+                    max_buffer_size: 64 * 1024,       // 64 KB buffer
+                    flow_window_size: 64 * 1024,      // 64 KB flow window
+                    timeout: Duration::from_secs(30), // 30s timeout
+                    compression_enabled: false,       // no compression by default
+                    priority: StreamPriority::Normal, // normal priority
+                    custom_params: HashMap::new(),    // nothing custom
+                },
+
+                flow_control_enabled: true,
+                congestion_control_enabled: true,
+                cleanup_interval: Duration::from_secs(60), // periodic cleanup
+                stream_timeout: Duration::from_secs(120),  // idle stream timeout
+                metrics_enabled: true,
+            })),
             bandwidth_allocator: Arc::new(BandwidthAllocator::new()),
             priority_queues,
             route_table: Arc::new(RwLock::new(HashMap::new())),
@@ -551,8 +575,22 @@ impl QoSStreamRouter {
         *metrics.messages_by_class.entry(qos_class).or_insert(0) += 1;
 
         // Update average latency (simplified)
-        metrics.avg_routing_latency =
-            Duration::from_nanos((metrics.avg_routing_latency.as_nanos() + latency.as_nanos()) / 2);
+        metrics.avg_routing_latency = Duration::from_nanos(
+            ((metrics.avg_routing_latency.as_nanos() + latency.as_nanos()) / 2)
+                .try_into()
+                .unwrap(),
+        );
+
+        // Update queue depth
+        if let Some(queue_ref) = self.priority_queues.get(&qos_class) {
+            let queue = queue_ref.read().await;
+            metrics.queue_depths.insert(qos_class, queue.len());
+        }
+
+        // Update bandwidth utilization (placeholder)
+        metrics.bandwidth_utilization = 0.0; // This would be calculated based on actual usage
+
+        info!("Updated routing metrics: {:?}", metrics);
     }
 
     /// Get router metrics

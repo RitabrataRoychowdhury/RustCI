@@ -16,6 +16,22 @@ use crate::core::networking::valkyrie::types::{
 };
 use crate::error::AppError;
 
+// Core Valkyrie networking types
+use crate::core::networking::valkyrie::{
+    MessageHeader,
+    MessageFlags,
+};
+
+// Valkyrie “types” submodule (struct-y building blocks)
+use crate::core::networking::valkyrie::types::{
+    ProtocolInfo,
+    RoutingInfo,
+    EndpointId,
+    StreamId,
+    CorrelationId,
+
+};
+
 /// Enhanced message processor that integrates Valkyrie messages with QoS and compression
 pub struct EnhancedMessageProcessor {
     /// Message validator
@@ -457,7 +473,7 @@ impl MessageBatchProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::networking::valkyrie::message::MessagePayload;
+    use crate::core::networking::valkyrie::MessagePayload;
     use crate::core::networking::valkyrie::StructuredPayload;
 
     #[tokio::test]
@@ -465,11 +481,25 @@ mod tests {
         let mut processor = EnhancedMessageProcessor::new();
 
         // Create a test message
-        let message = ValkyrieMessage::new(
-            MessageType::MetricsReport,
-            "test-node".to_string(),
-            DestinationType::Unicast("control-plane".to_string()),
-            MessagePayload::Structured(StructuredPayload {
+        let message = ValkyrieMessage {
+            header: MessageHeader {
+                id: Uuid::new_v4(),
+                source: "test-node".to_string(),
+                destination: Some("control-plane".to_string()), // equivalent to DestinationType::Unicast("control-plane")
+                protocol_info: ProtocolInfo::default(),
+                message_type: MessageType::MetricsReport,
+                stream_id: None,
+                flags: MessageFlags::default(),
+                priority: MessagePriority::Low, // merged from .with_priority()
+                timestamp: Utc::now(),
+                ttl: None,
+                correlation_id: None,
+                routing: RoutingInfo::default(),
+                compression: crate::core::networking::valkyrie::types::CompressionInfo::default(),
+                sequence_number: 0,
+                ack_number: None,
+            },
+            payload: MessagePayload::Structured(StructuredPayload {
                 payload_type: "metrics".to_string(),
                 version: "1.0".to_string(),
                 data: serde_json::json!({
@@ -479,14 +509,16 @@ mod tests {
                 }),
                 schema: None,
             }),
-        )
-        .with_priority(MessagePriority::Background);
+            signature: None,
+            trace_context: None,
+        };
+
 
         let result = processor.process_message(message, None).await;
         assert!(result.is_ok());
 
         let enhanced_message = result.unwrap();
-        assert_eq!(enhanced_message.priority, MessagePriority::Background);
+        assert_eq!(enhanced_message.priority, crate::core::networking::valkyrie::types::MessagePriority::Low.into());
         assert!(enhanced_message.compression.algorithm != CompressionAlgorithm::None);
     }
 
@@ -495,7 +527,7 @@ mod tests {
         let mut queue = PriorityMessageQueue::new();
 
         // Create messages with different priorities
-        let low_priority_msg = create_test_enhanced_message(MessagePriority::Background);
+        let low_priority_msg = create_test_enhanced_message(MessagePriority::Low);
         let high_priority_msg = create_test_enhanced_message(MessagePriority::Critical(10));
         let normal_priority_msg = create_test_enhanced_message(MessagePriority::Normal);
 
@@ -506,13 +538,13 @@ mod tests {
 
         // Dequeue should return highest priority first
         let first = queue.dequeue().unwrap();
-        assert_eq!(first.priority, MessagePriority::Critical(10));
+        assert_eq!(first.priority, crate::core::networking::valkyrie::types::MessagePriority::Critical(10).into());
 
         let second = queue.dequeue().unwrap();
-        assert_eq!(second.priority, MessagePriority::Normal);
+        assert_eq!(second.priority, crate::core::networking::valkyrie::types::MessagePriority::Normal.into());
 
         let third = queue.dequeue().unwrap();
-        assert_eq!(third.priority, MessagePriority::Background);
+        assert_eq!(third.priority, crate::core::networking::valkyrie::types::MessagePriority::Low.into());
     }
 
     fn create_test_enhanced_message(priority: MessagePriority) -> EnhancedProtocolMessage {
@@ -552,7 +584,7 @@ mod tests {
                 ),
                 signature: None,
             },
-            priority,
+            priority: priority.into(),
             compression: CompressionInfo {
                 algorithm: CompressionAlgorithm::None,
                 original_size: 1024,

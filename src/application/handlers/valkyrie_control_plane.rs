@@ -1,6 +1,7 @@
 // Valkyrie Control Plane Handler
 // Task 3.2: Unified Control Plane Integration
 
+use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -8,7 +9,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use chrono::{DateTime};
 
 use crate::application::services::valkyrie_integration::ValkyrieIntegrationService;
 use crate::config::valkyrie_integration::ValkyrieIntegrationConfig;
@@ -702,10 +702,11 @@ impl ValkyrieControlPlaneHandler {
                 DateTime::parse_from_rfc3339(d)
                     .ok()
                     .map(|dt| UNIX_EPOCH + Duration::from_secs(dt.timestamp() as u64))
-                    .or_else(|| Some(SystemTime::now() + Duration::from_secs(3600))) // fallback
+                    .or_else(|| Some(SystemTime::now() + Duration::from_secs(3600)))
+                // fallback
             }),
-            routing_hints: None,       // Would be converted from request.routing_hints
-            qos_requirements: None,    // Would be converted from request.qos_requirements
+            routing_hints: None, // Would be converted from request.routing_hints
+            qos_requirements: None, // Would be converted from request.qos_requirements
         })
     }
 

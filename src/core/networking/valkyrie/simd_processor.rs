@@ -8,12 +8,35 @@ use std::time::Instant;
 use wide::*;
 // bytemuck imports removed as unused
 use crate::core::networking::valkyrie::types::{
-    DestinationType, MessagePayload, MessageType, ValkyrieMessage,
+     MessagePayload, ValkyrieMessage,
 };
 use crate::core::networking::valkyrie::zero_copy::{
     SimdBuffer, SimdDataProcessor, ZeroCopyBufferPool,
 };
 use crate::error::{AppError, Result};
+
+// External crates
+use uuid::Uuid;
+use chrono::Utc;
+
+// Core Valkyrie networking types
+use crate::core::networking::valkyrie::{
+    MessageHeader,
+    MessageType,
+    MessageFlags,
+    MessagePriority,
+};
+
+// Valkyrie “types” submodule (struct-y building blocks)
+use crate::core::networking::valkyrie::types::{
+    ProtocolInfo,
+    RoutingInfo,
+    CompressionInfo,
+    EndpointId,
+    StreamId,
+    CorrelationId,
+};
+
 
 /// SIMD-optimized message processor for Valkyrie Protocol
 pub struct SimdMessageProcessor {
@@ -565,19 +588,51 @@ mod tests {
         let pool = Arc::new(ZeroCopyBufferPool::new());
         let processor = SimdMessageProcessor::new(pool);
 
-        let messages = vec![
-            ValkyrieMessage::new(
-                MessageType::Data,
-                "source".to_string(),
-                DestinationType::Unicast("dest".to_string()),
-                MessagePayload::Binary(vec![1, 2, 3]),
-            ),
-            ValkyrieMessage::new(
-                MessageType::Data,
-                "source".to_string(),
-                DestinationType::Unicast("dest".to_string()),
-                MessagePayload::Text("hello".to_string()),
-            ),
+        let messages: Vec<ValkyrieMessage> = vec![
+            ValkyrieMessage {
+                header: MessageHeader {
+                    id: Uuid::new_v4(),
+                    source: "source".to_string(),                 // adjust type if EndpointId
+                    destination: Some("dest".to_string()),        // adjust type if EndpointId
+                    protocol_info: ProtocolInfo::default(),
+                    message_type: MessageType::Data,
+                    stream_id: None,
+                    flags: MessageFlags::default(),
+                    priority: MessagePriority::Normal,
+                    timestamp: Utc::now(),
+                    ttl: None,
+                    correlation_id: None,
+                    routing: RoutingInfo::default(),
+                    compression: CompressionInfo::default(),
+                    sequence_number: 0,
+                    ack_number: None,
+                },
+                payload: MessagePayload::Binary(vec![1, 2, 3]),
+                signature: None,
+                trace_context: None,
+            },
+            ValkyrieMessage {
+                header: MessageHeader {
+                    id: Uuid::new_v4(),
+                    source: "source".to_string(),                 // adjust type if EndpointId
+                    destination: Some("dest".to_string()),        // adjust type if EndpointId
+                    protocol_info: ProtocolInfo::default(),
+                    message_type: MessageType::Data,
+                    stream_id: None,
+                    flags: MessageFlags::default(),
+                    priority: MessagePriority::Normal,
+                    timestamp: Utc::now(),
+                    ttl: None,
+                    correlation_id: None,
+                    routing: RoutingInfo::default(),
+                    compression: CompressionInfo::default(),
+                    sequence_number: 0,
+                    ack_number: None,
+                },
+                payload: MessagePayload::Text("hello".to_string()),
+                signature: None,
+                trace_context: None,
+            },
         ];
 
         let results = processor.batch_process(&messages).unwrap();

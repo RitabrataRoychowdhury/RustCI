@@ -11,8 +11,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::info;
 
-use super::{SecurityManager, ThreatLevel};
-use crate::core::networking::valkyrie::adapters::*;
+use super::ThreatLevel;
 use crate::error::{Result, ValkyrieError};
 
 /// Zero-Trust Security Manager

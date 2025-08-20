@@ -188,7 +188,10 @@ impl UniversalAdapterFactory {
 
         // Return a reference to the stored adapter
         let stored_adapter = self.active_adapters.get(&adapter_id).ok_or_else(|| {
-            ValkyrieError::InternalError("Failed to retrieve stored adapter".to_string())
+            ValkyrieError::InternalError {
+                component: "AdapterFactory".to_string(), // or whatever component name
+                message: "Failed to retrieve stored adapter".to_string(),
+            }
         })?;
 
         // We need to return Arc<dyn UniversalAdapter>, so let's change the return type

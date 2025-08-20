@@ -330,8 +330,8 @@ pub struct RegulatoryConstraints {
 /// Routing errors
 #[derive(Debug, thiserror::Error)]
 pub enum RoutingError {
-    #[error("No route found from {source} to {destination}")]
-    NoRouteFound { source: String, destination: String },
+    #[error("No route found from {src} to {dst}")]
+    NoRouteFound { src: String, dst: String },
 
     #[error("Topology not available")]
     TopologyUnavailable,
@@ -437,11 +437,19 @@ impl AlgorithmManager {
 
         // Select the best algorithm for this context
         let available_algorithms: Vec<_> = self.strategies.keys().copied().collect();
-        let performance_history = self.performance_tracker.get_history().await;
+        let performance_history_map = self.performance_tracker.get_history().await;
+
+        // Pick one entry, for example the first available algorithm
+        let fallback = PerformanceHistory::default();
+
+        let perf = available_algorithms
+            .first()
+            .and_then(|alg| performance_history_map.get(alg))
+            .unwrap_or(&fallback);
 
         let selected_algorithm = self
             .algorithm_selector
-            .select_algorithm(context, &available_algorithms, &performance_history)
+            .select_algorithm(context, &available_algorithms, perf)
             .await;
 
         // Get the strategy for the selected algorithm
@@ -656,15 +664,12 @@ impl Default for QoSRequirements {
 }
 
 // Re-export commonly used types
-pub use adaptive::*;
 pub use algorithms::*;
 pub use cache::*;
 pub use config::*;
 pub use load_balancer::*;
-pub use metrics::*;
 pub use qos::*;
 pub use topology::*;
 
 // Additional imports needed
-use dashmap::DashMap;
 use sha2;
