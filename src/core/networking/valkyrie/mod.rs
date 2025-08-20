@@ -171,73 +171,64 @@ pub use registry::{
 
 // Re-export routing components
 pub use routing::{
-    adaptive::FeatureExtractor as RoutingFeatureExtractor,
-    AdaptiveError,
-    // Adaptive routing
-    AdaptiveRoutingEngine,
+    adaptive::{
+        AdaptiveError,
+        AdaptiveRoutingEngine,
+        ModelManager,
+        PatternRecognizer,
+        PredictionEngine,
+        RouteQualityPrediction,
+        FeatureExtractor as RoutingFeatureExtractor,
+    },
+    metrics::{
+        RoutingMetricsCollector,
+        RoutingMetricsSnapshot,
+        SecurityEventType as RoutingSecurityEventType,
+    },
+    // everything else that really is in `routing` directly
     AlgorithmManager,
     BandwidthManager,
     CacheConfig,
     CacheStats,
     ConfigError,
-    // Configuration
     ConfigurationManager,
     ConsistentHashingStrategy,
-
     DiscoveryAgent,
     DistanceCalculator,
-
     GeographicManager,
     Hop,
     LoadBalancerManager,
     LoadBalancingAlgorithm,
     LoadBalancingError,
-    // Load balancing
     LoadBalancingStrategy as RoutingLoadBalancingStrategy,
     MetricCollector,
-    ModelManager,
     NetworkLink,
     NetworkNode,
     NetworkTopology,
-    PatternRecognizer,
     PolicyEngine,
     PolicyEvaluationResult,
-
-    PredictionEngine,
     PriorityManager,
     QoSError,
     QoSMetricsSnapshot,
-
-    // QoS routing
     QoSRouter,
     QoSScheduler,
     RegionManager,
     RequestContext,
     RoundRobinStrategy,
     Route,
-    // Caching
     RouteCache,
     RouteCacheKey,
-
-    RouteQualityPrediction,
-
     RoutingAlgorithm,
-    // Core routing types
     RoutingContext,
     RoutingError,
-
-    // Metrics
-    RoutingMetricsCollector,
-    RoutingMetricsSnapshot,
     RoutingPolicy,
     RoutingRule,
     RoutingStrategy,
     SLAEnforcer,
-    SecurityEventType as RoutingSecurityEventType,
     ServiceEndpoint as RoutingServiceEndpoint,
     TopologyError,
-    // Topology management
     TopologyManager,
     TrafficShaper,
     WeightedRoundRobinStrategy,
 };
+

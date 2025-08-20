@@ -424,7 +424,7 @@ impl Default for ZeroTrustConfig {
             min_trust_threshold: 0.3,
             reauth_interval: Duration::from_secs(8 * 3600), // 8 hours
             session_timeout: Duration::from_secs(24 * 3600), // 24 hours
-            risk_assessment_interval: Duration::from_minutes(15),
+            risk_assessment_interval: Duration::from_secs(15 * 60),
             enable_behavioral_analytics: true,
             enable_threat_intelligence: true,
             max_sessions_per_identity: 5,

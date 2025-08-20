@@ -90,7 +90,7 @@ pub fn create_plugin_routes() -> Router<PluginManagementState> {
 async fn list_plugins(
     State(state): State<PluginManagementState>,
     Query(query): Query<PluginListQuery>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Listing plugins");
 
     let plugins = state.plugin_manager.list_plugins().await;
@@ -130,7 +130,7 @@ async fn list_plugins(
 async fn get_plugin(
     State(state): State<PluginManagementState>,
     Path(plugin_id): Path<String>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Getting plugin information: {}", plugin_id);
 
     let plugins = state.plugin_manager.list_plugins().await;
@@ -165,7 +165,7 @@ async fn get_plugin(
 async fn start_plugin(
     State(state): State<PluginManagementState>,
     Path(plugin_id): Path<String>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Starting plugin: {}", plugin_id);
 
     state.plugin_manager.start_plugin(&plugin_id).await?;
@@ -181,7 +181,7 @@ async fn start_plugin(
 async fn stop_plugin(
     State(state): State<PluginManagementState>,
     Path(plugin_id): Path<String>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Stopping plugin: {}", plugin_id);
 
     state.plugin_manager.stop_plugin(&plugin_id).await?;
@@ -197,7 +197,7 @@ async fn stop_plugin(
 async fn restart_plugin(
     State(state): State<PluginManagementState>,
     Path(plugin_id): Path<String>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Restarting plugin: {}", plugin_id);
 
     state.plugin_manager.restart_plugin(&plugin_id).await?;
@@ -214,7 +214,7 @@ async fn update_plugin_config(
     State(state): State<PluginManagementState>,
     Path(plugin_id): Path<String>,
     Json(request): Json<UpdatePluginConfigRequest>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Updating configuration for plugin: {}", plugin_id);
 
     state
@@ -233,7 +233,7 @@ async fn update_plugin_config(
 async fn unload_plugin(
     State(state): State<PluginManagementState>,
     Path(plugin_id): Path<String>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Unloading plugin: {}", plugin_id);
 
     state.plugin_manager.unload_plugin(&plugin_id).await?;
@@ -249,7 +249,7 @@ async fn unload_plugin(
 async fn get_plugin_health(
     State(state): State<PluginManagementState>,
     Path(plugin_id): Path<String>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Getting health status for plugin: {}", plugin_id);
 
     let health = state.plugin_manager.get_plugin_health(&plugin_id).await?;
@@ -267,7 +267,7 @@ async fn get_plugin_health(
 /// Get health status for all plugins
 async fn get_all_plugin_health(
     State(state): State<PluginManagementState>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Getting health status for all plugins");
 
     let health_statuses = state.plugin_manager.get_all_plugin_health().await;
@@ -282,7 +282,7 @@ async fn get_all_plugin_health(
 /// Get health summary
 async fn get_health_summary(
     State(state): State<PluginManagementState>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Getting plugin health summary");
 
     let summary = state.health_monitor.get_health_summary().await;
@@ -302,7 +302,7 @@ async fn activate_fallback(
     State(state): State<PluginManagementState>,
     Path(plugin_id): Path<String>,
     Json(request): Json<ActivateFallbackRequest>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!(
         "Activating fallback for plugin: {} with strategy: {}",
         plugin_id, request.strategy
@@ -334,7 +334,7 @@ async fn activate_fallback(
 async fn deactivate_fallback(
     State(state): State<PluginManagementState>,
     Path(plugin_id): Path<String>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Deactivating fallback for plugin: {}", plugin_id);
 
     state
@@ -353,7 +353,7 @@ async fn deactivate_fallback(
 async fn get_fallback_status(
     State(state): State<PluginManagementState>,
     Path(plugin_id): Path<String>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Getting fallback status for plugin: {}", plugin_id);
 
     let all_stats = state.fallback_manager.get_all_stats().await;
@@ -372,7 +372,7 @@ async fn get_fallback_status(
 /// Get system statistics
 async fn get_system_stats(
     State(state): State<PluginManagementState>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Getting plugin system statistics");
 
     let stats = state.plugin_manager.get_system_stats().await;
@@ -390,7 +390,7 @@ async fn get_system_stats(
 /// Reload plugins
 async fn reload_plugins(
     State(state): State<PluginManagementState>,
-) -> Result<Json<PluginResponse>, AppError> {
+) -> Result<Json<PluginResponse>> {
     info!("Reloading plugins");
 
     // This would trigger a plugin reload process
