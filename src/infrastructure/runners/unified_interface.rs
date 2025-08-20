@@ -429,7 +429,7 @@ impl UnifiedRunnerInterface {
             PreferredProtocol::Valkyrie => {
                 if let Some(valkyrie_adapter) = &self.valkyrie_adapter {
                     debug!("Executing job {} via Valkyrie protocol", context.job.id);
-                    valkyrie_adapter.execute_job(&context.job, context.runner_id).await
+                    valkyrie_adapter.as_ref().execute_job(&context.job, context.runner_id).await
                 } else {
                     // Fallback to HTTP if Valkyrie not available
                     warn!("Valkyrie adapter not available, falling back to HTTP");
@@ -467,7 +467,7 @@ impl UnifiedRunnerInterface {
             metrics.fallback_activations += 1;
         }
         
-        self.http_fallback.execute_job(&context.job, context.runner_id).await
+        self.http_fallback.as_ref().execute_job(&context.job, context.runner_id).await
     }
     
     /// Get fallback protocol for failed execution
@@ -886,6 +886,8 @@ impl ProtocolSelectionStrategy {
 
 #[cfg(test)]
 mod tests {
+    use chrono::Utc;
+
     use super::*;
     use crate::domain::entities::{Job, JobStatus};
     
@@ -913,17 +915,39 @@ mod tests {
         assert_eq!(perf.total_operations, 1);
         assert_eq!(perf.success_rate, 1.0);
     }
+
+    // Add dummy PipelineId and JobId for test if not imported
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct PipelineId(Uuid);
+    impl PipelineId {
+        fn new(id: Uuid) -> Self {
+            PipelineId(id)
+        }
+    }
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct JobId(Uuid);
+    impl JobId {
+        fn new(id: Uuid) -> Self {
+            JobId(id)
+        }
+    }
     
     #[test]
     fn test_performance_requirements_extraction() {
         let mut job = Job {
-            id: Uuid::new_v4(),
-            name: "test-job".to_string(),
-            status: JobStatus::Pending,
-            metadata: HashMap::new(),
-            created_at: std::time::SystemTime::now(),
-            updated_at: std::time::SystemTime::now(),
-        };
+        id: JobId::new(Uuid::new_v4()), // or just Uuid if JobId = Uuid
+        pipeline_id: PipelineId::new(Uuid::new_v4()), // adjust depending on your type
+        name: "test-job".to_string(),
+        steps: Vec::new(),
+        requirements: Default::default(),
+        priority: Default::default(),
+        timeout: Duration::from_secs(60), // pick a sensible default
+        retry_policy: Default::default(),
+        metadata: HashMap::new(),
+        created_at: Utc::now(),
+        scheduled_at: None,
+    };
+
         
         job.metadata.insert("priority".to_string(), "high".to_string());
         job.metadata.insert("max_latency".to_string(), "100".to_string());
