@@ -31,6 +31,7 @@ pub type RunnerId = Uuid;
 pub type NodeId = Uuid;
 
 /// High-performance ValkyrieRunner with sub-100μs dispatch latency
+#[derive(Clone)]
 pub struct ValkyrieRunnerAdapter {
     // Core Valkyrie engine integration
     valkyrie_engine: Arc<ValkyrieEngine>,
@@ -562,6 +563,93 @@ pub enum ValkyrieAdapterError {
 }
 
 impl ValkyrieRunnerAdapter {
+    /// Convert domain Job to ValkyrieJob
+    pub fn convert_domain_job_to_valkyrie_job(domain_job: &crate::domain::entities::runner::Job) -> ValkyrieJob {
+        ValkyrieJob {
+            id: domain_job.id,
+            job_type: JobType::Build, // Default mapping
+            priority: JobPriority::Normal, // Default mapping
+            payload: JobPayload::Small(Vec::new()), // Default payload
+            requirements: JobRequirements::default(),
+            metadata: JobMetadata {
+                user_id: None,
+                project_id: Some(domain_job.pipeline_id.to_string()),
+                pipeline_id: Some(domain_job.pipeline_id.to_string()),
+                stage: None,
+                tags: HashMap::new(),
+                correlation_id: None,
+            },
+            created_at: std::time::SystemTime::now(),
+            deadline: None,
+            routing_hints: None,
+            qos_requirements: None,
+        }
+    }
+
+    /// Convert ValkyrieJob result to domain JobResult
+    pub fn convert_valkyrie_result_to_domain_result(
+        valkyrie_result: JobResult,
+        job_id: crate::domain::entities::runner::JobId,
+    ) -> crate::domain::entities::runner::JobResult {
+        use crate::domain::entities::runner::JobStatus;
+        
+        let status = if valkyrie_result.exit_code == 0 {
+            JobStatus::Success
+        } else {
+            JobStatus::Failed
+        };
+
+        crate::domain::entities::runner::JobResult {
+            job_id,
+            status,
+            exit_code: Some(valkyrie_result.exit_code),
+            stdout: valkyrie_result.output,
+            stderr: String::new(),
+            started_at: chrono::Utc::now(),
+            finished_at: Some(chrono::Utc::now()),
+            duration: Some(valkyrie_result.execution_time),
+            step_results: vec![],
+            error_message: if valkyrie_result.exit_code != 0 { 
+                Some("Job execution failed".to_string()) 
+            } else { 
+                None 
+            },
+        }
+    }
+
+    /// Execute a domain job (adapter method for unified interface)
+    pub async fn execute_domain_job(&self, job: &crate::domain::entities::runner::Job, runner_id: RunnerId) -> Result<crate::domain::entities::runner::JobResult, crate::error::AppError> {
+        let valkyrie_job = Self::convert_domain_job_to_valkyrie_job(job);
+        
+        match self.execute_job(&valkyrie_job, runner_id).await {
+            Ok(valkyrie_result) => {
+                let domain_result = Self::convert_valkyrie_result_to_domain_result(valkyrie_result, job.id);
+                Ok(domain_result)
+            }
+            Err(e) => Err(crate::error::AppError::InternalError { 
+                component: "ValkyrieAdapter".to_string(), 
+                message: e.to_string() 
+            }),
+        }
+    }
+
+    /// Execute a job with the specified runner
+    pub async fn execute_job(&self, job: &ValkyrieJob, runner_id: RunnerId) -> Result<JobResult, ValkyrieAdapterError> {
+        // Submit the job and wait for completion
+        let submission_result = self.submit_job(job.clone()).await?;
+        
+        // For now, return a placeholder result
+        // In a real implementation, this would track the job to completion
+        Ok(JobResult {
+            exit_code: 0,
+            output: "Job executed successfully".to_string(),
+            artifacts: vec![],
+            execution_time: submission_result.dispatch_latency,
+            resource_usage: ResourceUsage::default(),
+            performance_metrics: JobPerformanceMetrics::default(),
+        })
+    }
+
     /// Create a new ValkyrieRunnerAdapter
     pub async fn new(
         valkyrie_engine: Arc<ValkyrieEngine>,

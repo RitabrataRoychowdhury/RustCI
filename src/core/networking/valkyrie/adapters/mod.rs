@@ -54,13 +54,13 @@ pub trait UniversalAdapter: Send + Sync {
     async fn metrics(&self) -> AdapterMetrics;
 
     /// Initialize adapter
-    async fn initialize(&mut self) -> Result<()>;
+    async fn initialize(&self) -> Result<()>;
 
     /// Shutdown adapter gracefully
-    async fn shutdown(&mut self) -> Result<()>;
+    async fn shutdown(&self) -> Result<()>;
 
     /// Handle configuration updates
-    async fn update_config(&mut self, config: &AdapterConfig) -> Result<()>;
+    async fn update_config(&self, config: &AdapterConfig) -> Result<()>;
 
     /// Get adapter type identifier
     fn adapter_type(&self) -> AdapterType;

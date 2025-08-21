@@ -59,7 +59,7 @@ impl Default for HttpFallbackConfig {
 }
 
 /// Fallback strategy for handling plugin failures
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FallbackStrategy {
     /// No fallback - fail immediately
     None,
@@ -105,7 +105,7 @@ impl FallbackSystem {
     pub async fn initialize(&self) -> Result<()> {
         if !self.config.enabled {
             info!("Fallback system is disabled");
-            return Ok();
+            return Ok(());
         }
 
         info!("Initializing fallback system");
@@ -119,19 +119,15 @@ impl FallbackSystem {
             circuit_breaker_threshold: 5,
             circuit_breaker_timeout: std::time::Duration::from_secs(60),
             max_concurrent_requests: 100,
+            enable_compression: self.config.http_config.enable_compression,
+            enable_keep_alive: true,
+            user_agent: "RustCI-Fallback/1.0".to_string(),
         };
 
-        match HttpFallbackSystem::new(http_config).await {
-            Ok(runner) => {
-                let mut http_runner = self.http_runner.write().await;
-                *http_runner = Some(runner);
-                info!("HTTP fallback system initialized");
-            }
-            Err(e) => {
-                warn!("Failed to initialize HTTP fallback system: {}", e);
-                // Continue without HTTP fallback
-            }
-        }
+        let runner = HttpFallbackSystem::new(http_config);
+        let mut http_runner = self.http_runner.write().await;
+        *http_runner = Some(runner);
+        info!("HTTP fallback system initialized");
 
         info!("Fallback system initialized");
         Ok(())

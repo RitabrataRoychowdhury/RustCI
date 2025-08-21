@@ -174,18 +174,18 @@ impl Plugin for ValkyriePlugin {
         // Create Valkyrie adapter
         let adapter_config =
             crate::infrastructure::runners::valkyrie_adapter::ValkyrieAdapterConfig {
-                max_concurrent_jobs: valkyrie_config.max_connections.unwrap_or(1000) as u32,
+                max_concurrent_jobs: valkyrie_config.max_connections as u32,
                 dispatch_timeout: std::time::Duration::from_millis(
-                    valkyrie_config.request_timeout_ms.unwrap_or(100),
+                    valkyrie_config.request_timeout_ms,
                 ),
                 queue_capacity: 10000,
-                enable_http_fallback: valkyrie_config.enable_http_fallback.unwrap_or(true),
+                enable_http_fallback: valkyrie_config.enable_http_fallback,
                 fallback_timeout: std::time::Duration::from_millis(
-                    valkyrie_config.connection_timeout_ms.unwrap_or(5),
+                    valkyrie_config.connection_timeout_ms,
                 ),
                 enable_intelligent_routing: true,
                 health_check_interval: std::time::Duration::from_secs(30),
-                metrics_enabled: valkyrie_config.enable_metrics.unwrap_or(false),
+                metrics_enabled: valkyrie_config.enable_metrics,
                 metrics_interval: std::time::Duration::from_secs(60),
             };
 
@@ -359,18 +359,18 @@ impl Plugin for ValkyriePlugin {
             // Create new adapter with updated config
             let adapter_config =
                 crate::infrastructure::runners::valkyrie_adapter::ValkyrieAdapterConfig {
-                    max_concurrent_jobs: valkyrie_config.max_connections.unwrap_or(1000) as u32,
+                    max_concurrent_jobs: valkyrie_config.max_connections as u32,
                     dispatch_timeout: std::time::Duration::from_millis(
-                        valkyrie_config.request_timeout_ms.unwrap_or(100),
+                        valkyrie_config.request_timeout_ms,
                     ),
                     queue_capacity: 10000,
-                    enable_http_fallback: valkyrie_config.enable_http_fallback.unwrap_or(true),
+                    enable_http_fallback: valkyrie_config.enable_http_fallback,
                     fallback_timeout: std::time::Duration::from_millis(
-                        valkyrie_config.connection_timeout_ms.unwrap_or(5),
+                        valkyrie_config.connection_timeout_ms,
                     ),
                     enable_intelligent_routing: true,
                     health_check_interval: std::time::Duration::from_secs(30),
-                    metrics_enabled: valkyrie_config.enable_metrics.unwrap_or(false),
+                    metrics_enabled: valkyrie_config.enable_metrics,
                     metrics_interval: std::time::Duration::from_secs(60),
                 };
 

@@ -429,7 +429,7 @@ impl UnifiedRunnerInterface {
             PreferredProtocol::Valkyrie => {
                 if let Some(valkyrie_adapter) = &self.valkyrie_adapter {
                     debug!("Executing job {} via Valkyrie protocol", context.job.id);
-                    valkyrie_adapter.as_ref().execute_job(&context.job, context.runner_id).await
+                    valkyrie_adapter.as_ref().execute_domain_job(&context.job, context.runner_id).await
                 } else {
                     // Fallback to HTTP if Valkyrie not available
                     warn!("Valkyrie adapter not available, falling back to HTTP");
@@ -444,7 +444,7 @@ impl UnifiedRunnerInterface {
                 // Auto or other protocols - use adaptive selection
                 if let Some(valkyrie_adapter) = &self.valkyrie_adapter {
                     // Try Valkyrie first for better performance
-                    match valkyrie_adapter.execute_job(&context.job, context.runner_id).await {
+                    match valkyrie_adapter.execute_domain_job(&context.job, context.runner_id).await {
                         Ok(result) => Ok(result),
                         Err(_) => {
                             // Fallback to HTTP
@@ -467,7 +467,7 @@ impl UnifiedRunnerInterface {
             metrics.fallback_activations += 1;
         }
         
-        self.http_fallback.as_ref().execute_job(&context.job, context.runner_id).await
+        self.http_fallback.as_ref().execute_domain_job(&context.job, context.runner_id).await
     }
     
     /// Get fallback protocol for failed execution

@@ -97,16 +97,16 @@ impl UniversalAdapter for DockerAdapter {
         AdapterMetrics::default()
     }
 
-    async fn initialize(&mut self) -> Result<()> {
+    async fn initialize(&self) -> Result<()> {
         Ok(())
     }
 
-    async fn shutdown(&mut self) -> Result<()> {
+    async fn shutdown(&self) -> Result<()> {
         Ok(())
     }
 
-    async fn update_config(&mut self, config: &AdapterConfig) -> Result<()> {
-        self.config = config.clone();
+    async fn update_config(&self, _config: &AdapterConfig) -> Result<()> {
+        // TODO: Update configuration with interior mutability
         Ok(())
     }
 

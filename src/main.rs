@@ -13,62 +13,38 @@ use tokio::signal;
 use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 use tracing::{error, info, warn};
 use uuid::Uuid;
-
-mod ci;
-mod config;
-mod core;
-mod error;
-#[cfg(test)]
-mod integration_tests;
-mod service_registry;
-
-mod token;
-mod upload;
-mod valkyrie;
-
-// Clean Architecture Layers
-mod application;
-mod domain;
-mod infrastructure;
-mod presentation;
-
-use config::{AppConfiguration, HotReloadConfigManager};
-use core::networking::security::AuditLogger;
-use infrastructure::database::DatabaseManager;
-use presentation::routes::{auth_router, ci_router, complete_control_plane_router, pr_router};
-use presentation::swagger::ApiDoc;
 use utoipa::OpenApi;
-use core::observability::{
-    audit::{AuditConfig, EnhancedAuditLogger},
-    monitoring::HealthStatus,
-    observability::{ObservabilityConfig, ObservabilityService},
-};
-use presentation::middleware::{comprehensive_security_middleware, create_cors_middleware};
 
-// CI Engine imports
-use ci::engine::{
-    CIEngineOrchestrator, ExecutionCoordinator, ExecutionMonitoring, PipelineManager,
-    PipelineExecutionSagaFactory, MetricsCollector,
-};
-use core::{
-    patterns::{
-        events::EventBus,
-        sagas::{SagaOrchestrator, SagaPersistence, SagaExecution, SagaStatus, SagaStatistics},
-        correlation::CorrelationTracker,
+// Use the library modules
+use RustAutoDevOps::{
+    config::{AppConfiguration, HotReloadConfigManager},
+    core::networking::security::AuditLogger,
+    infrastructure::database::DatabaseManager,
+    presentation::routes::{auth_router, ci_router, complete_control_plane_router, pr_router},
+    presentation::swagger::ApiDoc,
+    core::observability::{
+        audit::{AuditConfig, EnhancedAuditLogger},
+        monitoring::HealthStatus,
+        observability::{ObservabilityConfig, ObservabilityService},
     },
+    presentation::middleware::{comprehensive_security_middleware, create_cors_middleware},
+    // CI Engine imports
+    ci::engine::{
+        CIEngineOrchestrator, ExecutionCoordinator, ExecutionMonitoring, PipelineManager,
+        PipelineExecutionSagaFactory, MetricsCollector,
+    },
+    core::{
+        patterns::{
+            events::EventBus,
+            sagas::{SagaOrchestrator, SagaPersistence, SagaExecution, SagaStatus, SagaStatistics},
+            correlation::CorrelationTracker,
+        },
+    },
+    error::Result,
+    AppState,
 };
-use error::Result;
 
-/// Application state shared across handlers
-#[derive(Clone)]
-pub struct AppState {
-    pub env: Arc<AppConfiguration>,
-    pub db: Arc<DatabaseManager>,
-    pub audit_logger: Option<Arc<dyn AuditLogger>>,
-    pub config_manager: Arc<tokio::sync::RwLock<HotReloadConfigManager>>,
-    pub observability: Arc<ObservabilityService>,
-    pub ci_engine: Arc<CIEngineOrchestrator>,
-}
+// AppState is already defined in the library
 
 // Simple in-memory saga persistence for development
 #[derive(Debug)]
@@ -156,7 +132,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let config = config_manager.get().await;
 
     // Validate configuration before starting
-    let validation_engine = config::validation_engine::ConfigValidationEngine::new(
+    let validation_engine = RustAutoDevOps::config::validation_engine::ConfigValidationEngine::new(
         &std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string()),
     );
     let validation_report = validation_engine.validate(&config).await?;
@@ -250,11 +226,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let monitoring = Arc::new(ExecutionMonitoring::new(correlation_tracker.clone()));
     
     // Create workspace and executor for saga factory
-    let workspace_manager = Arc::new(ci::workspace::WorkspaceManager::new(
+    let workspace_manager = Arc::new(RustAutoDevOps::ci::workspace::WorkspaceManager::new(
         std::path::PathBuf::from("/tmp/rustci/workspaces"),
     ));
-    let connector_manager = ci::connectors::ConnectorManager::new();
-    let executor = Arc::new(ci::executor::PipelineExecutor::new(
+    let connector_manager = RustAutoDevOps::ci::connectors::ConnectorManager::new();
+    let executor = Arc::new(RustAutoDevOps::ci::executor::PipelineExecutor::new(
         connector_manager,
         std::path::PathBuf::from("/tmp/rustci/cache"),
         std::path::PathBuf::from("/tmp/rustci/deploy"),
@@ -285,6 +261,15 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         monitoring,
     ));
 
+    // Initialize plugin system
+    let plugin_manager = Arc::new(RustAutoDevOps::plugins::manager::PluginManager::new(
+        RustAutoDevOps::plugins::manager::PluginManagerConfig::default()
+    ));
+    let fallback_manager = Arc::new(RustAutoDevOps::plugins::fallback::FallbackManager::new());
+    let health_monitor = Arc::new(RustAutoDevOps::plugins::health::PluginHealthMonitor::new(
+        RustAutoDevOps::plugins::health::HealthMonitorConfig::default()
+    ));
+
     // Create application state
     let app_state = AppState {
         env: Arc::new(config.clone()),
@@ -293,6 +278,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         config_manager: Arc::new(tokio::sync::RwLock::new(config_manager)),
         observability: Arc::new(observability),
         ci_engine,
+        plugin_manager,
+        fallback_manager,
+        health_monitor,
     };
 
     // Build application
@@ -358,7 +346,7 @@ async fn create_app(state: AppState) -> std::result::Result<Router, Box<dyn std:
 
 fn init_tracing() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Use the new structured logging system
-    Ok(crate::core::observability::logging::init_structured_logging()?)
+    Ok(RustAutoDevOps::core::observability::logging::init_structured_logging()?)
 }
 
 async fn health_check_handler(State(state): State<AppState>) -> std::result::Result<Json<Value>, StatusCode> {

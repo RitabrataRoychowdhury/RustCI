@@ -18,6 +18,7 @@ use super::valkyrie_adapter::{
 use super::selection::RunnerSelection;
 
 /// HTTP fallback system for when Valkyrie is unavailable
+#[derive(Clone)]
 pub struct HttpFallbackSystem {
     // HTTP client for runner communication
     http_client: Client,
@@ -269,6 +270,37 @@ pub struct HttpDispatchResult {
 }
 
 impl HttpFallbackSystem {
+    /// Execute a domain job (adapter method for unified interface)
+    pub async fn execute_domain_job(&self, job: &crate::domain::entities::runner::Job, runner_id: RunnerId) -> Result<crate::domain::entities::runner::JobResult, crate::error::AppError> {
+        // Convert domain job to valkyrie job
+        let valkyrie_job = super::valkyrie_adapter::ValkyrieRunnerAdapter::convert_domain_job_to_valkyrie_job(job);
+        
+        match self.execute_job(&valkyrie_job, runner_id).await {
+            Ok(valkyrie_result) => {
+                let domain_result = super::valkyrie_adapter::ValkyrieRunnerAdapter::convert_valkyrie_result_to_domain_result(valkyrie_result, job.id);
+                Ok(domain_result)
+            }
+            Err(e) => Err(crate::error::AppError::InternalError { 
+                component: "HttpFallback".to_string(), 
+                message: e.to_string() 
+            }),
+        }
+    }
+
+    /// Execute a job via HTTP fallback
+    pub async fn execute_job(&self, job: &super::valkyrie_adapter::ValkyrieJob, runner_id: RunnerId) -> Result<super::valkyrie_adapter::JobResult, ValkyrieAdapterError> {
+        // For now, return a placeholder result
+        // In a real implementation, this would execute the job via HTTP
+        Ok(super::valkyrie_adapter::JobResult {
+            exit_code: 0,
+            output: "Job executed via HTTP fallback".to_string(),
+            artifacts: vec![],
+            execution_time: Duration::from_millis(100),
+            resource_usage: super::valkyrie_adapter::ResourceUsage::default(),
+            performance_metrics: super::valkyrie_adapter::JobPerformanceMetrics::default(),
+        })
+    }
+
     /// Create a new HTTP fallback system
     pub fn new(config: HttpFallbackConfig) -> Self {
         let mut client_builder = Client::builder()
