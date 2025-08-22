@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
-// use uuid::Uuid; // Unused
+use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -1145,6 +1145,7 @@ impl SecurityManager {
 pub struct MessageRouter {
     config: RoutingConfig,
     handlers: Arc<RwLock<HashMap<MessageType, Box<dyn MessageHandler>>>>,
+    high_performance_router: Option<Arc<crate::valkyrie::routing::HighPerformanceMessageRouter>>,
 }
 
 impl MessageRouter {
@@ -1152,7 +1153,23 @@ impl MessageRouter {
         Self {
             config,
             handlers: Arc::new(RwLock::new(HashMap::new())),
+            high_performance_router: None,
         }
+    }
+    
+    /// Enable high-performance routing with FIT
+    pub fn with_high_performance_routing(
+        mut self,
+        fit_capacity: usize,
+        fallback_strategy: Arc<dyn crate::core::networking::valkyrie::routing::RoutingStrategy>,
+    ) -> Result<Self> {
+        let hp_router = crate::valkyrie::routing::HighPerformanceMessageRouter::new(
+            fit_capacity,
+            fallback_strategy,
+        ).map_err(|e| crate::error::AppError::InternalServerError(format!("Failed to create high-performance router: {}", e)))?;
+        
+        self.high_performance_router = Some(Arc::new(hp_router));
+        Ok(self)
     }
 
     pub async fn start(&self) -> Result<()> {
@@ -1165,9 +1182,124 @@ impl MessageRouter {
 
     pub async fn route_message(
         &self,
-        _connection_id: ConnectionId,
-        _message: ValkyrieMessage,
+        connection_id: ConnectionId,
+        message: ValkyrieMessage,
     ) -> Result<()> {
+        use std::time::Instant;
+        
+        let start_time = Instant::now();
+        
+        // If high-performance routing is enabled, use it for fast routing
+        if let Some(ref hp_router) = self.high_performance_router {
+            // Extract routing information from message
+            let routing_info = &message.header.routing;
+            
+            // Convert EndpointId (String) to NodeId (Uuid) 
+            let source_node = Uuid::parse_str(&message.header.source)
+                .unwrap_or_else(|_| Uuid::new_v4());
+            let destination_node = message.header.destination
+                .as_ref()
+                .and_then(|dest| Uuid::parse_str(dest).ok())
+                .unwrap_or(source_node);
+            
+            // Create a simple routing context
+            let context = crate::core::networking::valkyrie::routing::RoutingContext {
+                message_id: message.header.id,
+                source: source_node,
+                destination: destination_node,
+                    qos_requirements: crate::core::networking::valkyrie::routing::QoSRequirements {
+                        max_latency: Some(std::time::Duration::from_micros(82)), // Performance budget
+                        min_bandwidth: None,
+                        reliability_threshold: Some(0.99),
+                        priority: match message.header.priority {
+                            crate::core::networking::valkyrie::types::MessagePriority::Critical(_) => crate::core::networking::valkyrie::routing::MessagePriority::Critical,
+                            crate::core::networking::valkyrie::types::MessagePriority::System(_) => crate::core::networking::valkyrie::routing::MessagePriority::Critical,
+                            crate::core::networking::valkyrie::types::MessagePriority::JobExecution(_) => crate::core::networking::valkyrie::routing::MessagePriority::High,
+                            crate::core::networking::valkyrie::types::MessagePriority::DataTransfer(_) => crate::core::networking::valkyrie::routing::MessagePriority::Normal,
+                            crate::core::networking::valkyrie::types::MessagePriority::LogsMetrics(_) => crate::core::networking::valkyrie::routing::MessagePriority::Low,
+                            crate::core::networking::valkyrie::types::MessagePriority::High => crate::core::networking::valkyrie::routing::MessagePriority::High,
+                            crate::core::networking::valkyrie::types::MessagePriority::Normal => crate::core::networking::valkyrie::routing::MessagePriority::Normal,
+                            crate::core::networking::valkyrie::types::MessagePriority::Low => crate::core::networking::valkyrie::routing::MessagePriority::Low,
+                        },
+                        sla_class: Some(crate::core::networking::valkyrie::routing::SLAClass::Gold),
+                    },
+                    security_context: crate::core::networking::valkyrie::routing::SecurityContext {
+                        user_id: Some("system".to_string()),
+                        tenant_id: Some("default".to_string()),
+                        security_level: crate::core::networking::valkyrie::routing::SecurityLevel::Internal,
+                        allowed_regions: vec!["default".to_string()],
+                        encryption_required: false,
+                        audit_required: false,
+                    },
+                    routing_hints: crate::core::networking::valkyrie::routing::RoutingHints::default(),
+                    deadline: None,
+                    created_at: std::time::SystemTime::now(),
+                };
+                
+                // Create a minimal topology (in production, this would come from topology manager)
+                let topology = crate::core::networking::valkyrie::routing::NetworkTopology {
+                    nodes: std::collections::HashMap::new(),
+                    links: std::collections::HashMap::new(),
+                    regions: std::collections::HashMap::new(),
+                    last_updated: std::time::SystemTime::now(),
+                    version: 1,
+                };
+                
+                // Perform high-performance routing
+                match hp_router.route_message_fast(
+                    &source_node,
+                    &destination_node,
+                    &context,
+                    &topology,
+                ).await {
+                    Ok(route) => {
+                        let routing_latency = start_time.elapsed();
+                        
+                        // Log performance metrics
+                        if routing_latency > std::time::Duration::from_micros(82) {
+                            tracing::warn!(
+                                "Routing latency exceeded budget: {:?} > 82µs for message {}",
+                                routing_latency,
+                                message.header.id
+                            );
+                        } else {
+                            tracing::debug!(
+                                "Fast routing completed in {:?} for message {}",
+                                routing_latency,
+                                message.header.id
+                            );
+                        }
+                        
+                        // TODO: Actually forward the message using the calculated route
+                        // For now, just log the successful routing
+                        tracing::info!(
+                            "Message {} routed via {} hops with estimated latency {:?}",
+                            message.header.id,
+                            route.hops.len(),
+                            route.estimated_latency
+                        );
+                        
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "High-performance routing failed for message {}: {}",
+                            message.header.id,
+                            e
+                        );
+                        // Fall through to traditional routing
+                    }
+                }
+        }
+        
+        // Traditional routing fallback
+        tracing::debug!(
+            "Using traditional routing for message {} from connection {}",
+            message.header.id,
+            connection_id
+        );
+        
+        // TODO: Implement traditional routing logic
         Ok(())
     }
 
@@ -1179,33 +1311,85 @@ impl MessageRouter {
     }
 
     pub async fn get_stats(&self) -> RoutingStats {
-        RoutingStats {
+        let mut stats = RoutingStats {
             messages_routed: 0,
             routing_failures: 0,
             load_balance_decisions: 0,
+        };
+        
+        // If high-performance routing is enabled, include its stats
+        if let Some(ref hp_router) = self.high_performance_router {
+            let hp_stats = hp_router.get_routing_stats();
+            stats.messages_routed = hp_stats.total_requests;
+            // Add more detailed stats integration here
         }
+        
+        stats
+    }
+    
+    /// Get high-performance routing statistics if enabled
+    pub fn get_high_performance_stats(&self) -> Option<crate::valkyrie::routing::RoutingStats> {
+        self.high_performance_router.as_ref().map(|router| router.get_routing_stats())
+    }
+    
+    /// Check if high-performance routing is healthy
+    pub fn is_high_performance_healthy(&self) -> bool {
+        self.high_performance_router
+            .as_ref()
+            .map(|router| router.is_healthy())
+            .unwrap_or(true)
     }
 }
 
-/// Connection registry for managing active connections
+/// Connection registry for managing active connections (enhanced with Snapshot/RCU)
 pub struct ConnectionRegistry {
+    /// Enhanced registry with Snapshot/RCU patterns
+    enhanced_registry: Arc<crate::valkyrie::routing::EnhancedConnectionRegistry>,
+    /// Legacy connections for backward compatibility
     connections: Arc<RwLock<HashMap<ConnectionId, ConnectionInfo>>>,
 }
 
 impl ConnectionRegistry {
     pub fn new() -> Self {
         Self {
+            enhanced_registry: Arc::new(crate::valkyrie::routing::EnhancedConnectionRegistry::new(
+                std::time::Duration::from_secs(300) // 5 minute timeout
+            )),
             connections: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     pub async fn register(&self, id: ConnectionId, info: ConnectionInfo) -> Result<()> {
-        self.connections.write().await.insert(id, info);
+        // Register in legacy registry for backward compatibility
+        self.connections.write().await.insert(id, info.clone());
+        
+        // Register in enhanced registry for high-performance access
+        let remote_addr = format!("{}:{}", info.endpoint.address, info.endpoint.port)
+            .parse()
+            .unwrap_or_else(|_| "127.0.0.1:8080".parse().unwrap());
+        let enhanced_info = crate::valkyrie::routing::EnhancedConnectionInfo {
+            id,
+            remote_addr,
+            state: crate::valkyrie::routing::ConnectionState::Active,
+            last_activity: std::time::SystemTime::now(),
+            metrics: crate::valkyrie::routing::ConnectionMetrics::default(),
+            metadata: std::collections::HashMap::new(),
+        };
+        
+        self.enhanced_registry.register_connection(enhanced_info).await
+            .map_err(|e| crate::error::AppError::InternalServerError(format!("Enhanced registry error: {}", e)))?;
+        
         Ok(())
     }
 
     pub async fn close_connection(&self, id: ConnectionId) -> Result<()> {
+        // Remove from legacy registry
         self.connections.write().await.remove(&id);
+        
+        // Remove from enhanced registry
+        self.enhanced_registry.unregister_connection(&id).await
+            .map_err(|e| crate::error::AppError::InternalServerError(format!("Enhanced registry error: {}", e)))?;
+        
         Ok(())
     }
 
@@ -1214,19 +1398,45 @@ impl ConnectionRegistry {
         Ok(())
     }
 
-    pub async fn cleanup_stale_connections(&self) -> Result<()> {
-        // Implementation would check for stale connections and remove them
-        Ok(())
-    }
+
 
     pub async fn get_stats(&self) -> ConnectionStats {
-        let connections = self.connections.read().await;
+        // Get stats from enhanced registry (lock-free)
+        let enhanced_stats = self.enhanced_registry.get_stats();
+        let active_count = self.enhanced_registry.connection_count();
+        
         ConnectionStats {
-            active: connections.len() as u32,
-            total_established: 0, // Would be tracked separately
-            total_closed: 0,      // Would be tracked separately
-            errors: 0,            // Would be tracked separately
+            active: active_count as u32,
+            total_established: enhanced_stats.total_insertions,
+            total_closed: enhanced_stats.total_removals,
+            errors: 0, // Would be tracked separately
         }
+    }
+    
+    /// Get enhanced registry statistics
+    pub fn get_enhanced_stats(&self) -> crate::valkyrie::routing::RegistryStats {
+        self.enhanced_registry.get_stats()
+    }
+    
+    /// Fast lookup using enhanced registry (lock-free)
+    pub fn lookup_connection_fast(&self, id: &ConnectionId) -> Option<crate::valkyrie::routing::EnhancedConnectionInfo> {
+        self.enhanced_registry.lookup_connection(id)
+    }
+    
+    /// Get active connections using enhanced registry
+    pub fn get_active_connections(&self) -> Vec<crate::valkyrie::routing::EnhancedConnectionInfo> {
+        self.enhanced_registry.get_active_connections()
+    }
+    
+    /// Clean up expired connections
+    pub async fn cleanup_stale_connections(&self) -> Result<()> {
+        let expired = self.enhanced_registry.get_expired_connections();
+        
+        for connection in expired {
+            self.close_connection(connection.id).await?;
+        }
+        
+        Ok(())
     }
 }
 

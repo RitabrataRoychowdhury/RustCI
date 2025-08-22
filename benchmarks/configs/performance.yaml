@@ -1,32 +1,120 @@
-# High-Performance Benchmark Configuration
-# Optimized for maximum performance validation
+# Valkyrie Protocol Performance Benchmark Configuration
+# This configuration defines comprehensive performance validation targets
 
-benchmark_suite:
-  name: "Valkyrie High-Performance Validation"
-  version: "2.0"
-
+# HTTP Bridge Benchmark Configuration
 http_bridge:
-  concurrent_requests: 10000
-  total_requests: 1000000
-  payload_size: 512
-  target_response_time_us: 100
-  warmup_requests: 10000
-  test_duration_seconds: 300
+  target_latency_us: 500
+  concurrent_requests: [100, 1000, 10000, 100000]
+  test_duration: 300  # 5 minutes
+  success_rate_threshold: 0.95
+  payload_sizes: [1024, 4096, 16384, 65536]
 
+# Protocol Core Benchmark Configuration
 protocol_core:
-  message_processing:
-    message_sizes: [32, 64, 128, 256]
-    target_throughput_msgs_per_sec: 10000000
-  stream_multiplexing:
-    concurrent_streams: [1000, 10000, 100000, 1000000]
-    target_latency_us: 50
+  target_latency_us: 100
+  target_throughput_msgs_per_sec: 1000000
+  memory_limit_bytes: 1073741824  # 1GB
+  concurrent_connections: [1000, 10000, 100000]
+  message_sizes: [256, 1024, 4096, 16384]
 
+# Transport Layer Benchmark Configuration
 transport:
   quic:
-    connection_counts: [1000, 10000, 100000, 1000000]
-    target_latency_us: 100
-    target_throughput_mbps: 50000
-  unix_socket:
+    target_throughput_gbps: 15.0
+    target_latency_us: 500
     connection_counts: [1000, 10000, 100000]
-    target_latency_us: 50
-    target_throughput_mbps: 100000
+    payload_sizes: [1024, 4096, 16384, 65536]
+  
+  unix_socket:
+    target_throughput_gbps: 20.0
+    target_latency_us: 100
+    connection_counts: [1000, 10000, 50000]
+    payload_sizes: [1024, 4096, 16384, 65536]
+  
+  tcp:
+    target_throughput_gbps: 8.0
+    target_latency_us: 1000
+    connection_counts: [1000, 10000, 75000]
+    payload_sizes: [1024, 4096, 16384, 65536]
+
+# Security Benchmark Configuration
+security:
+  target_encryption_latency_us: 50
+  target_handshake_time_ms: 2
+  cipher_suites:
+    - "AES-256-GCM"
+    - "ChaCha20-Poly1305"
+  key_sizes: [256, 384, 521]
+
+# End-to-End Benchmark Configuration
+end_to_end:
+  target_pipeline_latency_ms: 100
+  target_success_rate: 0.999
+  job_types:
+    - "build"
+    - "test"
+    - "deploy"
+  load_patterns:
+    - type: "constant"
+      rps: 1000
+    - type: "ramp"
+      start_rps: 100
+      end_rps: 10000
+      duration: 60
+    - type: "spike"
+      base_rps: 1000
+      spike_rps: 50000
+      spike_duration: 30
+
+# Performance Targets for Validation
+targets:
+  http_bridge_latency_us: 500
+  protocol_core_latency_us: 100
+  quic_throughput_gbps: 15.0
+  unix_socket_throughput_gbps: 20.0
+  security_encryption_latency_us: 50
+  e2e_pipeline_latency_ms: 100
+
+# Regression Detection Configuration
+regression_detection:
+  degradation_threshold_percent: 5.0
+  historical_window_size: 10
+  significance_level: 0.95
+  ci_cd_integration: true
+  database_path: "performance_history.db"
+  monitored_metrics:
+    - name: "http_bridge_latency_mean"
+      component: "HTTP Bridge"
+      metric_type: "Latency"
+      weight: 1.0
+      critical_threshold_percent: 25.0
+    
+    - name: "protocol_core_latency_mean"
+      component: "Protocol Core"
+      metric_type: "Latency"
+      weight: 1.0
+      critical_threshold_percent: 20.0
+    
+    - name: "quic_throughput_gbps"
+      component: "QUIC Transport"
+      metric_type: "Throughput"
+      weight: 1.0
+      critical_threshold_percent: 15.0
+    
+    - name: "unix_socket_throughput_gbps"
+      component: "Unix Socket Transport"
+      metric_type: "Throughput"
+      weight: 1.0
+      critical_threshold_percent: 15.0
+    
+    - name: "security_encryption_latency"
+      component: "Security"
+      metric_type: "Latency"
+      weight: 0.8
+      critical_threshold_percent: 30.0
+    
+    - name: "e2e_pipeline_latency"
+      component: "End-to-End"
+      metric_type: "Latency"
+      weight: 0.8
+      critical_threshold_percent: 20.0

@@ -1,0 +1,79 @@
+# Valkyrie Protocol Quick Benchmark Configuration
+# Reduced test duration and concurrency for rapid validation
+
+# HTTP Bridge Benchmark Configuration
+http_bridge:
+  target_latency_us: 500
+  concurrent_requests: [100, 1000]
+  test_duration: 30  # 30 seconds
+  success_rate_threshold: 0.95
+  payload_sizes: [1024, 4096]
+
+# Protocol Core Benchmark Configuration
+protocol_core:
+  target_latency_us: 100
+  target_throughput_msgs_per_sec: 100000
+  memory_limit_bytes: 536870912  # 512MB
+  concurrent_connections: [1000, 10000]
+  message_sizes: [256, 1024]
+
+# Transport Layer Benchmark Configuration
+transport:
+  quic:
+    target_throughput_gbps: 15.0
+    target_latency_us: 500
+    connection_counts: [1000, 10000]
+    payload_sizes: [1024, 4096]
+  
+  unix_socket:
+    target_throughput_gbps: 20.0
+    target_latency_us: 100
+    connection_counts: [1000, 10000]
+    payload_sizes: [1024, 4096]
+  
+  tcp:
+    target_throughput_gbps: 8.0
+    target_latency_us: 1000
+    connection_counts: [1000, 10000]
+    payload_sizes: [1024, 4096]
+
+# Security Benchmark Configuration
+security:
+  target_encryption_latency_us: 50
+  target_handshake_time_ms: 2
+  cipher_suites:
+    - "AES-256-GCM"
+  key_sizes: [256]
+
+# End-to-End Benchmark Configuration
+end_to_end:
+  target_pipeline_latency_ms: 100
+  target_success_rate: 0.999
+  job_types:
+    - "build"
+  load_patterns:
+    - type: "constant"
+      rps: 100
+
+# Performance Targets for Validation
+targets:
+  http_bridge_latency_us: 500
+  protocol_core_latency_us: 100
+  quic_throughput_gbps: 15.0
+  unix_socket_throughput_gbps: 20.0
+  security_encryption_latency_us: 50
+  e2e_pipeline_latency_ms: 100
+
+# Regression Detection Configuration (Disabled for quick tests)
+regression_detection:
+  degradation_threshold_percent: 10.0
+  historical_window_size: 5
+  significance_level: 0.90
+  ci_cd_integration: false
+  database_path: "performance_history_quick.db"
+  monitored_metrics:
+    - name: "http_bridge_latency_mean"
+      component: "HTTP Bridge"
+      metric_type: "Latency"
+      weight: 1.0
+      critical_threshold_percent: 50.0

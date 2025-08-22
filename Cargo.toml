@@ -108,6 +108,10 @@ bytes = "1.5"
 # Random number generation (used in lockfree implementations)
 fastrand = "2.3"
 
+# Data structures for high-performance routing
+smallvec = "1.11"
+lru = "0.12"
+
 # SIMD and zero-copy optimizations (used in valkyrie)
 wide = "0.7"
 bytemuck = { version = "1.14", features = ["derive"] }

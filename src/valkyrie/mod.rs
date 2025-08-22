@@ -18,6 +18,7 @@ pub mod bridge;
 // Performance optimization modules
 pub mod performance;
 pub mod lockfree;
+pub mod routing;
 
 // Integration and API modules
 pub mod api;
