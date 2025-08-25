@@ -265,6 +265,12 @@ impl From<serde_yaml::Error> for AppError {
         AppError::ValidationError(format!("YAML error: {}", err))
     }
 }
+
+impl From<crate::valkyrie::config::ConfigValidationError> for AppError {
+    fn from(err: crate::valkyrie::config::ConfigValidationError) -> Self {
+        AppError::ConfigurationError(format!("Configuration validation error: {}", err))
+    }
+}
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {

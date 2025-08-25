@@ -3,7 +3,8 @@
 //! This module provides streaming and multiplexing capabilities
 //! for the Valkyrie Protocol.
 
-use crate::valkyrie::{Result, StreamingConfig};
+use crate::valkyrie::Result;
+use crate::valkyrie::config::StreamingConfig;
 
 /// Stream multiplexer for the Valkyrie Protocol
 pub struct StreamMultiplexer {

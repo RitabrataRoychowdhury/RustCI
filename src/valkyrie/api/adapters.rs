@@ -15,7 +15,7 @@ use crate::valkyrie::core::{
     ConnectionId, EngineStats, MessagePayload, MessagePriority, MessageType, ValkyrieMessage,
 };
 use crate::valkyrie::transport::Endpoint;
-use crate::valkyrie::{Result, ValkyrieConfigBuilder, ValkyrieEngine, ValkyrieFactory};
+use crate::valkyrie::{Result, ValkyrieConfig, ValkyrieConfigBuilder, ValkyrieEngine, ValkyrieFactory};
 
 /// Adapter that wraps the ValkyrieEngine and provides the high-level API interface
 #[derive(Clone)]
@@ -167,10 +167,10 @@ impl ValkyrieEngineAdapter {
     /// Convert ClientConfig to ValkyrieConfig
     fn convert_client_config_to_engine_config(
         config: ClientConfig,
-    ) -> Result<crate::valkyrie::ValkyrieConfig> {
+    ) -> Result<ValkyrieConfig> {
         let mut builder = ValkyrieConfigBuilder::new()
-            .with_connection_timeout(config.connection_timeout)
-            .with_message_timeout(config.message_timeout);
+            .with_connection_timeout(config.connection_timeout.as_millis() as u64)
+            .with_message_timeout(config.message_timeout.as_millis() as u64);
 
         // Configure security
         if config.security.enable_tls {
@@ -197,7 +197,7 @@ impl ValkyrieEngineAdapter {
             builder = builder.with_feature("tracing", true);
         }
 
-        builder.build()
+        Ok(builder.build()?)
     }
 
     /// Parse endpoint URL into Endpoint struct

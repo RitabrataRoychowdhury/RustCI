@@ -983,8 +983,8 @@ mod tests {
     #[test]
     fn test_performance_requirements_extraction() {
         let mut job = Job {
-            id: JobId::new(Uuid::new_v4()), // or just Uuid if JobId = Uuid
-            pipeline_id: PipelineId::new(Uuid::new_v4()), // adjust depending on your type
+            id: Uuid::new_v4(), // JobId is likely a type alias for Uuid
+            pipeline_id: Uuid::new_v4(), // PipelineId is likely a type alias for Uuid
             name: "test-job".to_string(),
             steps: Vec::new(),
             requirements: Default::default(),

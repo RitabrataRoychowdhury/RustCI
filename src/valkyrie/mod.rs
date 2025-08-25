@@ -47,15 +47,13 @@ pub use core::message::{
 pub use core::handlers::{MessageHandler, LoggingMessageHandler, EchoMessageHandler};
 
 pub use config::{
-    ValkyrieConfig, ValkyrieConfigBuilder, TransportConfig, 
-    SecurityConfig, StreamingConfig, ObservabilityConfig,
-    ProtocolConfig, ProtocolTimeouts, TransportLayerConfig,
-    ConnectionPoolConfig, FlowControlConfig, RoutingConfig,
-    AuthenticationConfig, EncryptionConfig, AuthorizationConfig,
-    AuditConfig, MetricsConfig, TracingConfig, LoggingConfig,
-    AuthMethod, CipherSuite, AuditEvent, LogFormat,
-    LoadBalancingStrategy as ConfigLoadBalancingStrategy,
-    PerformanceConfig, FeatureFlags
+    ValkyrieConfig, ValkyrieConfigBuilder, 
+    ServerConfig, PerformanceConfig, RoutingConfig,
+    SecurityConfig, ObservabilityConfig, CachingConfig,
+    MemoryConfig, CpuConfig, LockFreeConfig, FuzzyMatchingConfig,
+    RateLimitingConfig, MetricsConfig, TracingConfig, LoggingConfig,
+    RedisConfig, CachePoliciesConfig, ConfigValidationError,
+    ConfigValidator, ValidationReport, HotReloadManager, HotReloadConfig
 };
 pub use factory::{ValkyrieFactory, EngineBuilder};
 pub use api::{ValkyrieClient, ClientConfig, ClientMessage};
@@ -63,7 +61,11 @@ pub use transport::{
     TransportManager, TransportType, Endpoint, TransportStats,
     TransportSelectionStrategy, ConnectionReuseStrategy
 };
-pub use security::{SecurityManager};
+pub use security::{
+    SecurityManager, FeatureFlags, AuthMethod, AuthenticationConfig, 
+    EncryptionConfig, AuthorizationConfig, AuditConfig, CipherSuite, 
+    AuditEvent, TlsVersion, PolicyEngineType, AuditLevel
+};
 pub use streaming::{StreamMultiplexer, StreamConfig};
 pub use observability::{ObservabilityManager, MetricsCollector};
 

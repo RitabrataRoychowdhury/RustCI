@@ -7,6 +7,8 @@ pub mod high_performance;
 pub mod integration_example;
 pub mod enhanced_registries;
 pub mod registry_integration_example;
+pub mod fuzzy_matching;
+pub mod enhanced_service_discovery;
 
 pub use high_performance::{
     HighPerformanceRoutingStrategy,
@@ -25,4 +27,25 @@ pub use enhanced_registries::{
     ConnectionMetrics,
     ServiceMetrics,
     RegistryStats,
+};
+
+pub use fuzzy_matching::{
+    FuzzyMatchingEngine,
+    FuzzyMatch,
+    FuzzyMatchingConfig,
+    FuzzyMatchingMetrics,
+    FuzzyMatchError,
+};
+
+pub use enhanced_service_discovery::{
+    EnhancedServiceDiscovery,
+    EnhancedServiceDiscoveryConfig,
+    ServiceQuery,
+    ServiceDiscoveryResult,
+    RankedServiceEntry,
+    RankingFactors,
+    MatchInfo,
+    MatchType,
+    ServiceDiscoveryMetrics,
+    ServiceDiscoveryError,
 };

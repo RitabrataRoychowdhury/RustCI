@@ -112,10 +112,22 @@ pub struct RetryPolicyConfig {
 /// Transport configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransportConfig {
+    /// Primary transport to use
+    pub primary_transport: String,
+    /// Fallback transports in order of preference
+    pub fallback_transports: Vec<String>,
     /// Available transports
     pub enabled_transports: Vec<String>,
     /// Default transport
     pub default_transport: String,
+    /// Connection pool size
+    pub connection_pool_size: usize,
+    /// Connection timeout in milliseconds
+    pub timeout_ms: u64,
+    /// Retry attempts for failed connections
+    pub retry_attempts: u32,
+    /// Enable compression
+    pub enable_compression: bool,
     /// TCP transport settings
     pub tcp: Option<TcpConfig>,
     /// QUIC transport settings

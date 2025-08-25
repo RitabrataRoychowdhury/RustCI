@@ -444,7 +444,7 @@ mod tests {
         let source = Uuid::from_u128(1);
         let destination = Uuid::from_u128(123);
         let context = RoutingContext::default();
-        let topology = NetworkTopology::default();
+        let topology = NetworkTopology::new();
         
         let start = Instant::now();
         let route = strategy.calculate_route(&source, &destination, &context, &topology).await.unwrap();
@@ -470,7 +470,7 @@ mod tests {
         let source = Uuid::from_u128(1);
         let destination = Uuid::from_u128(999); // Not in FIT
         let context = RoutingContext::default();
-        let topology = NetworkTopology::default();
+        let topology = NetworkTopology::new();
         
         let route = strategy.calculate_route(&source, &destination, &context, &topology).await.unwrap();
         

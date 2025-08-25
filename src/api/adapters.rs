@@ -4,10 +4,8 @@
 //! and the low-level Valkyrie Protocol engine. It handles type conversions,
 //! configuration mapping, and ensures seamless integration between layers.
 
-use std::collections::HashMap;
-use std::time::Duration;
 // async_trait removed as it's not used in this simplified version
-use crate::valkyrie::api::config::{ClientAuthMethod, ClientSecurityConfig};
+use crate::valkyrie::api::config::ClientSecurityConfig;
 use crate::valkyrie::api::{
     ClientConfig, ClientMessage, ClientMessagePriority, ClientMessageType, ClientPayload,
     ClientStats,
@@ -16,8 +14,13 @@ use uuid::Uuid;
 
 use crate::valkyrie::{
     ConnectionId, Endpoint, EngineStats, MessagePriority as EnginePriority,
-    MessageType as EngineMessageType, ValkyrieConfig, ValkyrieEngine,
+    MessageType as EngineMessageType, ValkyrieEngine,
     ValkyrieMessage as EngineMessage,
+};
+use crate::valkyrie::config::{
+    ValkyrieConfig, ProtocolConfig, TransportConfig, StreamingConfig, 
+    SecurityConfig, PerformanceConfig, RoutingConfig, ObservabilityConfig,
+    MetricsConfig, TracingConfig, LoggingConfig
 };
 
 use crate::error::Result;
@@ -40,122 +43,97 @@ impl ValkyrieEngineAdapter {
 
     /// Convert ClientConfig to ValkyrieConfig
     fn convert_client_config_to_engine_config(config: ClientConfig) -> Result<ValkyrieConfig> {
-        use crate::valkyrie::*;
-
         Ok(ValkyrieConfig {
+            server: crate::valkyrie::config::ServerConfig {
+                host: "0.0.0.0".to_string(),
+                port: 8080,
+                https_port: Some(8443),
+                max_connections: 10000,
+                connection_timeout_ms: config.connection_timeout.as_millis() as u64,
+                request_timeout_ms: config.message_timeout.as_millis() as u64,
+                keepalive_timeout_ms: 60000,
+                worker_threads: 4,
+                blocking_threads: 8,
+            },
             protocol: ProtocolConfig {
+                magic: 0x56414C4B, // "VALK"
                 version: "1.0.0".to_string(),
-                magic: 0x56414C4B, // "VALK" in hex
-                connection_timeout: config.connection_timeout,
-                message_timeout: config.message_timeout,
-                heartbeat_interval: Duration::from_secs(30),
-                max_message_size: 1024 * 1024, // 1MB default
+                connection_timeout: config.connection_timeout.as_millis() as u64,
+                message_timeout: config.message_timeout.as_millis() as u64,
+                heartbeat_interval: 30000,
+                max_message_size: 1024 * 1024, // 1MB
             },
             transport: TransportConfig {
                 primary_transport: "tcp".to_string(),
                 fallback_transports: vec!["websocket".to_string()],
                 connection_pool_size: config.performance.connection_pool_size,
+                timeout_ms: 30000,
+                retry_attempts: 3,
                 enable_compression: config.performance.enable_compression,
-                compression_level: config.performance.compression_level as u32,
             },
             security: Self::convert_security_config(config.security)?,
             streaming: StreamingConfig {
-                max_concurrent_streams: 100,
-                max_streams_per_connection: 10,
-                stream_buffer_size: 64 * 1024,
-                buffer_size: 64 * 1024,
-                enable_flow_control: true,
-                flow_control: FlowControlConfig {
-                    initial_window_size: 65536,
-                    max_window_size: 1048576,
-                    update_threshold: 0.5,
-                },
-                priority_scheduling: true,
-                initial_window_size: 65536,
+                enable_multiplexing: true,
+                max_concurrent_streams: 1000,
+                stream_timeout_ms: 60000,
+                buffer_size: 8192,
             },
             routing: RoutingConfig {
-                load_balancing: crate::valkyrie::config::LoadBalancingStrategy::RoundRobin,
-                routing_table_size: 1000,
-                route_cache_ttl: Duration::from_secs(300),
+                strategy: "high_performance".to_string(),
+                max_routes: 1_000_000,
+                route_cache_size: 100_000,
+                connection_pool_size: 1000,
+                max_concurrent_requests: 50_000,
+                lockfree: Some(crate::valkyrie::config::LockFreeConfig::default()),
+                fuzzy_matching: Some(crate::valkyrie::config::FuzzyMatchingConfig::default()),
             },
             performance: PerformanceConfig {
-                enable_zero_copy: config.features.experimental,
-                enable_simd: config.features.experimental,
-                worker_threads: Some(4),
-                message_batch_size: config.performance.message_batch_size,
+                mode: "high".to_string(),
+                enable_simd: Some(config.features.experimental),
+                enable_zero_copy: Some(config.features.experimental),
+                enable_hot_path_optimization: Some(true),
+                performance_budget: Some("82us".to_string()),
+                throughput_target: Some(1_000_000),
+                memory: Some(crate::valkyrie::config::MemoryConfig::default()),
+                cpu: Some(crate::valkyrie::config::CpuConfig::default()),
             },
             observability: ObservabilityConfig {
-                enable_metrics: true,
-                metrics: MetricsConfig {
-                    enabled: true,
-                    export_interval: Duration::from_secs(60),
-                    retention_period: Duration::from_secs(86400),
-                },
-                enable_tracing: true,
-                tracing: TracingConfig {
-                    enabled: true,
+                metrics: Some(MetricsConfig {
+                    enable: true,
+                    port: Some(9090),
+                    path: "/metrics".to_string(),
+                    enable_detailed_metrics: true,
+                }),
+                tracing: Some(TracingConfig {
+                    enable: true,
                     sampling_rate: 0.1,
-                    export_endpoint: None,
-                },
-                enable_logging: true,
-                logging: LoggingConfig {
+                    jaeger_endpoint: Some("http://jaeger:14268/api/traces".to_string()),
+                }),
+                logging: Some(LoggingConfig {
                     level: "info".to_string(),
-                    format: LogFormat::Json,
-                    structured: true,
-                },
-                metrics_export_interval: Duration::from_secs(60),
-                log_level: "info".to_string(),
+                    format: "json".to_string(),
+                    enable_file_logging: true,
+                }),
             },
-            features: FeatureFlags {
-                experimental: config.features.experimental,
-                rustci_integration: true,
-                container_transport: false,
-                kubernetes_transport: false,
-                custom: HashMap::new(),
-            },
+            caching: crate::valkyrie::config::CachingConfig::default(),
         })
     }
 
     /// Convert ClientSecurityConfig to SecurityConfig
     fn convert_security_config(
         config: ClientSecurityConfig,
-    ) -> Result<crate::valkyrie::SecurityConfig> {
-        use crate::valkyrie::*;
-
-        let auth_methods = match config.auth_method {
-            ClientAuthMethod::None => vec![AuthMethod::None],
-            ClientAuthMethod::Token(_) => vec![AuthMethod::Token],
-            ClientAuthMethod::Certificate => vec![AuthMethod::MutualTls],
-            ClientAuthMethod::Custom(_) => vec![AuthMethod::Custom("custom".to_string())],
-        };
-
+    ) -> Result<SecurityConfig> {
         Ok(SecurityConfig {
-            enable_tls: true,
-            enable_mutual_tls: matches!(config.auth_method, ClientAuthMethod::Certificate),
-            cert_path: config.cert_path.clone(),
-            key_path: config.key_path.clone(),
-            ca_cert_path: config.ca_cert_path.clone(),
-            enable_post_quantum: false,
-            authentication: AuthenticationConfig {
-                methods: auth_methods,
-                token_expiry: Duration::from_secs(3600),
-                require_mutual_auth: matches!(config.auth_method, ClientAuthMethod::Certificate),
-            },
-            encryption: EncryptionConfig {
-                cipher_suites: vec![CipherSuite::Aes256Gcm],
-                key_rotation_interval: Duration::from_secs(86400),
-                forward_secrecy: true,
-            },
-            authorization: AuthorizationConfig {
-                enable_rbac: false,
-                default_permissions: vec!["read".to_string(), "write".to_string()],
-                cache_ttl: Duration::from_secs(300),
-            },
-            audit: AuditConfig {
-                enabled: config.enable_tls, // Use enable_tls as proxy for audit
-                retention_period: Duration::from_secs(2592000), // 30 days
-                events: vec![AuditEvent::Connection, AuditEvent::Authentication],
-            },
+            enable_tls: config.enable_tls,
+            tls_cert_path: config.cert_path.clone(),
+            tls_key_path: config.key_path.clone(),
+            tls_ca_path: config.ca_cert_path.clone(),
+            rate_limiting: Some(crate::valkyrie::config::RateLimitingConfig {
+                enable: true,
+                default_rate: "1000/min".to_string(),
+                api_rate: "10000/min".to_string(),
+                burst_size: 100,
+            }),
         })
     }
 

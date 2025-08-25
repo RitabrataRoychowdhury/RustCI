@@ -3,7 +3,14 @@
 //! This module provides security components for the Valkyrie Protocol,
 //! including authentication, encryption, and authorization.
 
+pub mod types;
+
 pub use crate::valkyrie::config::SecurityConfig;
+pub use types::{
+    FeatureFlags, AuthMethod, AuthenticationConfig, EncryptionConfig, 
+    AuthorizationConfig, AuditConfig, CipherSuite, AuditEvent,
+    TlsVersion, PolicyEngineType, AuditLevel
+};
 use crate::valkyrie::Result;
 
 /// Security manager for the Valkyrie Protocol

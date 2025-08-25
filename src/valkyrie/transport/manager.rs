@@ -9,7 +9,8 @@ use tokio::sync::RwLock;
 
 use crate::valkyrie::core::{ConnectionId, ValkyrieMessage};
 use crate::valkyrie::transport::{Connection, Endpoint, Listener, Transport};
-use crate::valkyrie::{Result, TransportConfig};
+use crate::valkyrie::Result;
+use crate::valkyrie::config::TransportConfig;
 
 /// Transport manager that handles multiple transport types
 pub struct TransportManager {
