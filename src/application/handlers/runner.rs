@@ -10,6 +10,7 @@ use crate::{
         RunnerType,
     },
     error::{AppError, Result},
+    infrastructure::repositories::{RunnerRepository, RunnerFilter},
     AppState,
 };
 use axum::{
@@ -135,7 +136,7 @@ pub struct LogQuery {
     )
 )]
 pub async fn register_runner(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Extension(security_ctx): Extension<SecurityContext>,
     Json(request): Json<RegisterRunnerRequest>,
 ) -> Result<impl IntoResponse> {
@@ -175,8 +176,8 @@ pub async fn register_runner(
         runner.metadata = metadata;
     }
 
-    // TODO: Store runner in database
-    // For now, we'll just return the created runner
+    // Store runner in database
+    state.runner_repository.store_runner(&runner).await?;
 
     let response = RunnerResponse {
         id: runner.id,
@@ -433,7 +434,7 @@ pub async fn fetch_job_artifacts(
 )]
 pub async fn deregister_runner(
     Path(runner_id): Path<String>,
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Extension(security_ctx): Extension<SecurityContext>,
 ) -> Result<impl IntoResponse> {
     let runner_id = Uuid::parse_str(&runner_id)
@@ -444,22 +445,20 @@ pub async fn deregister_runner(
     // Validate deregistration permissions
     security_ctx.require_permission(&Permission::ManageSystem)?;
 
-    // Implement basic runner deregistration
-    // In a full implementation, this would:
+    // Check if runner exists
+    let runner = state.runner_repository.find_runner(runner_id).await?
+        .ok_or_else(|| AppError::NotFound(format!("Runner not found: {}", runner_id)))?;
+
+    // Update runner status to deregistering
+    state.runner_repository.update_runner_status(runner_id, RunnerStatus::Deregistering).await?;
+    
+    // TODO: In a full implementation, this would:
     // 1. Check if runner has running jobs
     // 2. Gracefully stop or wait for jobs to complete
-    // 3. Remove runner from database
-    // 4. Clean up any associated resources
+    // 3. Clean up any associated resources
     
-    // For now, just log the deregistration
-    debug!("Deregistering runner: {}", runner_id);
-    
-    // In a real implementation, you would:
-    // - Query the database for running jobs on this runner
-    // - Send stop signals to running jobs
-    // - Wait for graceful shutdown or force terminate after timeout
-    // - Remove runner record from database
-    // - Clean up temporary files and resources
+    // Remove runner from database
+    state.runner_repository.remove_runner(runner_id).await?;
 
     info!("✅ Runner deregistered successfully: {}", runner_id);
 
@@ -489,7 +488,7 @@ pub async fn deregister_runner(
 )]
 pub async fn get_runner_status(
     Path(runner_id): Path<String>,
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Extension(security_ctx): Extension<SecurityContext>,
 ) -> Result<impl IntoResponse> {
     let runner_id = Uuid::parse_str(&runner_id)
@@ -500,17 +499,25 @@ pub async fn get_runner_status(
     // Validate read permissions
     security_ctx.require_permission(&Permission::ReadPipelines)?;
 
-    // TODO: Fetch actual runner from database
-    // For now, return mock data
+    // Fetch actual runner from database
+    let runner = state.runner_repository.find_runner(runner_id).await?
+        .ok_or_else(|| AppError::NotFound(format!("Runner not found: {}", runner_id)))?;
+
+    let runner_type_str = match &runner.runner_type {
+        RunnerType::Local { .. } => "local",
+        RunnerType::Docker { .. } => "docker",
+        RunnerType::Kubernetes { .. } => "kubernetes",
+    };
+
     let response = RunnerResponse {
-        id: runner_id,
-        name: "mock-runner".to_string(),
-        runner_type: "local".to_string(),
-        status: RunnerStatus::Active,
-        capacity: 4,
-        tags: vec!["test".to_string()],
-        created_at: Utc::now(),
-        last_heartbeat: Utc::now(),
+        id: runner.id,
+        name: runner.name,
+        runner_type: runner_type_str.to_string(),
+        status: runner.status,
+        capacity: runner.capacity,
+        tags: runner.tags,
+        created_at: runner.created_at,
+        last_heartbeat: runner.last_heartbeat,
     };
 
     debug!("✅ Status retrieved for runner: {}", runner_id);
@@ -533,7 +540,7 @@ pub async fn get_runner_status(
     )
 )]
 pub async fn list_runners(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Extension(security_ctx): Extension<SecurityContext>,
 ) -> Result<impl IntoResponse> {
     debug!("📋 Listing all runners");
@@ -541,9 +548,31 @@ pub async fn list_runners(
     // Validate read permissions
     security_ctx.require_permission(&Permission::ReadPipelines)?;
 
-    // TODO: Fetch actual runners from database
-    // For now, return empty list
-    let runners: Vec<RunnerResponse> = Vec::new();
+    // Fetch actual runners from database
+    let filter = RunnerFilter::default();
+    let runners_entities = state.runner_repository.list_runners(filter).await?;
+    
+    let runners: Vec<RunnerResponse> = runners_entities
+        .into_iter()
+        .map(|runner| {
+            let runner_type_str = match &runner.runner_type {
+                RunnerType::Local { .. } => "local",
+                RunnerType::Docker { .. } => "docker", 
+                RunnerType::Kubernetes { .. } => "kubernetes",
+            };
+            
+            RunnerResponse {
+                id: runner.id,
+                name: runner.name,
+                runner_type: runner_type_str.to_string(),
+                status: runner.status,
+                capacity: runner.capacity,
+                tags: runner.tags,
+                created_at: runner.created_at,
+                last_heartbeat: runner.last_heartbeat,
+            }
+        })
+        .collect();
 
     debug!("✅ Listed {} runners", runners.len());
 

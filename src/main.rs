@@ -270,10 +270,18 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         RustAutoDevOps::plugins::health::HealthMonitorConfig::default()
     ));
 
+    // Create runner repository
+    let runner_repository = Arc::new(
+        RustAutoDevOps::infrastructure::repositories::MongoRunnerRepository::new(&db.database)
+            .await
+            .expect("Failed to create runner repository")
+    ) as Arc<dyn RustAutoDevOps::infrastructure::repositories::RunnerRepository>;
+
     // Create application state
     let app_state = AppState {
         env: Arc::new(config.clone()),
         db: Arc::new(db),
+        runner_repository,
         audit_logger,
         config_manager: Arc::new(tokio::sync::RwLock::new(config_manager)),
         observability: Arc::new(observability),

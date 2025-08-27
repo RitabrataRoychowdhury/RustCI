@@ -139,6 +139,8 @@ pub enum RunnerStatus {
     Maintenance,
     /// Runner has failed and needs attention
     Failed,
+    /// Runner is being deregistered
+    Deregistering,
 }
 
 /// Runner capacity information
