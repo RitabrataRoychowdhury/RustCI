@@ -11,8 +11,9 @@ use std::time::Duration;
 use uuid::Uuid;
 
 // Import the FIT implementation
-use RustAutoDevOps::valkyrie::lockfree::fingerprinted_id_table::{
-    FingerprintedIdTable, RouteEntry, RouteId, NodeId, ShardId, FitError
+use RustAutoDevOps::valkyrie::lockfree::{
+    fingerprinted_id_table::{FingerprintedIdTable, FitError, RouteEntry, RouteId, NodeId, ShardId},
+    ServiceId
 };
 
 /// Generate test route entries for benchmarking

@@ -234,15 +234,32 @@ impl ComprehensiveMiddlewarePipeline {
         let _path = req.uri().path();
 
         // Extract user ID from existing security context if available
-        let _user_id = req
+        let user_id = req
             .extensions()
             .get::<SecurityContext>()
             .map(|ctx| ctx.user_id.to_string());
 
-        // Check rate limits (simplified for now)
+        // Check rate limits
         if state.env.security.rate_limiting.enabled {
-            // TODO: Implement proper rate limiting check
-            debug!("Rate limiting enabled but not fully implemented");
+            // Extract client IP for rate limiting
+            if let Some(client_ip) = crate::presentation::middleware::rate_limit::extract_client_ip(req) {
+                if let Err(e) = _rate_limiter.check_ip_limit(client_ip).await {
+                    debug!("Rate limit exceeded for IP {}: {}", client_ip, e);
+                    return Err(crate::error::AppError::RateLimitExceededSimple(format!(
+                        "Rate limit exceeded for IP {}: {}", client_ip, e
+                    )));
+                }
+            }
+            
+            // Check user-based rate limiting if user is authenticated
+            if let Some(user_id) = user_id {
+                if let Err(e) = _rate_limiter.check_user_limit(&user_id).await {
+                    debug!("Rate limit exceeded for user {}: {}", user_id, e);
+                    return Err(crate::error::AppError::RateLimitExceededSimple(format!(
+                        "Rate limit exceeded for user {}: {}", user_id, e
+                    )));
+                }
+            }
         }
         Ok(())
     }

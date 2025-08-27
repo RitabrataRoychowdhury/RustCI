@@ -4,8 +4,9 @@
 use std::time::{Duration, Instant};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::io::{Read, Write};
+use std::net::SocketAddr;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::runtime::Runtime;
 use std::collections::HashMap;
 
@@ -187,7 +188,7 @@ fn test_valkyrie_lockfree_extreme_fault_tolerance() {
     
     // Calculate results
     let total_retries = retry_counter.get();
-    let successful_operations = success_map.iter().filter(|(_, &success)| success).count();
+    let successful_operations = success_map.iter().filter(|(_, success)| *success).count();
     let success_rate = (successful_operations as f64 / total_operations as f64) * 100.0;
     let avg_retries = total_retries as f64 / total_operations as f64;
     let queue_size = message_queue.len();
@@ -318,7 +319,7 @@ fn test_valkyrie_simd_ultra_low_latency() {
     println!("  P50 Latency: {:.2}μs", p50 as f64 / 1000.0);
     println!("  P95 Latency: {:.2}μs", p95 as f64 / 1000.0);
     println!("  P99 Latency: {:.2}μs", p99 as f64 / 1000.0);
-    println!("  SIMD Acceleration: {}x speedup", processor.get_speedup_factor());
+    println!("  SIMD Acceleration: {}x speedup", simd_processor.get_speedup_factor());
     
     // Validate ultra-low latency requirements for edge computing
     assert!(throughput >= 100000.0, "Should achieve >100K ops/sec with SIMD");
@@ -347,20 +348,20 @@ fn test_valkyrie_real_network_partition_recovery() {
         let mut server_addrs = Vec::new();
         
         for _ in &server_ports {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
             server_addrs.push(addr);
             
             // Spawn server task
             tokio::spawn(async move {
                 loop {
-                    if let Ok((mut stream, _)) = listener.accept() {
+                    if let Ok((mut stream, _)) = listener.accept().await {
                         tokio::spawn(async move {
                             let mut buffer = [0; 1024];
-                            while let Ok(n) = stream.read(&mut buffer) {
+                            while let Ok(n) = stream.read(&mut buffer).await {
                                 if n == 0 { break; }
                                 // Echo back with processing delay
-                                let _ = stream.write_all(&buffer[..n]);
+                                let _ = stream.write_all(&buffer[..n]).await;
                             }
                         });
                     }
@@ -639,8 +640,8 @@ struct EdgeProcessingResult {
     processing_time: Duration,
     output_size: usize,
 }
-// He
-lper functions for realistic edge computing testing
+
+// Helper functions for realistic edge computing testing
 
 fn generate_realistic_gradient_data(size: usize, iteration: usize) -> Vec<u8> {
     let mut data = Vec::with_capacity(size);

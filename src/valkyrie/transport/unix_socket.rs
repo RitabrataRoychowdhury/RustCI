@@ -19,13 +19,17 @@ impl UnixSocketTransport {
 #[async_trait]
 impl Transport for UnixSocketTransport {
     async fn connect(&self, _endpoint: &Endpoint) -> Result<Box<dyn Connection>> {
-        // Placeholder implementation
-        todo!("Implement Unix socket connect")
+        // Placeholder implementation - Unix socket connect not yet implemented
+        Err(crate::valkyrie::ValkyrieError::NotImplemented(
+            "Unix socket connect not yet implemented".to_string()
+        ))
     }
 
     async fn listen(&self, _bind_address: std::net::SocketAddr) -> Result<Box<dyn Listener>> {
-        // Placeholder implementation
-        todo!("Implement Unix socket listen")
+        // Placeholder implementation - Unix socket listen not yet implemented
+        Err(crate::valkyrie::ValkyrieError::NotImplemented(
+            "Unix socket listen not yet implemented".to_string()
+        ))
     }
 
     fn capabilities(&self) -> TransportCapabilities {

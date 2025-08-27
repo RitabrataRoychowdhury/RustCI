@@ -111,7 +111,7 @@ impl PerformanceResult {
 
 fn main() {
     println!("🚀 High-Performance Routing System - Performance Validation");
-    println!("=" .repeat(70));
+    println!("{}", "=".repeat(70));
     
     // Test 1: Connection Registry Performance
     println!("\n📊 Test 1: Connection Registry Performance");
@@ -129,9 +129,9 @@ fn main() {
     concurrent_result.print_report();
     
     // Overall Summary
-    println!("\n" + "=" .repeat(70));
+    println!("\n{}", "=".repeat(70));
     println!("OVERALL PERFORMANCE VALIDATION SUMMARY");
-    println!("=" .repeat(70));
+    println!("{}", "=".repeat(70));
     
     let all_results = vec![connection_result, service_result, concurrent_result];
     let passed_count = all_results.iter().filter(|r| r.meets_requirements()).count();
@@ -152,7 +152,7 @@ fn main() {
         }
     }
     
-    println!("=" .repeat(70));
+    println!("{}", "=".repeat(70));
 }
 
 fn test_connection_registry_performance() -> PerformanceResult {

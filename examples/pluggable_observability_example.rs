@@ -5,14 +5,14 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use rustci::core::networking::valkyrie::observability::adapter_system::{
+use RustAutoDevOps::core::networking::valkyrie::observability::adapter_system::{
     ObservabilityManager, MetricsAdapter, TracingAdapter, HealthAdapter, LoggingAdapter,
     SpanId, SpanStatus, HealthStatus, LogLevel, AdapterHealth, DependencyHealth,
     ObservabilityConfig, NoOpMetricsAdapter, NoOpTracingAdapter, NoOpHealthAdapter, BuiltInJsonLogger
 };
 
 #[cfg(feature = "opentelemetry")]
-use rustci::core::networking::valkyrie::observability::opentelemetry_adapter::{
+use RustAutoDevOps::core::networking::valkyrie::observability::opentelemetry_adapter::{
     OpenTelemetryAdapterFactory, OpenTelemetryConfig
 };
 

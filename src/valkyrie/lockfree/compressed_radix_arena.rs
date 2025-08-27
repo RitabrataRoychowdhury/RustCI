@@ -386,6 +386,25 @@ impl CompressedRadixArena {
         results
     }
     
+    /// Find a service by exact prefix match
+    pub fn find(&mut self, prefix: &str) -> Option<ServiceId> {
+        let results = self.find_prefix(prefix);
+        results.first().copied()
+    }
+    
+    /// Find a service by exact prefix match (read-only, no cache updates)
+    pub fn find_readonly(&self, prefix: &str) -> Option<ServiceId> {
+        let results = self.find_prefix_readonly(prefix);
+        results.first().copied()
+    }
+    
+    /// Find all services with the given prefix (read-only, no cache updates)
+    pub fn find_prefix_readonly(&self, prefix: &str) -> Vec<ServiceId> {
+        let mut results = Vec::new();
+        self.find_prefix_recursive(self.root, prefix, &mut results);
+        results
+    }
+    
     /// Remove a service
     pub fn remove(&mut self, prefix: &str, service_id: ServiceId) -> Result<bool, CraError> {
         let removed = self.remove_recursive(self.root, prefix, service_id)?;

@@ -19,13 +19,17 @@ impl WebSocketTransport {
 #[async_trait]
 impl Transport for WebSocketTransport {
     async fn connect(&self, _endpoint: &Endpoint) -> Result<Box<dyn Connection>> {
-        // Placeholder implementation
-        todo!("Implement WebSocket connect")
+        // Placeholder implementation - WebSocket connect not yet implemented
+        Err(crate::valkyrie::ValkyrieError::NotImplemented(
+            "WebSocket connect not yet implemented".to_string()
+        ))
     }
 
     async fn listen(&self, _bind_address: std::net::SocketAddr) -> Result<Box<dyn Listener>> {
-        // Placeholder implementation
-        todo!("Implement WebSocket listen")
+        // Placeholder implementation - WebSocket listen not yet implemented
+        Err(crate::valkyrie::ValkyrieError::Transport(
+            "WebSocket listen not yet implemented".to_string()
+        ))
     }
 
     fn capabilities(&self) -> TransportCapabilities {

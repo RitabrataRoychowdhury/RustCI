@@ -31,7 +31,7 @@ async fn test_capability_detection() -> Result<()> {
     let detector = Arc::new(RunnerCapabilityDetector::new(None, config).await?);
     
     // Test capability detection for a mock endpoint
-    let endpoint = \"localhost:8080\";
+    let endpoint = "localhost:8080";
     
     // This would normally detect real capabilities, but for testing we'll verify the structure
     match detector.detect_capabilities(endpoint).await {
@@ -39,7 +39,7 @@ async fn test_capability_detection() -> Result<()> {
             // Verify capability structure
             assert!(capabilities.protocol_support.http.supported || !capabilities.protocol_support.http.supported);
             assert!(capabilities.protocol_support.valkyrie.supported || !capabilities.protocol_support.valkyrie.supported);
-            println!(\"✓ Capability detection completed successfully\");
+            println!("✓ Capability detection completed successfully");
         }
         Err(_) => {
             // Expected for non-existent endpoint
@@ -675,15 +675,14 @@ fn create_default_security_capabilities() -> SecurityCapabilities {
         encryption: EncryptionCapabilities {
             at_rest: true,
             in_transit: true,
-            key_management: vec![\"local\".to_string()],
-            algorithms: vec![\"AES-256\".to_string(), \"ChaCha20\".to_string()],
+            key_management: vec!["local".to_string()],
+            algorithms: vec!["AES-256".to_string(), "ChaCha20".to_string()],
         },
         compliance: ComplianceCapabilities {
-            standards: vec![\"SOC2\".to_string()],
+            standards: vec!["SOC2".to_string()],
             audit_logging: true,
             data_residency: false,
             privacy_controls: true,
         },
     }
 }
-"

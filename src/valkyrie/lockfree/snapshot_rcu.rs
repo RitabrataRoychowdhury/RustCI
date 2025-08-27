@@ -196,8 +196,13 @@ where
                     // Schedule old snapshot for deallocation (hazard pointer management)
                     // In a full implementation, this would use proper hazard pointers
                     // For now, we'll leak the old snapshot to avoid use-after-free
-                    // TODO: Implement proper hazard pointer management
-                    let _ = old_ptr; // Intentionally leak for safety
+                    // 
+                    // Proper hazard pointer implementation would:
+                    // 1. Check if any threads are still accessing the old snapshot
+                    // 2. Add to a deferred deletion queue if still in use
+                    // 3. Safely deallocate when no longer referenced
+                    // 4. Use epoch-based reclamation or similar techniques
+                    let _ = old_ptr; // Intentionally leak for safety until proper hazard pointers are implemented
                     
                     // Update statistics
                     if let Ok(mut stats_guard) = stats.lock() {

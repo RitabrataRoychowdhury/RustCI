@@ -5,10 +5,11 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use rustci::core::networking::valkyrie::observability::{
+use RustAutoDevOps::core::networking::valkyrie::observability::{
     ObservabilityManager, ObservabilityConfig, ExternalObservabilityConfig,
-    MetricValue, LogLevel, CorrelationStatus,
+    LogLevel,
 };
+use RustAutoDevOps::core::networking::valkyrie::observability::correlation::CorrelationStatus;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -47,6 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         health_enabled: true,
         dashboard_enabled: true,
         external_config: Some(external_config),
+        adapter_registry_config: None,
         metrics_retention_seconds: 3600,
         log_retention_seconds: 86400,
         health_check_interval_seconds: 30,
@@ -191,9 +193,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // End spans
     correlation.end_span(correlation_id, span2_id, 
-        rustci::core::networking::valkyrie::observability::correlation::SpanStatus::Ok).await?;
+        RustAutoDevOps::core::networking::valkyrie::observability::correlation::SpanStatus::Ok).await?;
     correlation.end_span(correlation_id, span1_id, 
-        rustci::core::networking::valkyrie::observability::correlation::SpanStatus::Ok).await?;
+        RustAutoDevOps::core::networking::valkyrie::observability::correlation::SpanStatus::Ok).await?;
     
     println!("  🕵️ Created and completed trace spans");
 

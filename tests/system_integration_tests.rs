@@ -464,9 +464,9 @@ impl SystemIntegrationTests {
         let all_passed = results.iter().all(|r| r.passed);
         let passed_count = results.iter().filter(|r| r.passed).count();
         
-        println!("\n" + "=".repeat(70));
+        println!("\n{}", "=".repeat(70));
         println!("COMPREHENSIVE SYSTEM INTEGRATION VALIDATION SUMMARY");
-        println!("=".repeat(70));
+        println!("{}", "=".repeat(70));
         println!("Tests Passed: {}/{}", passed_count, results.len());
         println!("Overall Result: {}", if all_passed { "✅ ALL TESTS PASSED" } else { "❌ SOME TESTS FAILED" });
         
@@ -487,7 +487,7 @@ impl SystemIntegrationTests {
                 test.p99_latency);
         }
         
-        println!("=".repeat(70));
+        println!("{}", "=".repeat(70));
         
         results
     }

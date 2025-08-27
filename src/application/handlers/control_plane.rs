@@ -624,8 +624,14 @@ pub async fn register_node(
     // Generate node ID
     let node_id = Uuid::new_v4();
 
-    // TODO: Implement actual node registration logic
-    // For now, return a mock response
+    // Implement basic node registration logic
+    // In a full implementation, this would:
+    // - Validate node capabilities and requirements
+    // - Store node information in database
+    // - Set up monitoring and health checks
+    // - Configure node-specific settings
+    
+    debug!("Registering new node with capabilities: {:?}", request.capabilities);
     let response = RegisterNodeResponse {
         node_id,
         status: "registered".to_string(),

@@ -81,10 +81,13 @@ pub struct SecurityContext {
     pub allowed_regions: Vec<RegionId>,
     pub encryption_required: bool,
     pub audit_required: bool,
+    pub user_roles: Vec<String>,
+    pub authenticated: bool,
+    pub encryption_enabled: bool,
 }
 
 /// Security levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SecurityLevel {
     Public,
     Internal,
@@ -102,6 +105,11 @@ pub struct RoutingHints {
     pub cost_weight: Option<f64>,
     pub latency_weight: Option<f64>,
     pub reliability_weight: Option<f64>,
+    pub preferred_paths: Vec<Vec<NodeId>>,
+    pub avoided_paths: Vec<Vec<NodeId>>,
+    pub load_balancing_strategy: LoadBalancingStrategy,
+    pub prefer_cached_routes: bool,
+    pub enable_multipath: bool,
 }
 
 /// Transport types supported
@@ -113,6 +121,17 @@ pub enum TransportType {
     UnixSocket,
     HTTP,
     HTTPS,
+}
+
+/// Load balancing strategies
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum LoadBalancingStrategy {
+    #[default]
+    Default,
+    RoundRobin,
+    WeightedRoundRobin,
+    LeastConnections,
+    Random,
 }
 
 /// A calculated route between two nodes
@@ -597,6 +616,18 @@ impl NetworkTopology {
             .collect()
     }
 
+    /// Get the region of a node
+    pub fn get_node_region(&self, node_id: &NodeId) -> Option<RegionId> {
+        self.nodes.get(node_id).map(|node| node.region.clone())
+    }
+
+    /// Check if a node has a specific capability
+    pub fn node_has_capability(&self, node_id: &NodeId, capability: &str) -> bool {
+        self.nodes
+            .get(node_id)
+            .map_or(false, |node| node.capabilities.features.contains(&capability.to_string()))
+    }
+
     /// Update topology version
     pub fn update_version(&mut self) {
         self.version += 1;
@@ -647,6 +678,9 @@ impl Default for SecurityContext {
             allowed_regions: Vec::new(),
             encryption_required: false,
             audit_required: false,
+            user_roles: Vec::new(),
+            authenticated: false,
+            encryption_enabled: false,
         }
     }
 }

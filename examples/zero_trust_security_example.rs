@@ -44,9 +44,9 @@ async fn initialize_zero_trust_manager() -> Result<ZeroTrustManager, Box<dyn std
         default_trust_score: 0.5,
         trust_decay_rate: 0.05, // 5% decay per hour
         min_trust_threshold: 0.3,
-        reauth_interval: Duration::from_hours(4),
-        session_timeout: Duration::from_hours(12),
-        risk_assessment_interval: Duration::from_minutes(10),
+        reauth_interval: Duration::from_secs(4 * 3600), // 4 hours
+        session_timeout: Duration::from_secs(12 * 3600), // 12 hours
+        risk_assessment_interval: Duration::from_secs(10 * 60),
         enable_behavioral_analytics: true,
         enable_threat_intelligence: true,
         max_sessions_per_identity: 3,
@@ -103,8 +103,9 @@ async fn demo_user_authentication(zero_trust: &ZeroTrustManager) -> Result<(), B
     }
     
     Ok(())
-}/// 
-Demonstrate service authentication for automated systems
+}
+
+/// Demonstrate service authentication for automated systems
 async fn demo_service_authentication(zero_trust: &ZeroTrustManager) -> Result<(), Box<dyn std::error::Error>> {
     info!("🤖 Demo: Service Authentication");
     

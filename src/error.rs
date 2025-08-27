@@ -242,6 +242,12 @@ pub enum AppError {
 
     #[error("Queue full: {0}")]
     QueueFull(String),
+
+    #[error("Transport error: {0}")]
+    Transport(String),
+
+    #[error("Routing error: {0}")]
+    RoutingError(String),
 }
 
 // Valkyrie-specific error type
@@ -390,6 +396,10 @@ impl IntoResponse for AppError {
                 StatusCode::TOO_MANY_REQUESTS,
                 format!("Flow control violation: {}: {}", stream_id, details),
             ),
+
+            // Transport errors
+            AppError::Transport(msg) => (StatusCode::BAD_GATEWAY, msg),
+            AppError::RoutingError(msg) => (StatusCode::BAD_GATEWAY, msg),
 
             // Default catch-all for any future or unhandled AppError variants
             other => (

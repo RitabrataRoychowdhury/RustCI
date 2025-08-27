@@ -235,7 +235,7 @@ impl RateLimiter {
     }
 
     /// Check rate limit for IP address
-    async fn check_ip_limit(&self, ip: IpAddr) -> Result<(), RateLimitError> {
+    pub async fn check_ip_limit(&self, ip: IpAddr) -> Result<(), RateLimitError> {
         if let Some(limit) = self.config.per_ip_limit {
             let mut buckets = self.ip_buckets.write().await;
             let bucket = buckets
@@ -256,7 +256,7 @@ impl RateLimiter {
     }
 
     /// Check rate limit for user
-    async fn check_user_limit(&self, user_id: &str) -> Result<(), RateLimitError> {
+    pub async fn check_user_limit(&self, user_id: &str) -> Result<(), RateLimitError> {
         if let Some(limit) = self.config.per_user_limit {
             let mut buckets = self.user_buckets.write().await;
             let bucket = buckets
@@ -307,6 +307,22 @@ pub struct RateLimitError {
     pub remaining: u32,
     pub reset_time: Duration,
 }
+
+impl std::fmt::Display for RateLimitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Rate limit exceeded for {} '{}': {}/{} requests, reset in {}s",
+            self.limit_type,
+            self.identifier,
+            self.limit - self.remaining,
+            self.limit,
+            self.reset_time.as_secs()
+        )
+    }
+}
+
+impl std::error::Error for RateLimitError {}
 
 impl IntoResponse for RateLimitError {
     fn into_response(self) -> Response {
@@ -440,7 +456,7 @@ pub async fn rate_limit_middleware(
 }
 
 /// Extract client IP from request headers
-fn extract_client_ip(req: &Request<Body>) -> Option<IpAddr> {
+pub fn extract_client_ip(req: &Request<Body>) -> Option<IpAddr> {
     // Check X-Forwarded-For header first
     if let Some(forwarded) = req.headers().get("x-forwarded-for") {
         if let Ok(forwarded_str) = forwarded.to_str() {
@@ -462,7 +478,9 @@ fn extract_client_ip(req: &Request<Body>) -> Option<IpAddr> {
         }
     }
 
-    // TODO: Extract from connection info if available
+    // Extract from connection info if available
+    // For now, return None as connection info extraction is not implemented
+    // This would require access to the underlying connection details
     None
 }
 

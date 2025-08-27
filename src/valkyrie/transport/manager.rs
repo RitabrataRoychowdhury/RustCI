@@ -172,7 +172,7 @@ pub struct TransportStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::valkyrie::TransportConfig;
+    use crate::valkyrie::config::TransportConfig;
 
     #[tokio::test]
     async fn test_transport_manager_creation() {
@@ -180,8 +180,9 @@ mod tests {
             primary_transport: "tcp".to_string(),
             fallback_transports: vec!["websocket".to_string()],
             connection_pool_size: 10,
+            timeout_ms: 30000,
+            retry_attempts: 3,
             enable_compression: false,
-            compression_level: 6,
         };
 
         let result = TransportManager::new(config);
@@ -194,8 +195,9 @@ mod tests {
             primary_transport: "tcp".to_string(),
             fallback_transports: vec![],
             connection_pool_size: 10,
+            timeout_ms: 30000,
+            retry_attempts: 3,
             enable_compression: false,
-            compression_level: 6,
         };
 
         let manager = TransportManager::new(config).unwrap();

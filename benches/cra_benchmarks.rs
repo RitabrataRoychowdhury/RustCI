@@ -10,8 +10,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 // Import the CRA implementation
-use RustAutoDevOps::valkyrie::lockfree::compressed_radix_arena::{
-    CompressedRadixArena, PrefixEntry, ArenaError
+use RustAutoDevOps::valkyrie::lockfree::{
+    compressed_radix_arena::{CompressedRadixArena, CraError},
+    ServiceId
 };
 
 /// Generate test prefixes for benchmarking
@@ -71,13 +72,13 @@ fn bench_cra_insertion(c: &mut Criterion) {
             |b, &size| {
                 b.iter_batched(
                     || {
-                        let cra = CompressedRadixArena::new();
+                        let mut cra = CompressedRadixArena::new();
                         let prefixes = generate_prefixes(size);
                         (cra, prefixes)
                     },
-                    |(cra, prefixes)| {
+                    |(mut cra, prefixes)| {
                         for (prefix, value) in prefixes {
-                            black_box(cra.insert(&prefix, value).unwrap());
+                            black_box(cra.insert(&prefix, ServiceId(value)).unwrap());
                         }
                     },
                     criterion::BatchSize::SmallInput,
@@ -100,20 +101,20 @@ fn bench_cra_lookup(c: &mut Criterion) {
             |b, &size| {
                 b.iter_batched(
                     || {
-                        let cra = CompressedRadixArena::new();
+                        let mut cra = CompressedRadixArena::new();
                         let prefixes = generate_prefixes(size);
                         let lookup_keys: Vec<String> = prefixes.iter().map(|(k, _)| k.clone()).collect();
                         
                         // Pre-populate the CRA
                         for (prefix, value) in prefixes {
-                            cra.insert(&prefix, value).unwrap();
+                            cra.insert(&prefix, ServiceId(value)).unwrap();
                         }
                         
                         (cra, lookup_keys)
                     },
                     |(cra, lookup_keys)| {
                         for key in &lookup_keys {
-                            black_box(cra.lookup(key));
+                            black_box(cra.find_readonly(key));
                         }
                     },
                     criterion::BatchSize::SmallInput,
@@ -136,12 +137,12 @@ fn bench_prefix_search(c: &mut Criterion) {
             |b, &size| {
                 b.iter_batched(
                     || {
-                        let cra = CompressedRadixArena::new();
+                        let mut cra = CompressedRadixArena::new();
                         let prefixes = generate_hierarchical_prefixes(size);
                         
                         // Pre-populate the CRA
                         for (prefix, value) in prefixes {
-                            cra.insert(&prefix, value).unwrap();
+                            cra.insert(&prefix, ServiceId(value)).unwrap();
                         }
                         
                         // Generate search prefixes
@@ -156,7 +157,7 @@ fn bench_prefix_search(c: &mut Criterion) {
                     },
                     |(cra, search_prefixes)| {
                         for prefix in &search_prefixes {
-                            black_box(cra.find_with_prefix(prefix));
+                            black_box(cra.find_prefix_readonly(prefix));
                         }
                     },
                     criterion::BatchSize::SmallInput,
@@ -179,17 +180,17 @@ fn bench_single_lookup_latency(c: &mut Criterion) {
             BenchmarkId::new("single_lookup", cra_size),
             cra_size,
             |b, &cra_size| {
-                let cra = CompressedRadixArena::new();
+                let mut cra = CompressedRadixArena::new();
                 let prefixes = generate_prefixes(cra_size);
                 let lookup_key = prefixes[cra_size / 2].0.clone(); // Middle entry
                 
                 // Pre-populate the CRA
                 for (prefix, value) in prefixes {
-                    cra.insert(&prefix, value).unwrap();
+                    cra.insert(&prefix, ServiceId(value)).unwrap();
                 }
                 
                 b.iter(|| {
-                    black_box(cra.lookup(&lookup_key));
+                    black_box(cra.find_readonly(&lookup_key));
                 });
             },
         );
@@ -204,7 +205,7 @@ fn bench_compression_efficiency(c: &mut Criterion) {
     group.bench_function("common_prefix_compression", |b| {
         b.iter_batched(
             || {
-                let cra = CompressedRadixArena::new();
+                let mut cra = CompressedRadixArena::new();
                 
                 // Generate prefixes with common prefixes (should compress well)
                 let mut prefixes = Vec::new();
@@ -215,15 +216,15 @@ fn bench_compression_efficiency(c: &mut Criterion) {
                 
                 (cra, prefixes)
             },
-            |(cra, prefixes)| {
+            |(mut cra, prefixes)| {
                 for (prefix, value) in prefixes {
-                    black_box(cra.insert(&prefix, value).unwrap());
+                    black_box(cra.insert(&prefix, ServiceId(value)).unwrap());
                 }
                 
                 // Perform some lookups to test compressed access
                 for i in 0..1000 {
                     let lookup_key = format!("com.example.service.module.component.{}", i);
-                    black_box(cra.lookup(&lookup_key));
+                    black_box(cra.find_readonly(&lookup_key));
                 }
             },
             criterion::BatchSize::SmallInput,
@@ -240,16 +241,16 @@ fn bench_concurrent_access(c: &mut Criterion) {
     group.bench_function("concurrent_lookups", |b| {
         b.iter_batched(
             || {
-                let cra = Arc::new(CompressedRadixArena::new());
+                let mut cra = CompressedRadixArena::new();
                 let prefixes = generate_prefixes(10000);
                 let lookup_keys: Vec<String> = prefixes.iter().map(|(k, _)| k.clone()).collect();
                 
                 // Pre-populate the CRA
                 for (prefix, value) in prefixes {
-                    cra.insert(&prefix, value).unwrap();
+                    cra.insert(&prefix, ServiceId(value)).unwrap();
                 }
                 
-                (cra, lookup_keys)
+                (Arc::new(cra), lookup_keys)
             },
             |(cra, lookup_keys)| {
                 use std::thread;
@@ -270,7 +271,7 @@ fn bench_concurrent_access(c: &mut Criterion) {
                     
                     let handle = thread::spawn(move || {
                         for key in &thread_keys {
-                            black_box(cra_clone.lookup(key));
+                            black_box(cra_clone.find_readonly(key));
                         }
                     });
                     
@@ -295,7 +296,7 @@ fn bench_simd_operations(c: &mut Criterion) {
     group.bench_function("simd_prefix_matching", |b| {
         b.iter_batched(
             || {
-                let cra = CompressedRadixArena::new();
+                let mut cra = CompressedRadixArena::new();
                 
                 // Generate prefixes optimized for SIMD processing
                 let mut prefixes = Vec::new();
@@ -307,7 +308,7 @@ fn bench_simd_operations(c: &mut Criterion) {
                 
                 // Pre-populate the CRA
                 for (prefix, value) in &prefixes {
-                    cra.insert(prefix, *value).unwrap();
+                    cra.insert(prefix, ServiceId(*value)).unwrap();
                 }
                 
                 // Generate search patterns
@@ -322,7 +323,7 @@ fn bench_simd_operations(c: &mut Criterion) {
             },
             |(cra, search_patterns)| {
                 for pattern in &search_patterns {
-                    black_box(cra.find_with_prefix(pattern));
+                    black_box(cra.find_prefix_readonly(pattern));
                 }
             },
             criterion::BatchSize::SmallInput,
@@ -339,24 +340,24 @@ fn bench_mixed_operations(c: &mut Criterion) {
     group.bench_function("realistic_workload", |b| {
         b.iter_batched(
             || {
-                let cra = CompressedRadixArena::new();
+                let mut cra = CompressedRadixArena::new();
                 let initial_prefixes = generate_hierarchical_prefixes(5000);
                 
                 // Pre-populate with initial data
                 for (prefix, value) in &initial_prefixes {
-                    cra.insert(prefix, *value).unwrap();
+                    cra.insert(prefix, ServiceId(*value)).unwrap();
                 }
                 
                 (cra, initial_prefixes)
             },
-            |(cra, prefixes)| {
+            |(mut cra, prefixes)| {
                 // Simulate realistic workload: 70% lookups, 20% prefix searches, 10% inserts
                 for i in 0..1000 {
                     match i % 10 {
                         0..=6 => {
                             // 70% exact lookups
                             let lookup_key = &prefixes[i % prefixes.len()].0;
-                            black_box(cra.lookup(lookup_key));
+                            black_box(cra.find_readonly(lookup_key));
                         }
                         7..=8 => {
                             // 20% prefix searches
@@ -369,12 +370,12 @@ fn bench_mixed_operations(c: &mut Criterion) {
                             } else {
                                 "prod.us-west.worker"
                             };
-                            black_box(cra.find_with_prefix(search_prefix));
+                            black_box(cra.find_prefix_readonly(search_prefix));
                         }
                         9 => {
                             // 10% inserts
                             let new_prefix = format!("dynamic.service.{}", i);
-                            let _ = cra.insert(&new_prefix, i as u64);
+                            let _ = cra.insert(&new_prefix, ServiceId(i as u64));
                         }
                         _ => unreachable!(),
                     }
@@ -407,15 +408,15 @@ fn bench_memory_patterns(c: &mut Criterion) {
             |b, prefixes| {
                 b.iter_batched(
                     || CompressedRadixArena::new(),
-                    |cra| {
+                    |mut cra| {
                         for (prefix, value) in prefixes {
-                            black_box(cra.insert(prefix, *value).unwrap());
+                            black_box(cra.insert(prefix, ServiceId(*value)).unwrap());
                         }
                         
                         // Perform lookups to test access patterns
                         for i in 0..1000 {
                             let lookup_key = &prefixes[i % prefixes.len()].0;
-                            black_box(cra.lookup(lookup_key));
+                            black_box(cra.find_readonly(lookup_key));
                         }
                     },
                     criterion::BatchSize::SmallInput,

@@ -37,6 +37,12 @@ pub struct RoutingPolicy {
     pub conditions: Vec<PolicyCondition>,
     pub actions: Vec<PolicyAction>,
     pub metadata: PolicyMetadata,
+    pub confidence: Option<f64>,
+    pub source_constraint: Option<NodeConstraint>,
+    pub destination_constraint: Option<NodeConstraint>,
+    pub qos_policy: Option<QoSPolicy>,
+    pub security_policy: Option<SecurityPolicy>,
+    pub time_constraint: Option<TimeConstraint>,
 }
 
 /// Policy identifier
@@ -48,10 +54,13 @@ pub struct RoutingRule {
     pub id: RuleId,
     pub name: String,
     pub condition: RuleCondition,
+    pub conditions: Vec<RuleCondition>,
     pub action: RuleAction,
+    pub actions: Vec<RuleAction>,
     pub weight: f64,
     pub enabled: bool,
     pub metadata: RuleMetadata,
+    pub routing_hints: RoutingHints,
 }
 
 /// Rule identifier
@@ -93,6 +102,11 @@ pub enum RuleCondition {
     Or(Vec<RuleCondition>),
     Not(Box<RuleCondition>),
 
+    // QoS conditions for policy evaluation
+    QoSRequirement(QoSCondition),
+    MessagePriority(MessagePriority),
+    TimeWindow(TimeConstraint),
+
     // Custom conditions
     Custom(String), // Expression string
 }
@@ -126,6 +140,14 @@ pub enum RuleAction {
     EnableTracing,
     LogEvent(String),
     TriggerAlert(String),
+
+    // Additional routing actions for policy evaluation
+    RequireNodes(Vec<NodeId>),
+    RequireRegions(Vec<RegionId>),
+    SetMaxLatency(Duration),
+    SetMinBandwidth(u64),
+    SetMinReliability(f64),
+    RequireSecurity(SecurityLevel),
 
     // Custom actions
     Custom(String), // Action expression
@@ -206,6 +228,59 @@ pub enum RoutingConstraint {
     MinReliability(f64),
     RequiredSecurity(SecurityLevel),
     Custom(String, String), // name, value
+}
+
+/// Node constraint for policy matching
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum NodeConstraint {
+    Specific(NodeId),
+    InRegion(RegionId),
+    WithCapability(String),
+    Any,
+}
+
+/// QoS policy definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QoSPolicy {
+    pub max_allowed_latency: Option<Duration>,
+    pub min_required_bandwidth: Option<u64>,
+    pub min_reliability: Option<f64>,
+    pub priority_handling: PriorityHandling,
+}
+
+/// Priority handling strategy
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PriorityHandling {
+    Strict,
+    Weighted,
+    BestEffort,
+}
+
+/// Security policy definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityPolicy {
+    pub required_security_level: Option<SecurityLevel>,
+    pub require_encryption: bool,
+    pub require_authentication: bool,
+    pub allowed_protocols: Vec<String>,
+}
+
+/// Time constraint for policies
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TimeConstraint {
+    After(std::time::SystemTime),
+    Before(std::time::SystemTime),
+    Between(std::time::SystemTime, std::time::SystemTime),
+    Always,
+}
+
+/// QoS condition for rules
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum QoSCondition {
+    MaxLatency(Duration),
+    MinBandwidth(u64),
+    MinReliability(f64),
+    Priority(MessagePriority),
 }
 
 /// Rule evaluation engine
@@ -694,14 +769,384 @@ impl PolicyEngine {
         context: &RoutingContext,
         topology: &NetworkTopology,
     ) -> Result<PolicyEvaluationResult, ConfigError> {
-        // Simplified evaluation
+        let policies = self.policies.read().await;
+        let mut applicable_policies = Vec::new();
+        let mut applicable_rules = Vec::new();
+        let mut constraints = Vec::new();
+        let mut routing_hints = context.routing_hints.clone();
+        let mut total_confidence = 0.0;
+        let mut policy_count = 0;
+
+        // Evaluate each policy against the routing context
+        for (policy_id, policy) in policies.iter() {
+            if self.policy_matches_context(policy, context, topology).await? {
+                applicable_policies.push(policy_id.clone());
+                policy_count += 1;
+                total_confidence += policy.confidence.unwrap_or(1.0);
+
+                // Evaluate rules within the policy
+                for rule in &policy.rules {
+                    if self.rule_matches_context(rule, context, topology).await? {
+                        applicable_rules.push(rule.id.clone());
+                        
+                        // Apply rule constraints
+                        constraints.extend(self.extract_constraints_from_rule(rule));
+                        
+                        // Merge routing hints
+                        self.merge_routing_hints(&mut routing_hints, &rule.routing_hints);
+                    }
+                }
+            }
+        }
+
+        // Calculate average confidence
+        let confidence = if policy_count > 0 {
+            total_confidence / policy_count as f64
+        } else {
+            0.0
+        };
+
         Ok(PolicyEvaluationResult {
-            applicable_policies: Vec::new(),
-            applicable_rules: Vec::new(),
-            routing_hints: RoutingHints::default(),
-            constraints: Vec::new(),
-            confidence: 1.0,
+            applicable_policies,
+            applicable_rules,
+            routing_hints,
+            constraints,
+            confidence,
         })
+    }
+
+    /// Check if a policy matches the routing context
+    async fn policy_matches_context(
+        &self,
+        policy: &RoutingPolicy,
+        context: &RoutingContext,
+        topology: &NetworkTopology,
+    ) -> Result<bool, ConfigError> {
+        // Check source/destination constraints
+        if let Some(ref source_constraint) = policy.source_constraint {
+            if !self.node_matches_constraint(&context.source, source_constraint, topology) {
+                return Ok(false);
+            }
+        }
+
+        if let Some(ref dest_constraint) = policy.destination_constraint {
+            if !self.node_matches_constraint(&context.destination, dest_constraint, topology) {
+                return Ok(false);
+            }
+        }
+
+        // Check QoS requirements
+        if let Some(ref qos_policy) = policy.qos_policy {
+            if !self.qos_matches_policy(&context.qos_requirements, qos_policy) {
+                return Ok(false);
+            }
+        }
+
+        // Check security requirements
+        if let Some(ref security_policy) = policy.security_policy {
+            if !self.security_matches_policy(&context.security_context, security_policy) {
+                return Ok(false);
+            }
+        }
+
+        // Check time constraints
+        if let Some(ref time_constraint) = policy.time_constraint {
+            if !self.time_matches_constraint(&context.created_at, time_constraint) {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
+    /// Check if a rule matches the routing context
+    async fn rule_matches_context(
+        &self,
+        rule: &RoutingRule,
+        context: &RoutingContext,
+        topology: &NetworkTopology,
+    ) -> Result<bool, ConfigError> {
+        // Evaluate rule conditions
+        for condition in &rule.conditions {
+            if !self.evaluate_condition(condition, context, topology).await? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Extract routing constraints from a rule
+    fn extract_constraints_from_rule(&self, rule: &RoutingRule) -> Vec<RoutingConstraint> {
+        let mut constraints = Vec::new();
+        
+        // Extract constraints from rule actions
+        for action in &rule.actions {
+            match action {
+                RuleAction::RequireNodes(nodes) => {
+                    constraints.push(RoutingConstraint::MustUseNodes(nodes.clone()));
+                }
+                RuleAction::AvoidNodes(nodes) => {
+                    constraints.push(RoutingConstraint::MustAvoidNodes(nodes.clone()));
+                }
+                RuleAction::RequireRegions(regions) => {
+                    constraints.push(RoutingConstraint::MustUseRegions(regions.clone()));
+                }
+                RuleAction::AvoidRegions(regions) => {
+                    constraints.push(RoutingConstraint::MustAvoidRegions(regions.clone()));
+                }
+                RuleAction::SetMaxLatency(duration) => {
+                    constraints.push(RoutingConstraint::MaxLatency(*duration));
+                }
+                RuleAction::SetMinBandwidth(bandwidth) => {
+                    constraints.push(RoutingConstraint::MinBandwidth(*bandwidth));
+                }
+                RuleAction::SetMinReliability(reliability) => {
+                    constraints.push(RoutingConstraint::MinReliability(*reliability));
+                }
+                RuleAction::RequireSecurity(level) => {
+                    constraints.push(RoutingConstraint::RequiredSecurity(*level));
+                }
+                _ => {} // Other actions don't generate constraints
+            }
+        }
+        
+        constraints
+    }
+
+    /// Merge routing hints from a rule into existing hints
+    fn merge_routing_hints(&self, target: &mut RoutingHints, source: &RoutingHints) {
+        // Merge preferred paths
+        target.preferred_paths.extend(source.preferred_paths.clone());
+        
+        // Merge avoided paths
+        target.avoided_paths.extend(source.avoided_paths.clone());
+        
+        // Take the more restrictive load balancing strategy
+        if source.load_balancing_strategy != LoadBalancingStrategy::Default {
+            target.load_balancing_strategy = source.load_balancing_strategy.clone();
+        }
+        
+        // Merge other hints as needed
+        if source.prefer_cached_routes {
+            target.prefer_cached_routes = true;
+        }
+        
+        if source.enable_multipath {
+            target.enable_multipath = true;
+        }
+    }
+
+    /// Helper methods for constraint checking
+    fn node_matches_constraint(
+        &self,
+        node_id: &NodeId,
+        constraint: &NodeConstraint,
+        topology: &NetworkTopology,
+    ) -> bool {
+        match constraint {
+            NodeConstraint::Specific(id) => node_id == id,
+            NodeConstraint::InRegion(region) => {
+                topology.get_node_region(node_id).map_or(false, |r| r == *region)
+            }
+            NodeConstraint::WithCapability(capability) => {
+                topology.node_has_capability(node_id, capability)
+            }
+            NodeConstraint::Any => true,
+        }
+    }
+
+    fn qos_matches_policy(&self, requirements: &QoSRequirements, policy: &QoSPolicy) -> bool {
+        // Check if requirements are compatible with policy
+        if let (Some(req_latency), Some(policy_max_latency)) = 
+            (&requirements.max_latency, &policy.max_allowed_latency) {
+            if req_latency > policy_max_latency {
+                return false;
+            }
+        }
+
+        if let (Some(req_bandwidth), Some(policy_min_bandwidth)) = 
+            (&requirements.min_bandwidth, &policy.min_required_bandwidth) {
+            if req_bandwidth > policy_min_bandwidth {
+                return false;
+            }
+        }
+
+        if let (Some(req_reliability), Some(policy_min_reliability)) = 
+            (&requirements.reliability_threshold, &policy.min_reliability) {
+            if req_reliability > policy_min_reliability {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn security_matches_policy(&self, context: &SecurityContext, policy: &SecurityPolicy) -> bool {
+        // Check if security context meets policy requirements
+        if let Some(required_level) = policy.required_security_level {
+            if context.security_level < required_level {
+                return false;
+            }
+        }
+
+        if policy.require_encryption && !context.encryption_enabled {
+            return false;
+        }
+
+        if policy.require_authentication && !context.authenticated {
+            return false;
+        }
+
+        true
+    }
+
+    fn time_matches_constraint(&self, timestamp: &std::time::SystemTime, constraint: &TimeConstraint) -> bool {
+        match constraint {
+            TimeConstraint::After(time) => timestamp >= time,
+            TimeConstraint::Before(time) => timestamp <= time,
+            TimeConstraint::Between(start, end) => timestamp >= start && timestamp <= end,
+            TimeConstraint::Always => true,
+        }
+    }
+
+    async fn evaluate_condition(
+        &self,
+        condition: &RuleCondition,
+        context: &RoutingContext,
+        topology: &NetworkTopology,
+    ) -> Result<bool, ConfigError> {
+        match condition {
+            RuleCondition::SourceNode(node_id) => {
+                Ok(context.source == *node_id)
+            }
+            RuleCondition::DestinationNode(node_id) => {
+                Ok(context.destination == *node_id)
+            }
+            RuleCondition::SourceRegion(region_id) => {
+                Ok(topology.get_node_region(&context.source).map_or(false, |r| r == *region_id))
+            }
+            RuleCondition::DestinationRegion(region_id) => {
+                Ok(topology.get_node_region(&context.destination).map_or(false, |r| r == *region_id))
+            }
+            RuleCondition::QoSRequirement(qos_condition) => {
+                Ok(self.evaluate_qos_condition(&context.qos_requirements, qos_condition))
+            }
+            RuleCondition::SecurityLevel(min_level) => {
+                Ok(context.security_context.security_level >= *min_level)
+            }
+            RuleCondition::MessagePriority(min_priority) => {
+                Ok(context.qos_requirements.priority as u8 <= *min_priority as u8)
+            }
+            RuleCondition::TimeWindow(constraint) => {
+                Ok(self.time_matches_constraint(&context.created_at, constraint))
+            }
+            RuleCondition::PriorityEquals(priority) => {
+                Ok(context.qos_requirements.priority == *priority)
+            }
+            RuleCondition::PriorityAbove(priority) => {
+                Ok((context.qos_requirements.priority as u8) <= (*priority as u8))
+            }
+            RuleCondition::LatencyRequirement(max_latency) => {
+                Ok(context.qos_requirements.max_latency.map_or(true, |req| req <= *max_latency))
+            }
+            RuleCondition::BandwidthRequirement(min_bandwidth) => {
+                Ok(context.qos_requirements.min_bandwidth.map_or(true, |req| req >= *min_bandwidth))
+            }
+            RuleCondition::ReliabilityRequirement(min_reliability) => {
+                Ok(context.qos_requirements.reliability_threshold.map_or(true, |req| req >= *min_reliability))
+            }
+            RuleCondition::NodeLoad(node_id, max_load) => {
+                // Check node load from topology metrics
+                Ok(topology.nodes.get(node_id)
+                    .map_or(false, |node| node.metrics.cpu_usage <= *max_load))
+            }
+            RuleCondition::LinkUtilization(link_id, max_util) => {
+                // Check link utilization
+                Ok(topology.links.get(link_id)
+                    .map_or(false, |link| link.utilization <= *max_util))
+            }
+            RuleCondition::NetworkCongestion(expected_state) => {
+                // For now, assume no congestion
+                Ok(*expected_state == CongestionState::Normal)
+            }
+            RuleCondition::TimeOfDay(hour, minute) => {
+                // For now, just return true - would need chrono dependency for proper time handling
+                let _ = (hour, minute);
+                Ok(true)
+            }
+            RuleCondition::DayOfWeek(day) => {
+                // For now, just return true - would need chrono dependency for proper time handling
+                let _ = day;
+                Ok(true)
+            }
+            RuleCondition::DateRange(start_date, end_date) => {
+                // For now, just return true - would need proper date parsing
+                let _ = (start_date, end_date);
+                Ok(true)
+            }
+            RuleCondition::UserRole(role) => {
+                // Check user role from security context
+                Ok(context.security_context.user_roles.contains(role))
+            }
+            RuleCondition::TenantId(tenant) => {
+                // Check tenant ID from security context
+                Ok(context.security_context.tenant_id.as_ref().map_or(false, |t| t == tenant))
+            }
+            RuleCondition::And(conditions) => {
+                // All conditions must be true
+                for condition in conditions {
+                    if !Box::pin(self.evaluate_condition(condition, context, topology)).await? {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            RuleCondition::Or(conditions) => {
+                // At least one condition must be true
+                for condition in conditions {
+                    if Box::pin(self.evaluate_condition(condition, context, topology)).await? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            RuleCondition::Not(condition) => {
+                // Negate the condition
+                Ok(!Box::pin(self.evaluate_condition(condition, context, topology)).await?)
+            }
+            RuleCondition::Custom(expression) => {
+                // Evaluate custom expression
+                self.evaluate_custom_expression(expression, context, topology).await
+            }
+        }
+    }
+
+    fn evaluate_qos_condition(&self, requirements: &QoSRequirements, condition: &QoSCondition) -> bool {
+        match condition {
+            QoSCondition::MaxLatency(max) => {
+                requirements.max_latency.map_or(true, |req| req <= *max)
+            }
+            QoSCondition::MinBandwidth(min) => {
+                requirements.min_bandwidth.map_or(true, |req| req >= *min)
+            }
+            QoSCondition::MinReliability(min) => {
+                requirements.reliability_threshold.map_or(true, |req| req >= *min)
+            }
+            QoSCondition::Priority(priority) => {
+                requirements.priority == *priority
+            }
+        }
+    }
+
+    async fn evaluate_custom_expression(
+        &self,
+        _expression: &str,
+        _context: &RoutingContext,
+        _topology: &NetworkTopology,
+    ) -> Result<bool, ConfigError> {
+        // For now, return true for custom expressions
+        // In a full implementation, this would parse and evaluate the expression
+        Ok(true)
     }
 
     pub async fn detect_conflicts(

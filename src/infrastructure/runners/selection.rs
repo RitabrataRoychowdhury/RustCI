@@ -587,6 +587,11 @@ impl IntelligentRunnerSelector {
                 cost_weight: None,
                 latency_weight: None,
                 reliability_weight: None,
+                preferred_paths: Vec::new(),
+                avoided_paths: Vec::new(),
+                load_balancing_strategy: crate::core::networking::valkyrie::routing::LoadBalancingStrategy::Default,
+                prefer_cached_routes: false,
+                enable_multipath: false,
             },
             deadline: job.deadline,
             created_at: SystemTime::now(),
@@ -595,16 +600,22 @@ impl IntelligentRunnerSelector {
         // TODO: Implement routing client integration
         // TODO: Implement routing calculation
         Ok(Route {
-            id: todo!(),
-            path: todo!(),
-            hops: todo!(),
-            total_cost: todo!(),
-            estimated_latency: todo!(),
-            reliability_score: todo!(),
-            bandwidth_available: todo!(),
-            expires_at: todo!(),
+            id: Uuid::new_v4(),
+            path: vec![routing_context.source, routing_context.destination],
+            hops: Vec::new(), // Direct connection for now
+            total_cost: 1.0, // Default cost
+            estimated_latency: Duration::from_millis(100), // Default 100ms
+            reliability_score: 0.95, // Default 95% reliability
+            bandwidth_available: 1_000_000, // Default 1MB/s
+            expires_at: Some(SystemTime::now() + Duration::from_secs(300)), // 5 minutes
             created_at: SystemTime::now(),
-            metadata: todo!(),
+            metadata: crate::core::networking::valkyrie::routing::RouteMetadata {
+                algorithm_used: "direct".to_string(),
+                calculation_time: Duration::from_micros(1),
+                cache_hit: false,
+                alternative_routes: 0,
+                confidence_score: 0.8,
+            },
         })
     }
     

@@ -12,13 +12,16 @@ use RustAutoDevOps::valkyrie::lockfree::fingerprinted_id_table::{
     FingerprintedIdTable, RouteEntry, RouteId, NodeId, ShardId
 };
 use RustAutoDevOps::valkyrie::lockfree::compressed_radix_arena::CompressedRadixArena;
+use RustAutoDevOps::valkyrie::lockfree::ServiceId;
+use RustAutoDevOps::core::networking::valkyrie::lockfree::registry::LockFreeRegistry;
+use RustAutoDevOps::valkyrie::routing::enhanced_registries::EnhancedServiceRegistry;
 
 /// Property tests for Fingerprinted ID Table (FIT)
 mod fit_properties {
     use super::*;
 
     /// Generate arbitrary RouteEntry for property testing
-    fn arb_route_entry() -> impl Strategy<Value = RouteEntry> {
+    pub fn arb_route_entry() -> impl Strategy<Value = RouteEntry> {
         (
             any::<u64>(), // route_id
             any::<u64>(), // next_hop
@@ -206,7 +209,7 @@ mod cra_properties {
     use super::*;
 
     /// Generate arbitrary string keys for CRA testing
-    fn arb_key() -> impl Strategy<Value = String> {
+    pub fn arb_key() -> impl Strategy<Value = String> {
         prop::string::string_regex(r"[a-zA-Z0-9._-]{1,50}").unwrap()
     }
 
@@ -214,14 +217,14 @@ mod cra_properties {
         /// Property: After inserting a key-value pair, it should be retrievable
         #[test]
         fn prop_insert_then_lookup(key in arb_key(), value in any::<u64>()) {
-            let cra = CompressedRadixArena::new();
+            let mut cra = CompressedRadixArena::new();
             
             // Insert the key-value pair
-            cra.insert(&key, value).unwrap();
+            cra.insert(&key, ServiceId(value)).unwrap();
             
             // Should be able to retrieve it
-            let retrieved = cra.lookup(&key).unwrap();
-            prop_assert_eq!(retrieved, value);
+            let retrieved = cra.find(&key).unwrap();
+            prop_assert_eq!(retrieved, ServiceId(value));
         }
 
         /// Property: Lookup of non-existent key returns None
@@ -230,19 +233,19 @@ mod cra_properties {
             entries in prop::collection::vec((arb_key(), any::<u64>()), 0..50),
             lookup_key in arb_key()
         ) {
-            let cra = CompressedRadixArena::new();
+            let mut cra = CompressedRadixArena::new();
             
             // Insert entries
             let mut inserted_keys = HashSet::new();
             for (key, value) in entries {
-                if cra.insert(&key, value).is_ok() {
+                if cra.insert(&key, ServiceId(value)).is_ok() {
                     inserted_keys.insert(key);
                 }
             }
             
             // If lookup_key wasn't inserted, lookup should return None
             if !inserted_keys.contains(&lookup_key) {
-                prop_assert!(cra.lookup(&lookup_key).is_none());
+                prop_assert!(cra.find(&lookup_key).is_none());
             }
         }
 
@@ -261,7 +264,7 @@ mod cra_properties {
             let mut expected_matches = HashSet::new();
             for (i, suffix) in suffixes.iter().enumerate() {
                 let key = format!("{}{}", prefix, suffix);
-                if cra.insert(&key, i as u64).is_ok() {
+                if cra.insert(&key, ServiceId(i as u64)).is_ok() {
                     expected_matches.insert(key);
                 }
             }
@@ -269,11 +272,11 @@ mod cra_properties {
             // Also insert some entries without the prefix
             for i in 0..5 {
                 let non_matching_key = format!("different{}", i);
-                let _ = cra.insert(&non_matching_key, (100 + i) as u64);
+                let _ = cra.insert(&non_matching_key, ServiceId((100 + i) as u64));
             }
             
             // Prefix search should find all matching entries
-            let found_entries = cra.find_with_prefix(&prefix);
+            let found_entries = cra.find_prefix(&prefix);
             let found_keys: HashSet<String> = found_entries.iter()
                 .map(|entry| entry.key.clone())
                 .collect();
@@ -298,15 +301,15 @@ mod cra_properties {
             initial_value in any::<u64>(),
             new_value in any::<u64>()
         ) {
-            let cra = CompressedRadixArena::new();
+            let mut cra = CompressedRadixArena::new();
             
             // Insert initial value
-            cra.insert(&key, initial_value).unwrap();
-            prop_assert_eq!(cra.lookup(&key).unwrap(), initial_value);
+            cra.insert(&key, ServiceId(initial_value)).unwrap();
+            prop_assert_eq!(cra.find(&key).unwrap(), ServiceId(initial_value));
             
             // Update with new value
-            cra.insert(&key, new_value).unwrap();
-            prop_assert_eq!(cra.lookup(&key).unwrap(), new_value);
+            cra.insert(&key, ServiceId(new_value)).unwrap();
+            prop_assert_eq!(cra.find(&key).unwrap(), ServiceId(new_value));
         }
 
         /// Property: Concurrent reads are consistent
@@ -314,15 +317,17 @@ mod cra_properties {
         fn prop_concurrent_read_consistency(
             entries in prop::collection::vec((arb_key(), any::<u64>()), 10..30)
         ) {
-            let cra = Arc::new(CompressedRadixArena::new());
+            let mut cra = CompressedRadixArena::new();
             
             // Pre-populate the CRA
             let mut expected_entries = HashMap::new();
             for (key, value) in entries {
-                if cra.insert(&key, value).is_ok() {
-                    expected_entries.insert(key, value);
+                if cra.insert(&key, ServiceId(value)).is_ok() {
+                    expected_entries.insert(key, ServiceId(value));
                 }
             }
+            
+            let cra = Arc::new(cra);
             
             // Spawn multiple reader threads
             let mut handles = vec![];
@@ -331,7 +336,7 @@ mod cra_properties {
                 let expected_clone = expected_entries.clone();
                 let handle = thread::spawn(move || {
                     for (key, expected_value) in expected_clone {
-                        if let Some(retrieved_value) = cra_clone.lookup(&key) {
+                        if let Some(retrieved_value) = cra_clone.find_readonly(&key) {
                             assert_eq!(retrieved_value, expected_value);
                         }
                     }
@@ -346,7 +351,7 @@ mod cra_properties {
             
             // Verify all entries are still accessible
             for (key, expected_value) in expected_entries {
-                prop_assert_eq!(cra.lookup(&key).unwrap(), expected_value);
+                prop_assert_eq!(cra.find_readonly(&key).unwrap(), expected_value);
             }
         }
 
@@ -365,7 +370,7 @@ mod cra_properties {
             let mut expected_entries = HashMap::new();
             for (i, suffix) in suffixes.iter().enumerate() {
                 let key = format!("{}.{}", common_prefix, suffix);
-                let value = i as u64;
+                let value = ServiceId(i as u64);
                 if cra.insert(&key, value).is_ok() {
                     expected_entries.insert(key, value);
                 }
@@ -373,11 +378,11 @@ mod cra_properties {
             
             // Verify all entries are still retrievable after compression
             for (key, expected_value) in expected_entries {
-                prop_assert_eq!(cra.lookup(&key).unwrap(), expected_value);
+                prop_assert_eq!(cra.find(&key).unwrap(), expected_value);
             }
             
             // Verify prefix search still works
-            let prefix_results = cra.find_with_prefix(&common_prefix);
+            let prefix_results = cra.find_prefix(&common_prefix);
             prop_assert!(!prefix_results.is_empty());
             
             for result in prefix_results {
@@ -390,6 +395,8 @@ mod cra_properties {
 /// Integration property tests
 mod integration_properties {
     use super::*;
+    use super::cra_properties::arb_key;
+    use super::fit_properties::arb_route_entry;
     use RustAutoDevOps::valkyrie::routing::enhanced_registries::{
         EnhancedServiceRegistry, EnhancedServiceEntry, ServiceHealthStatus,
         ServiceMetrics, ServiceEndpoint
@@ -434,7 +441,7 @@ mod integration_properties {
             
             // Verify all registered services can be retrieved
             for (service_id, expected_entry) in expected_services {
-                if let Some(retrieved) = registry.lookup(&service_id) {
+                if let Ok(Some(retrieved)) = registry.lookup(&service_id) {
                     prop_assert_eq!(retrieved.id, expected_entry.id);
                     prop_assert_eq!(retrieved.name, expected_entry.name);
                 }

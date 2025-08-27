@@ -473,9 +473,9 @@ impl EndToEndLatencyTests {
         }
         
         // Overall summary
-        println!("\n" + "=".repeat(60));
+        println!("\n{}", "=".repeat(60));
         println!("OVERALL LATENCY VALIDATION SUMMARY");
-        println!("=".repeat(60));
+        println!("{}", "=".repeat(60));
         println!("Connection Lookup:    {}", if connection_stats.meets_requirements() { "✅ PASSED" } else { "❌ FAILED" });
         println!("Service Lookup:       {}", if service_stats.meets_requirements() { "✅ PASSED" } else { "❌ FAILED" });
         println!("Fuzzy Matching:       {}", if fuzzy_stats.meets_requirements() { "✅ PASSED" } else { "❌ FAILED" });
@@ -483,7 +483,7 @@ impl EndToEndLatencyTests {
         println!("Concurrent Access:    {}", if concurrent_passed { "✅ PASSED" } else { "❌ FAILED" });
         println!();
         println!("FINAL RESULT: {}", if all_passed { "✅ ALL TESTS PASSED" } else { "❌ SOME TESTS FAILED" });
-        println!("=".repeat(60));
+        println!("{}", "=".repeat(60));
         
         all_passed
     }

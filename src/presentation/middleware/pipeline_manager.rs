@@ -276,10 +276,17 @@ impl MiddlewarePipelineManager {
         let _rate_limiter =
             crate::presentation::middleware::rate_limit::RateLimiter::new(rate_limit_config);
 
-        // Check rate limits (simplified for now)
+        // Check rate limits
         if state.env.security.rate_limiting.enabled {
-            // TODO: Implement proper rate limiting check
-            debug!("Rate limiting enabled but not fully implemented");
+            // Extract client IP for rate limiting
+            if let Some(client_ip) = crate::presentation::middleware::rate_limit::extract_client_ip(&req) {
+                if let Err(e) = _rate_limiter.check_ip_limit(client_ip).await {
+                    debug!("Rate limit exceeded for IP {}: {}", client_ip, e);
+                    return Err(crate::error::AppError::RateLimitExceededSimple(format!(
+                        "Rate limit exceeded for IP {}: {}", client_ip, e
+                    )));
+                }
+            }
         }
 
         debug!("✅ Rate limiting phase completed");

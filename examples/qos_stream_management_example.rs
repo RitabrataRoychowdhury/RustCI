@@ -9,6 +9,9 @@ use tokio;
 use tracing::{info, warn, error};
 
 use RustAutoDevOps::core::networking::valkyrie::streaming::*;
+use RustAutoDevOps::core::networking::valkyrie::streaming::router::{QoSRouterConfig, RouteDestination};
+use RustAutoDevOps::core::networking::valkyrie::streaming::classifier::ClassifierConfig;
+use RustAutoDevOps::core::networking::valkyrie::streaming::bandwidth::BandwidthConfig;
 use RustAutoDevOps::core::networking::valkyrie::adapters::*;
 
 #[tokio::main]
@@ -96,7 +99,7 @@ async fn demo_critical_message_routing(router: &QoSStreamRouter) -> Result<(), B
     // Create critical health check message
     let critical_message = AdapterMessage {
         id: uuid::Uuid::new_v4(),
-        message_type: AdapterMessageType::HealthCheck,
+        message_type: AdapterMessageType::Heartbeat,
         payload: create_health_check_payload(),
         metadata: {
             let mut metadata = HashMap::new();
@@ -114,7 +117,7 @@ async fn demo_critical_message_routing(router: &QoSStreamRouter) -> Result<(), B
     };
     
     let qos_params = QoSParams {
-        max_latency: Some(Duration::from_millis(10)), // Ultra-low latency requirement
+        max_latency: Duration::from_millis(10), // Ultra-low latency requirement
         reliability: 0.999, // Very high reliability
         priority: MessagePriority::Critical,
         ..Default::default()
@@ -156,7 +159,7 @@ async fn demo_job_execution_routing(router: &QoSStreamRouter) -> Result<(), Box<
     
     for (i, message) in job_messages.into_iter().enumerate() {
         let qos_params = QoSParams {
-            max_latency: Some(Duration::from_millis(100)),
+            max_latency: Duration::from_millis(100),
             reliability: 0.95,
             priority: message.priority,
             ..Default::default()
@@ -212,7 +215,7 @@ async fn demo_large_data_transfer(
     
     // Route the large message
     let qos_params = QoSParams {
-        max_latency: Some(Duration::from_secs(30)), // More tolerant for large transfers
+        max_latency: Duration::from_secs(30), // More tolerant for large transfers
         reliability: 0.99,
         priority: MessagePriority::Normal,
         ..Default::default()
@@ -301,7 +304,7 @@ async fn demo_adaptive_bandwidth_management(allocator: &BandwidthAllocator) -> R
         info!("  🔄 Adaptation round {}", round + 1);
         
         for (stream_id, qos_class, base_bandwidth, pattern) in &streams {
-            let usage = match pattern.as_str() {
+            let usage = match *pattern {
                 "steady" => *base_bandwidth / 2,
                 "bursty" => if round % 2 == 0 { *base_bandwidth } else { *base_bandwidth / 4 },
                 "growing" => (*base_bandwidth / 4) * (round + 1) as u64,
@@ -348,7 +351,7 @@ async fn demo_congestion_handling(
     }).collect::<Vec<_>>();
     
     let qos_params = QoSParams {
-        max_latency: Some(Duration::from_millis(50)),
+        max_latency: Duration::from_millis(50),
         reliability: 0.95,
         priority: MessagePriority::Normal,
         ..Default::default()
@@ -632,7 +635,7 @@ fn create_job_message(job_name: &str, priority: MessagePriority) -> AdapterMessa
 fn create_health_check_message() -> AdapterMessage {
     AdapterMessage {
         id: uuid::Uuid::new_v4(),
-        message_type: AdapterMessageType::HealthCheck,
+        message_type: AdapterMessageType::Heartbeat,
         payload: create_health_check_payload(),
         metadata: HashMap::new(),
         timestamp: chrono::Utc::now(),
