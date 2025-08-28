@@ -277,11 +277,19 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .expect("Failed to create runner repository")
     ) as Arc<dyn RustAutoDevOps::infrastructure::repositories::RunnerRepository>;
 
+    // Create job repository with high-performance optimizations
+    let job_repository = Arc::new(
+        RustAutoDevOps::infrastructure::repositories::MongoJobRepository::new(&db.database)
+            .await
+            .expect("Failed to create job repository")
+    ) as Arc<dyn RustAutoDevOps::domain::repositories::runner::JobRepository>;
+
     // Create application state
     let app_state = AppState {
         env: Arc::new(config.clone()),
         db: Arc::new(db),
         runner_repository,
+        job_repository,
         audit_logger,
         config_manager: Arc::new(tokio::sync::RwLock::new(config_manager)),
         observability: Arc::new(observability),

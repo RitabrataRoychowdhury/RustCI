@@ -268,15 +268,15 @@ pub async fn trigger_job_on_runner(
         job.metadata = metadata;
     }
 
-    // TODO: Submit job to runner
-    // For now, we'll just return the created job
+    // Submit job to repository for persistent storage and tracking
+    let created_job = state.job_repository.create(&job).await?;
 
     let response = JobResponse {
-        id: job.id,
+        id: created_job.id,
         runner_id,
-        name: job.name,
+        name: created_job.name,
         status: JobStatus::Queued,
-        created_at: job.created_at,
+        created_at: created_job.created_at,
         started_at: None,
         finished_at: None,
     };

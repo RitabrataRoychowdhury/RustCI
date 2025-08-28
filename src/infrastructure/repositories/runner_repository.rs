@@ -307,7 +307,7 @@ impl RunnerRepository for MongoRunnerRepository {
         let update = doc! { 
             "$set": { 
                 "status": mongodb::bson::to_bson(&status).unwrap(),
-                "updated_at": mongodb::bson::DateTime::from_chrono(Utc::now())
+                "updated_at": mongodb::bson::DateTime::now()
             },
             "$inc": { "version": 1 }
         };
@@ -328,8 +328,8 @@ impl RunnerRepository for MongoRunnerRepository {
         let filter = doc! { "runner_id": id.to_string() };
         let update = doc! { 
             "$set": { 
-                "last_heartbeat": mongodb::bson::DateTime::from_chrono(Utc::now()),
-                "updated_at": mongodb::bson::DateTime::from_chrono(Utc::now())
+                "last_heartbeat": mongodb::bson::DateTime::now(),
+                "updated_at": mongodb::bson::DateTime::now()
             },
             "$inc": { "version": 1 }
         };

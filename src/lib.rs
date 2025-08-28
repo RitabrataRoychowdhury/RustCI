@@ -38,6 +38,7 @@ pub struct AppState {
     pub env: Arc<config::AppConfiguration>,
     pub db: Arc<infrastructure::database::DatabaseManager>,
     pub runner_repository: Arc<dyn infrastructure::repositories::RunnerRepository>,
+    pub job_repository: Arc<dyn domain::repositories::runner::JobRepository>,
     pub audit_logger: Option<Arc<dyn core::networking::security::AuditLogger>>,
     pub config_manager: Arc<tokio::sync::RwLock<config::HotReloadConfigManager>>,
     pub observability: Arc<core::observability::observability::ObservabilityService>,
