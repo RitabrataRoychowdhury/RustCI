@@ -274,6 +274,19 @@ pub enum AppError {
 
     #[error("Connection pool error: {0}")]
     ConnectionPool(String),
+
+    // Deployment-specific errors
+    #[error("Deployment failed: {0}")]
+    DeploymentFailed(String),
+    
+    #[error("Validation failed: {0}")]
+    ValidationFailed(String),
+    
+    #[error("Network error: {0}")]
+    NetworkError(String),
+    
+    #[error("System error: {0}")]
+    SystemError(String),
 }
 
 // Valkyrie-specific error type

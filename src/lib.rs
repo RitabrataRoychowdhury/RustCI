@@ -18,6 +18,7 @@ pub mod infrastructure;
 pub mod plugins;
 pub mod presentation;
 pub mod service_registry;
+pub mod testing;
 pub mod token;
 pub mod upload;
 pub mod valkyrie;

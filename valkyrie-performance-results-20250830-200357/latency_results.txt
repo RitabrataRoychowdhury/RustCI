@@ -1,0 +1,80 @@
+    Updating crates.io index
+     Locking 52 packages to latest compatible versions
+ Downloading crates ...
+  Downloaded cfg-if v1.0.3
+   Compiling proc-macro2 v1.0.101
+   Compiling unicode-ident v1.0.18
+   Compiling libc v0.2.175
+   Compiling autocfg v1.5.0
+   Compiling futures-sink v0.3.31
+   Compiling parking_lot_core v0.9.11
+   Compiling futures-core v0.3.31
+   Compiling pin-project-lite v0.2.16
+   Compiling cfg-if v1.0.3
+   Compiling smallvec v1.15.1
+   Compiling scopeguard v1.2.0
+   Compiling memchr v2.7.5
+   Compiling futures-io v0.3.31
+   Compiling slab v0.4.11
+   Compiling pin-utils v0.1.0
+   Compiling futures-channel v0.3.31
+   Compiling futures-task v0.3.31
+   Compiling bytes v1.10.1
+   Compiling lock_api v0.4.13
+   Compiling quote v1.0.40
+   Compiling syn v2.0.106
+   Compiling socket2 v0.6.0
+   Compiling mio v1.0.4
+   Compiling signal-hook-registry v1.4.6
+   Compiling parking_lot v0.12.4
+   Compiling futures-macro v0.3.31
+   Compiling tokio-macros v2.5.0
+   Compiling tokio v1.47.1
+   Compiling futures-util v0.3.31
+   Compiling futures-executor v0.3.31
+   Compiling futures v0.3.31
+   Compiling valkyrie_performance_test v0.1.0 (/Users/ritabrataroychowdhury/Downloads/RustCI/valkyrie-performance-results-20250830-200357)
+    Finished `release` profile [optimized] target(s) in 7.83s
+     Running `target/release/valkyrie_latency_test 100`
+🚀 Valkyrie Protocol Latency Benchmark
+📡 Valkyrie server started on 127.0.0.1:56593
+🔥 Warming up connection...
+📊 Running Valkyrie latency benchmark...
+Testing 100 iterations...
+
+📈 Valkyrie Performance Results:
+  Sample Size: 100 messages
+  Min: 38.208µs (38208ns)
+  P50: 77.666µs (77.67μs)
+  P90: 88.708µs (88.71μs)
+  P95: 94.916µs (94.92μs)
+  P99: 137.709µs (137.71μs)
+  P99.9: 137.709µs (137.71μs)
+  P99.99: 137.709µs (137.71μs)
+  Max: 137.709µs (137.71μs)
+  Mean: 70.35µs (70.35μs)
+  Std Dev: 19.5µs (19.50μs)
+
+🎯 Performance Categories:
+  Ultra-fast (<50μs): 25/100 (25.00%)
+  Very fast (<100μs): 98/100 (98.00%)
+  Fast (<200μs): 100/100 (100.00%)
+  Sub-millisecond (<1ms): 100/100 (100.00%)
+
+✅ Valkyrie Protocol Validation:
+  ✅ P50 latency 77.67μs < 100μs (Excellent)
+  ✅ P95 latency 94.92μs < 300μs (Excellent)
+  ✅ P99 latency 137.71μs < 500μs (Excellent)
+  ✅ 100.00% sub-millisecond (>= 99.5%) (Excellent)
+  ✅ 98.00% very fast (<100μs) (Excellent)
+
+🏆 Valkyrie Performance Score: 100/100
+🌟 OUTSTANDING VALKYRIE PERFORMANCE!
+
+🚀 VALKYRIE SUB-MILLISECOND CLAIMS VALIDATED!
+   • P50: 77.67μs
+   • P95: 94.92μs
+   • P99: 137.71μs
+   • 100.00% sub-millisecond
+   • 98.00% very fast
+   • Performance Score: 100/100

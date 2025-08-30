@@ -1,5 +1,6 @@
 // Integration tests
 pub mod api;
+pub mod blue_green_deployment_integration_tests;
 pub mod cluster_integration_tests;
 pub mod control_plane_api_tests;
 pub mod control_plane_observability_tests;

@@ -28,6 +28,9 @@ pub mod infrastructure;
 // Performance monitoring and optimization
 pub mod performance;
 
+// Resource management and lifecycle
+pub mod resources;
+
 // Re-export commonly used types for easy access
 pub use cluster::{ClusterCoordinator, NodeRegistry, LeaderElectionManager};
 pub use jobs::{DefaultJobScheduler, JobQueue, InMemoryJobQueue, DistributedJobScheduler};
@@ -37,6 +40,14 @@ pub use observability::{MetricsCollector};
 pub use patterns::{CommandHandler, EventBus, EventHandler};
 pub use infrastructure::{ServiceContainer, ServiceFactory, Service, ServiceDecorator};
 pub use performance::{PerformanceMonitor, ProductionPerformanceMonitor, AlertManager, ProductionAlertManager, PerformanceDashboard, ProductionPerformanceDashboard};
+pub use resources::{
+    ResourceLifecycleManager, ResourceMetadata, ResourceState, RetentionPolicy, ResourceCleanupHandler,
+    BackgroundJobManager, JobHandler, JobPriority, JobState,
+    FileStorageManager, FileStorageType, FileMetadata, StorageQuota, VirusScanner, StorageBackend,
+    CacheManager, CacheConfig, EvictionPolicy, CachePriority, InvalidationPattern,
+    ConnectionPool, ConnectionPoolManager, PoolConfig, ConnectionType, ConnectionFactory, HealthChecker,
+    ResourceQuotaManager, ResourceQuota, AllocationRequest, AllocationPriority, ThrottlingConfig
+};
 
 // Re-export specific commonly used items
 pub use patterns::correlation::CorrelationTracker;
