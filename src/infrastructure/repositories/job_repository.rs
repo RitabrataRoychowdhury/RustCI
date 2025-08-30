@@ -2,6 +2,7 @@ use crate::{
     domain::entities::runner::{Job, JobId, JobPriority, JobStatus, PipelineId, RunnerId},
     domain::repositories::runner::JobRepository,
     error::{AppError, Result},
+    infrastructure::database::{ProductionDatabaseManager, ProductionDatabaseOperations},
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -11,8 +12,12 @@ use mongodb::{
     Collection, Database, IndexModel,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 /// MongoDB document representation of a job with optimized field ordering for performance
@@ -113,27 +118,36 @@ pub struct JobPerformanceMetricsDocument {
 /// Optimized for microsecond-level operations with advanced indexing and caching
 pub struct MongoJobRepository {
     collection: Collection<JobDocument>,
+    db_manager: Arc<ProductionDatabaseManager>,
     // Pre-compiled queries for maximum performance
     find_by_status_query: Document,
     find_queued_query: Document,
     find_running_query: Document,
+    // Performance optimization settings
+    batch_size: usize,
+    cache_ttl: Duration,
 }
 
 impl MongoJobRepository {
-    pub async fn new(database: &Database) -> Result<Self> {
+    pub async fn new(database: &Database, db_manager: Arc<ProductionDatabaseManager>) -> Result<Self> {
         let collection = database.collection::<JobDocument>("jobs");
         
         let repo = Self {
             collection,
+            db_manager,
             // Pre-compile frequently used queries to avoid runtime compilation overhead
             find_by_status_query: doc! {},
             find_queued_query: doc! { "status": "Queued" },
             find_running_query: doc! { "status": "Running" },
+            // Performance optimization settings
+            batch_size: 100,
+            cache_ttl: Duration::from_secs(300),
         };
         
         // Create optimized indexes for microsecond-level performance
         repo.create_performance_indexes().await?;
         
+        info!("MongoDB Job Repository initialized with production optimizations");
         Ok(repo)
     }
 
@@ -357,23 +371,43 @@ impl MongoJobRepository {
         })
     }
 
-    /// High-performance bulk insert for job batches
+    /// High-performance bulk insert for job batches with connection pooling
     pub async fn bulk_create(&self, jobs: &[Job]) -> Result<Vec<JobId>> {
         if jobs.is_empty() {
             return Ok(Vec::new());
         }
 
-        let documents: Vec<JobDocument> = jobs.iter()
-            .map(|job| self.entity_to_document(job))
-            .collect();
+        let start_time = Instant::now();
+        let mut job_ids = Vec::with_capacity(jobs.len());
+        
+        // Process in batches to avoid memory issues and improve performance
+        for chunk in jobs.chunks(self.batch_size) {
+            let operation = || async {
+                let documents: Vec<JobDocument> = chunk.iter()
+                    .map(|job| self.entity_to_document(job))
+                    .collect();
 
-        let _result = self.collection
-            .insert_many(documents, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Bulk job creation failed: {}", e)))?;
+                self.collection
+                    .insert_many(documents, None)
+                    .await
+                    .map_err(|e| AppError::DatabaseError(format!(
+                        "Bulk job creation failed for batch of {} jobs: {}. Context: operation=bulk_create, batch_size={}", 
+                        chunk.len(), e, chunk.len()
+                    )))
+            };
 
-        // Extract job IDs from the inserted documents
-        let job_ids: Vec<JobId> = jobs.iter().map(|job| job.id).collect();
+            self.db_manager.execute_with_retry(operation).await?;
+            
+            // Extract job IDs from this chunk
+            let chunk_ids: Vec<JobId> = chunk.iter().map(|job| job.id).collect();
+            job_ids.extend(chunk_ids);
+        }
+        
+        let duration = start_time.elapsed();
+        info!("Bulk created {} jobs in {} batches in {:?}", 
+              jobs.len(), 
+              (jobs.len() + self.batch_size - 1) / self.batch_size,
+              duration);
         
         Ok(job_ids)
     }
@@ -403,65 +437,127 @@ impl MongoJobRepository {
         Ok(jobs)
     }
 
-    /// Atomic job status update with optimistic locking
+    /// Atomic job status update with optimistic locking and retry logic
     pub async fn atomic_status_update(&self, job_id: JobId, old_status: JobStatus, new_status: JobStatus) -> Result<bool> {
-        let filter = doc! { 
-            "job_id": job_id.to_string(),
-            "status": mongodb::bson::to_bson(&old_status).unwrap()
-        };
+        let start_time = Instant::now();
         
-        let update = doc! { 
-            "$set": { 
-                "status": mongodb::bson::to_bson(&new_status).unwrap(),
+        let operation = || async {
+            let old_status_bson = mongodb::bson::to_bson(&old_status)
+                .map_err(|e| AppError::DatabaseError(format!(
+                    "Failed to serialize old job status: {}. Context: operation=atomic_status_update, job_id={}, old_status={:?}", 
+                    e, job_id, old_status
+                )))?;
+            let new_status_bson = mongodb::bson::to_bson(&new_status)
+                .map_err(|e| AppError::DatabaseError(format!(
+                    "Failed to serialize new job status: {}. Context: operation=atomic_status_update, job_id={}, new_status={:?}", 
+                    e, job_id, new_status
+                )))?;
+            
+            let filter = doc! { 
+                "job_id": job_id.to_string(),
+                "status": old_status_bson
+            };
+            
+            let mut update_fields = doc! {
+                "status": new_status_bson,
                 "updated_at": mongodb::bson::DateTime::now(),
-                "started_at": if new_status == JobStatus::Running {
-                    Some(mongodb::bson::DateTime::now())
-                } else {
-                    None
-                },
-                "completed_at": if matches!(new_status, JobStatus::Success | JobStatus::Failed | JobStatus::Cancelled | JobStatus::TimedOut) {
-                    Some(mongodb::bson::DateTime::now())
-                } else {
-                    None
-                }
-            },
-            "$inc": { "version": 1 }
+            };
+            
+            // Add timing fields based on status transition
+            if new_status == JobStatus::Running {
+                update_fields.insert("started_at", mongodb::bson::DateTime::now());
+            }
+            
+            if matches!(new_status, JobStatus::Success | JobStatus::Failed | JobStatus::Cancelled | JobStatus::TimedOut) {
+                update_fields.insert("completed_at", mongodb::bson::DateTime::now());
+            }
+            
+            let update = doc! { 
+                "$set": update_fields,
+                "$inc": { "version": 1 }
+            };
+
+            self.collection
+                .update_one(filter, update, None)
+                .await
+                .map_err(|e| AppError::DatabaseError(format!(
+                    "Atomic status update failed: {}. Context: operation=atomic_status_update, job_id={}, old_status={:?}, new_status={:?}", 
+                    e, job_id, old_status, new_status
+                )))
         };
 
-        let result = self.collection
-            .update_one(filter, update, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Atomic status update failed: {}", e)))?;
+        let result = self.db_manager.execute_with_retry(operation).await?;
+        
+        let duration = start_time.elapsed();
+        let success = result.modified_count > 0;
+        
+        if success {
+            debug!("Atomic status update completed in {:?}: {} {:?} -> {:?}", 
+                   duration, job_id, old_status, new_status);
+        } else {
+            warn!("Atomic status update failed - no matching document: {} {:?} -> {:?}", 
+                  job_id, old_status, new_status);
+        }
 
-        Ok(result.modified_count > 0)
+        Ok(success)
     }
 }
 
 #[async_trait]
 impl JobRepository for MongoJobRepository {
     async fn create(&self, job: &Job) -> Result<Job> {
-        let document = self.entity_to_document(job);
+        let start_time = Instant::now();
         
-        let options = InsertOneOptions::builder().build();
-        
-        self.collection
-            .insert_one(document, options)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to create job: {}", e)))?;
+        let operation = || async {
+            let document = self.entity_to_document(job);
+            let options = InsertOneOptions::builder().build();
+            
+            self.collection
+                .insert_one(document, options)
+                .await
+                .map_err(|e| AppError::DatabaseError(format!(
+                    "Failed to create job {}: {}. Context: operation=create, job_id={}, pipeline_id={}", 
+                    job.id, e, job.id, job.pipeline_id
+                )))
+        };
 
+        self.db_manager.execute_with_retry(operation).await?;
+        
+        let duration = start_time.elapsed();
+        debug!("Job created successfully in {:?}: {}", duration, job.id);
+        
         Ok(job.clone())
     }
 
     async fn find_by_id(&self, job_id: JobId) -> Result<Option<Job>> {
-        let filter = doc! { "job_id": job_id.to_string() };
+        let start_time = Instant::now();
         
-        let document = self.collection
-            .find_one(filter, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to find job: {}", e)))?;
+        let operation = || async {
+            let filter = doc! { "job_id": job_id.to_string() };
+            
+            self.collection
+                .find_one(filter, None)
+                .await
+                .map_err(|e| AppError::DatabaseError(format!(
+                    "Failed to find job by ID: {}. Context: operation=find_by_id, job_id={}", 
+                    e, job_id
+                )))
+        };
+
+        let document = self.db_manager.execute_with_retry(operation).await?;
+        
+        let duration = start_time.elapsed();
+        debug!("Job lookup completed in {:?}: {}", duration, job_id);
 
         match document {
-            Some(doc) => Ok(Some(self.document_to_entity(doc)?)),
+            Some(doc) => {
+                let job = self.document_to_entity(doc)
+                    .map_err(|e| AppError::DatabaseError(format!(
+                        "Failed to convert document to entity for job {}: {}", 
+                        job_id, e
+                    )))?;
+                Ok(Some(job))
+            },
             None => Ok(None),
         }
     }
@@ -487,7 +583,9 @@ impl JobRepository for MongoJobRepository {
     }
 
     async fn find_by_status(&self, status: JobStatus) -> Result<Vec<Job>> {
-        let filter = doc! { "status": mongodb::bson::to_bson(&status).unwrap() };
+        let status_bson = mongodb::bson::to_bson(&status)
+            .map_err(|e| AppError::DatabaseError(format!("Failed to serialize job status: {}", e)))?;
+        let filter = doc! { "status": status_bson };
         
         let options = FindOptions::builder()
             .sort(doc! { "priority": -1, "created_at": 1 })
@@ -561,7 +659,9 @@ impl JobRepository for MongoJobRepository {
     }
 
     async fn find_by_priority(&self, priority: JobPriority) -> Result<Vec<Job>> {
-        let filter = doc! { "priority": mongodb::bson::to_bson(&priority).unwrap() };
+        let priority_bson = mongodb::bson::to_bson(&priority)
+            .map_err(|e| AppError::DatabaseError(format!("Failed to serialize job priority: {}", e)))?;
+        let filter = doc! { "priority": priority_bson };
         
         let options = FindOptions::builder()
             .sort(doc! { "created_at": 1 })
@@ -632,24 +732,56 @@ impl JobRepository for MongoJobRepository {
     }
 
     async fn update_status(&self, job_id: JobId, status: JobStatus) -> Result<()> {
-        let filter = doc! { "job_id": job_id.to_string() };
-        let update = doc! { 
-            "$set": { 
-                "status": mongodb::bson::to_bson(&status).unwrap(),
+        let start_time = Instant::now();
+        
+        let operation = || async {
+            let filter = doc! { "job_id": job_id.to_string() };
+            let status_bson = mongodb::bson::to_bson(&status)
+                .map_err(|e| AppError::DatabaseError(format!(
+                    "Failed to serialize job status: {}. Context: operation=update_status, job_id={}, status={:?}", 
+                    e, job_id, status
+                )))?;
+            
+            let mut update_fields = doc! {
+                "status": status_bson,
                 "updated_at": mongodb::bson::DateTime::now()
-            },
-            "$inc": { "version": 1 }
+            };
+            
+            // Add timing fields based on status
+            if status == JobStatus::Running {
+                update_fields.insert("started_at", mongodb::bson::DateTime::now());
+            }
+            
+            if matches!(status, JobStatus::Success | JobStatus::Failed | JobStatus::Cancelled | JobStatus::TimedOut) {
+                update_fields.insert("completed_at", mongodb::bson::DateTime::now());
+            }
+            
+            let update = doc! { 
+                "$set": update_fields,
+                "$inc": { "version": 1 }
+            };
+
+            self.collection
+                .update_one(filter, update, None)
+                .await
+                .map_err(|e| AppError::DatabaseError(format!(
+                    "Failed to update job status: {}. Context: operation=update_status, job_id={}, status={:?}", 
+                    e, job_id, status
+                )))
         };
 
-        let result = self.collection
-            .update_one(filter, update, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to update job status: {}", e)))?;
-
+        let result = self.db_manager.execute_with_retry(operation).await?;
+        
+        let duration = start_time.elapsed();
+        
         if result.matched_count == 0 {
-            return Err(AppError::NotFound(format!("Job not found: {}", job_id)));
+            return Err(AppError::NotFound(format!(
+                "Job not found for status update: {}. Context: operation=update_status, status={:?}", 
+                job_id, status
+            )));
         }
 
+        debug!("Job status updated in {:?}: {} -> {:?}", duration, job_id, status);
         Ok(())
     }
 
@@ -689,7 +821,9 @@ impl JobRepository for MongoJobRepository {
     }
 
     async fn count_by_status(&self, status: JobStatus) -> Result<u64> {
-        let filter = doc! { "status": mongodb::bson::to_bson(&status).unwrap() };
+        let status_bson = mongodb::bson::to_bson(&status)
+            .map_err(|e| AppError::DatabaseError(format!("Failed to serialize job status: {}", e)))?;
+        let filter = doc! { "status": status_bson };
         
         let count = self.collection
             .count_documents(filter, None)
@@ -807,7 +941,15 @@ mod tests {
         let client = mongodb::Client::with_uri_str(&connection_string).await.unwrap();
         let database = client.database("test_jobs");
         
-        MongoJobRepository::new(&database).await.unwrap()
+        // Create a mock database manager for testing
+        let db_config = crate::infrastructure::database::ProductionDatabaseConfig::default();
+        let db_manager = Arc::new(
+            crate::infrastructure::database::ProductionDatabaseManager::new(db_config)
+                .await
+                .unwrap()
+        );
+        
+        MongoJobRepository::new(&database, db_manager).await.unwrap()
     }
 
     fn create_test_job() -> Job {

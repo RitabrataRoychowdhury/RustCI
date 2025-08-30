@@ -1,0 +1,77 @@
+name: "staging"
+inherits_from: "development"
+config_overrides:
+  server:
+    host: "0.0.0.0"
+    port: 8080
+  observability:
+    logging:
+      level: "info"
+      format: "json"
+    metrics:
+      collection_interval_seconds: 60
+  security:
+    session:
+      secure_cookies: true
+    cors:
+      allowed_origins:
+        - "https://staging.rustci.dev"
+feature_flags:
+  enable_experimental_features: true
+  enable_hot_reload: false
+  enable_metrics_collection: true
+  enable_audit_logging: true
+  enable_distributed_tracing: true
+encrypted_values:
+  "security.jwt.secret": 
+    encrypted_data: "c3RhZ2luZy1qd3Qtc2VjcmV0LWtleQ=="
+    encryption_method: "Aes256Gcm"
+    key_id: "staging-key-1"
+    created_at: "2024-01-01T00:00:00Z"
+resource_limits:
+  max_memory_mb: 2048
+  max_cpu_cores: 4.0
+  max_concurrent_connections: 500
+deployment_config:
+  deployment_strategy: "RollingUpdate"
+  health_check_config:
+    enabled: true
+    endpoint: "/health"
+    interval_seconds: 30
+    timeout_seconds: 10
+    failure_threshold: 3
+    success_threshold: 2
+  scaling_config:
+    auto_scaling_enabled: true
+    min_instances: 2
+    max_instances: 5
+    target_cpu_utilization: 70.0
+    target_memory_utilization: 80.0
+    scale_up_cooldown_seconds: 300
+    scale_down_cooldown_seconds: 600
+  monitoring_config:
+    metrics_enabled: true
+    logging_level: "info"
+    tracing_enabled: true
+    alert_rules:
+      - name: "high_cpu_usage"
+        condition: "cpu_usage > 80"
+        threshold: 80.0
+        duration_seconds: 300
+        severity: "High"
+        notification_channels: ["slack-staging"]
+validation_rules:
+  required_fields:
+    - "security.jwt.secret"
+    - "database.mongodb_uri"
+    - "security.oauth.github.client_secret"
+  custom_validators:
+    - name: "staging_port_range"
+      field_path: "server.port"
+      validation_type: !Range
+        min: 8000
+        max: 9000
+      parameters: {}
+      error_message: "Staging server port should be between 8000-9000"
+  schema_validation: true
+  strict_mode: true

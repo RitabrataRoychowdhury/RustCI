@@ -276,7 +276,7 @@ impl RetryMiddleware {
                             operation = %context.operation,
                             attempt = attempt + 1,
                             delay_ms = delay.as_millis(),
-                            error = %last_error.as_ref().unwrap(),
+                            error = %last_error.as_ref().expect("last_error should be Some when retrying"),
                             "Operation failed, retrying"
                         );
                         sleep(delay).await;

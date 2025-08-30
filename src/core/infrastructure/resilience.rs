@@ -374,7 +374,7 @@ impl RetryManager {
                             operation = %context.operation,
                             attempt = attempt + 1,
                             delay_ms = delay.as_millis(),
-                            error = %last_error.as_ref().unwrap(),
+                            error = %last_error.as_ref().expect("last_error should be Some when retrying"),
                             "Operation failed, retrying with backoff"
                         );
                         sleep(delay).await;
@@ -541,10 +541,11 @@ impl ServiceMeshManager {
         let mut registry = self.service_registry.write().await;
         registry.insert(service_name.clone(), endpoints);
 
+        let endpoint_count = registry.get(&service_name).map(|v| v.len()).unwrap_or(0);
         info!(
             "Registered service: {} with {} endpoints",
             service_name,
-            registry.get(&service_name).unwrap().len()
+            endpoint_count
         );
         Ok(())
     }

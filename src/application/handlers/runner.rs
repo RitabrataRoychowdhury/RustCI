@@ -220,7 +220,7 @@ pub async fn register_runner(
 )]
 pub async fn trigger_job_on_runner(
     Path(runner_id): Path<String>,
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Extension(security_ctx): Extension<SecurityContext>,
     Json(request): Json<TriggerJobRequest>,
 ) -> Result<impl IntoResponse> {
@@ -514,7 +514,7 @@ pub async fn get_runner_status(
         name: runner.name,
         runner_type: runner_type_str.to_string(),
         status: runner.status,
-        capacity: runner.capacity,
+        capacity: 1, // Default capacity since not available in RunnerEntity
         tags: runner.tags,
         created_at: runner.created_at,
         last_heartbeat: runner.last_heartbeat,
@@ -566,7 +566,7 @@ pub async fn list_runners(
                 name: runner.name,
                 runner_type: runner_type_str.to_string(),
                 status: runner.status,
-                capacity: runner.capacity,
+                capacity: 1, // Default capacity since not available in RunnerEntity
                 tags: runner.tags,
                 created_at: runner.created_at,
                 last_heartbeat: runner.last_heartbeat,

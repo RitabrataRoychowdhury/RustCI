@@ -1,0 +1,148 @@
+name: "production"
+inherits_from: "staging"
+config_overrides:
+  server:
+    host: "0.0.0.0"
+    port: 443
+    max_connections: 10000
+    request_timeout_seconds: 30
+    graceful_shutdown_timeout_seconds: 60
+  observability:
+    logging:
+      level: "warn"
+      format: "json"
+      enable_file_rotation: true
+      max_file_size_mb: 100
+      max_files: 10
+    metrics:
+      enabled: true
+      collection_interval_seconds: 60
+      export_timeout_seconds: 30
+    tracing:
+      enabled: true
+      sample_rate: 0.01
+  security:
+    session:
+      secure_cookies: true
+      timeout_minutes: 30
+      max_concurrent_sessions: 3
+    rate_limiting:
+      enabled: true
+      requests_per_minute: 1000
+      burst_size: 100
+    cors:
+      allowed_origins:
+        - "https://rustci.dev"
+        - "https://app.rustci.dev"
+  database:
+    connection_pool_size: 50
+    connection_timeout_seconds: 30
+    query_timeout_seconds: 60
+    retry_attempts: 5
+    enable_ssl: true
+feature_flags:
+  enable_experimental_features: false
+  enable_hot_reload: false
+  enable_metrics_collection: true
+  enable_audit_logging: true
+  enable_distributed_tracing: true
+  enable_valkyrie_protocol: true
+encrypted_values:
+  "security.jwt.secret": 
+    encrypted_data: "cHJvZHVjdGlvbi1qd3Qtc2VjcmV0LWtleS12ZXJ5LXNlY3VyZQ=="
+    encryption_method: "Aes256Gcm"
+    key_id: "prod-key-1"
+    created_at: "2024-01-01T00:00:00Z"
+  "security.oauth.github.client_secret":
+    encrypted_data: "Z2l0aHViLWNsaWVudC1zZWNyZXQtcHJvZHVjdGlvbg=="
+    encryption_method: "Aes256Gcm"
+    key_id: "prod-key-1"
+    created_at: "2024-01-01T00:00:00Z"
+  "database.mongodb_uri":
+    encrypted_data: "bW9uZ29kYjovL3VzZXI6cGFzc0Bwcm9kLW1vbmdvLmNsdXN0ZXIubW9uZ29kYi5uZXQvZGI="
+    encryption_method: "Aes256Gcm"
+    key_id: "prod-key-1"
+    created_at: "2024-01-01T00:00:00Z"
+resource_limits:
+  max_memory_mb: 8192
+  max_cpu_cores: 8.0
+  max_disk_gb: 100
+  max_network_mbps: 1000
+  max_concurrent_connections: 10000
+deployment_config:
+  deployment_strategy: "BlueGreen"
+  health_check_config:
+    enabled: true
+    endpoint: "/health"
+    interval_seconds: 30
+    timeout_seconds: 10
+    failure_threshold: 3
+    success_threshold: 2
+  scaling_config:
+    auto_scaling_enabled: true
+    min_instances: 3
+    max_instances: 20
+    target_cpu_utilization: 60.0
+    target_memory_utilization: 70.0
+    scale_up_cooldown_seconds: 300
+    scale_down_cooldown_seconds: 600
+  monitoring_config:
+    metrics_enabled: true
+    logging_level: "warn"
+    tracing_enabled: true
+    alert_rules:
+      - name: "critical_cpu_usage"
+        condition: "cpu_usage > 90"
+        threshold: 90.0
+        duration_seconds: 180
+        severity: "Critical"
+        notification_channels: ["pagerduty", "slack-alerts"]
+      - name: "high_memory_usage"
+        condition: "memory_usage > 85"
+        threshold: 85.0
+        duration_seconds: 300
+        severity: "High"
+        notification_channels: ["slack-alerts"]
+      - name: "error_rate_spike"
+        condition: "error_rate > 5"
+        threshold: 5.0
+        duration_seconds: 120
+        severity: "High"
+        notification_channels: ["pagerduty", "slack-alerts"]
+    dashboard_config:
+      enabled: true
+      refresh_interval_seconds: 30
+      panels:
+        - title: "Request Rate"
+          panel_type: "Graph"
+          query: "rate(http_requests_total[5m])"
+          time_range: "1h"
+        - title: "Error Rate"
+          panel_type: "Graph"
+          query: "rate(http_requests_total{status=~\"5..\"}[5m])"
+          time_range: "1h"
+        - title: "Response Time"
+          panel_type: "Graph"
+          query: "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))"
+          time_range: "1h"
+validation_rules:
+  required_fields:
+    - "security.jwt.secret"
+    - "database.mongodb_uri"
+    - "security.oauth.github.client_secret"
+    - "security.encryption.key"
+  custom_validators:
+    - name: "production_port_check"
+      field_path: "server.port"
+      validation_type: !Enum
+        values: ["80", "443", "8080", "8443"]
+      parameters: {}
+      error_message: "Production should use standard HTTP/HTTPS ports"
+    - name: "secure_jwt_secret"
+      field_path: "security.jwt.secret"
+      validation_type: !Custom
+        script: "length >= 32"
+      parameters: {}
+      error_message: "JWT secret must be at least 32 characters in production"
+  schema_validation: true
+  strict_mode: true

@@ -1,0 +1,11 @@
+pub mod alerting_tests;
+pub mod auto_scaler_tests;
+pub mod cache_manager_tests;
+pub mod connection_pool_tests;
+pub mod dashboard_tests;
+pub mod load_balancer_tests;
+pub mod memory_efficient_tests;
+pub mod monitor_tests;
+pub mod performance_alerting_system_tests;
+pub mod resource_manager_tests;
+pub mod self_healing_tests;

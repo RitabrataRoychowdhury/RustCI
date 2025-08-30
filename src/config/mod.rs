@@ -1,8 +1,13 @@
 pub mod app_config;
 pub mod enhanced_validation;
 pub mod environment;
+pub mod environment_manager;
 pub mod hot_reload;
 pub mod manager;
+pub mod migration;
+pub mod production_manager;
+pub mod production_hot_reload;
+pub mod startup_validation;
 pub mod validation;
 pub mod validation_engine;
 pub mod valkyrie;
@@ -10,8 +15,13 @@ pub mod valkyrie_config;
 pub mod valkyrie_integration;
 
 pub use app_config::*;
+pub use environment_manager::{EnvironmentConfigResolver, EnvironmentConfig, EncryptedValue, ResourceLimits, DeploymentConfig};
 pub use hot_reload::*;
 pub use manager::ValkyrieConfigManager;
+pub use migration::{ConfigMigrationManager, MigrationReport, MigrationResult};
+pub use production_manager::{ProductionConfigManager, ProductionValidationReport, ValidationIssue as ProductionValidationIssue, IssueSeverity};
+pub use production_hot_reload::{ProductionHotReloadManager, ConfigChangeEvent, HotReloadConfig, ConfigBackup};
+pub use startup_validation::{StartupConfigValidator, StartupValidationReport, StartupReadiness, RemediationSuggestion, RemediationSeverity};
 pub use valkyrie::{ValkyrieConfigManager as LegacyValkyrieConfigManager, ConfigSummary};
 pub use valkyrie_config::{ValkyrieConfig, GlobalConfig, ServerConfig, ClientConfig, TransportConfig, SecurityConfig};
 pub use valkyrie_integration::ValkyrieIntegrationConfig;

@@ -7,6 +7,13 @@ use serde_json::json;
 use utoipa::ToSchema;
 
 pub mod utils;
+pub mod context;
+pub mod handler;
+pub mod retry;
+pub mod reporting;
+
+#[cfg(test)]
+mod integration_tests;
 
 #[derive(serde::Serialize, ToSchema)]
 pub struct ApiError {
@@ -31,6 +38,9 @@ pub enum AppError {
 
     #[error("Internal server error: {0}")]
     InternalServerError(String),
+
+    #[error("Internal error: {0}")]
+    Internal(String),
 
     #[error("Not found: {0}")]
     NotFound(String),
@@ -248,6 +258,22 @@ pub enum AppError {
 
     #[error("Routing error: {0}")]
     RoutingError(String),
+
+    // Resource management errors
+    #[error("Resource allocation failed: {0}")]
+    ResourceAllocation(String),
+
+    #[error("Resource not found: {0}")]
+    ResourceNotFound(String),
+
+    #[error("Connection timeout: {0}")]
+    ConnectionTimeout(String),
+
+    #[error("Connection creation failed: {0}")]
+    ConnectionCreation(String),
+
+    #[error("Connection pool error: {0}")]
+    ConnectionPool(String),
 }
 
 // Valkyrie-specific error type
@@ -275,6 +301,12 @@ impl From<serde_yaml::Error> for AppError {
 impl From<crate::valkyrie::config::ConfigValidationError> for AppError {
     fn from(err: crate::valkyrie::config::ConfigValidationError) -> Self {
         AppError::ConfigurationError(format!("Configuration validation error: {}", err))
+    }
+}
+
+impl From<std::time::SystemTimeError> for AppError {
+    fn from(err: std::time::SystemTimeError) -> Self {
+        AppError::InternalServerError(format!("System time error: {}", err))
     }
 }
 impl IntoResponse for AppError {
@@ -341,7 +373,7 @@ impl IntoResponse for AppError {
             AppError::SecurityContextExpired(msg) => (StatusCode::UNAUTHORIZED, msg),
 
             // Internal Failures
-            AppError::InternalServerError(msg) | AppError::InternalError { message: msg, .. } => {
+            AppError::InternalServerError(msg) | AppError::Internal(msg) | AppError::InternalError { message: msg, .. } => {
                 (StatusCode::INTERNAL_SERVER_ERROR, msg)
             }
             AppError::Unimplemented(msg) | AppError::NotImplemented(msg) => {
@@ -419,3 +451,15 @@ impl IntoResponse for AppError {
 }
 
 pub type Result<T> = std::result::Result<T, AppError>;
+
+// Re-export enhanced error handling types
+pub use context::{ErrorContext, ErrorResponse, ErrorSeverity};
+pub use handler::{ProductionErrorHandler, DefaultProductionErrorHandler, ErrorHandlerConfig, RecoveryResult};
+pub use retry::{
+    RetryManager, RetryPolicy, ErrorRecoveryStrategy,
+    CircuitBreaker, CircuitBreakerManager, CircuitBreakerConfig, CircuitBreakerState, CircuitBreakerStats
+};
+pub use reporting::{
+    ErrorReportingService, DefaultErrorReportingService, ErrorReportingConfig,
+    ErrorPattern, ErrorCorrelation, ErrorMetrics, ErrorReport
+};

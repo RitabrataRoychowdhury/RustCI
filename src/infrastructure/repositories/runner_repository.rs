@@ -1,6 +1,7 @@
 use crate::{
     domain::entities::runner::{RunnerEntity, RunnerId, RunnerStatus, RunnerType},
     error::{AppError, Result},
+    infrastructure::database::{ProductionDatabaseManager, ProductionDatabaseOperations},
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -10,7 +11,12 @@ use mongodb::{
     Collection, Database, IndexModel,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 /// MongoDB document representation of a runner
@@ -81,19 +87,27 @@ pub trait RunnerRepository: Send + Sync {
     async fn count_runners(&self, filter: RunnerFilter) -> Result<i64>;
 }
 
-/// MongoDB implementation of the runner repository
+/// MongoDB implementation of the runner repository with production optimizations
 pub struct MongoRunnerRepository {
     collection: Collection<RunnerDocument>,
+    db_manager: Arc<ProductionDatabaseManager>,
+    batch_size: usize,
 }
 
 impl MongoRunnerRepository {
-    pub async fn new(database: &Database) -> Result<Self> {
+    pub async fn new(database: &Database, db_manager: Arc<ProductionDatabaseManager>) -> Result<Self> {
         let collection = database.collection::<RunnerDocument>("runners");
         
+        let repo = Self { 
+            collection,
+            db_manager,
+            batch_size: 50, // Smaller batch size for runners
+        };
+        
         // Create indexes for efficient querying
-        let repo = Self { collection };
         repo.create_indexes().await?;
         
+        info!("MongoDB Runner Repository initialized with production optimizations");
         Ok(repo)
     }
 
@@ -227,7 +241,15 @@ impl MongoRunnerRepository {
         let mut doc = Document::new();
 
         if let Some(status) = &filter.status {
-            doc.insert("status", mongodb::bson::to_bson(status).unwrap());
+            match mongodb::bson::to_bson(status) {
+                Ok(bson_value) => {
+                    doc.insert("status", bson_value);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to serialize runner status to BSON: {}", e);
+                    // Skip this filter if serialization fails
+                }
+            }
         }
 
         if let Some(runner_type) = &filter.runner_type {
@@ -251,26 +273,57 @@ impl MongoRunnerRepository {
 #[async_trait]
 impl RunnerRepository for MongoRunnerRepository {
     async fn store_runner(&self, runner: &RunnerEntity) -> Result<()> {
-        let document = self.entity_to_document(runner);
+        let start_time = Instant::now();
         
-        self.collection
-            .insert_one(document, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to store runner: {}", e)))?;
+        let operation = || async {
+            let document = self.entity_to_document(runner);
+            
+            self.collection
+                .insert_one(document, None)
+                .await
+                .map_err(|e| AppError::DatabaseError(format!(
+                    "Failed to store runner: {}. Context: operation=store_runner, runner_id={}, name={}", 
+                    e, runner.id, runner.name
+                )))
+        };
 
+        self.db_manager.execute_with_retry(operation).await?;
+        
+        let duration = start_time.elapsed();
+        debug!("Runner stored successfully in {:?}: {} ({})", duration, runner.id, runner.name);
+        
         Ok(())
     }
 
     async fn find_runner(&self, id: RunnerId) -> Result<Option<RunnerEntity>> {
-        let filter = doc! { "runner_id": id.to_string() };
+        let start_time = Instant::now();
         
-        let document = self.collection
-            .find_one(filter, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to find runner: {}", e)))?;
+        let operation = || async {
+            let filter = doc! { "runner_id": id.to_string() };
+            
+            self.collection
+                .find_one(filter, None)
+                .await
+                .map_err(|e| AppError::DatabaseError(format!(
+                    "Failed to find runner: {}. Context: operation=find_runner, runner_id={}", 
+                    e, id
+                )))
+        };
+
+        let document = self.db_manager.execute_with_retry(operation).await?;
+        
+        let duration = start_time.elapsed();
+        debug!("Runner lookup completed in {:?}: {}", duration, id);
 
         match document {
-            Some(doc) => Ok(Some(self.document_to_entity(doc)?)),
+            Some(doc) => {
+                let runner = self.document_to_entity(doc)
+                    .map_err(|e| AppError::DatabaseError(format!(
+                        "Failed to convert document to entity for runner {}: {}", 
+                        id, e
+                    )))?;
+                Ok(Some(runner))
+            },
             None => Ok(None),
         }
     }
@@ -303,46 +356,82 @@ impl RunnerRepository for MongoRunnerRepository {
     }
 
     async fn update_runner_status(&self, id: RunnerId, status: RunnerStatus) -> Result<()> {
-        let filter = doc! { "runner_id": id.to_string() };
-        let update = doc! { 
-            "$set": { 
-                "status": mongodb::bson::to_bson(&status).unwrap(),
-                "updated_at": mongodb::bson::DateTime::now()
-            },
-            "$inc": { "version": 1 }
+        let start_time = Instant::now();
+        
+        let operation = || async {
+            let filter = doc! { "runner_id": id.to_string() };
+            let status_bson = mongodb::bson::to_bson(&status)
+                .map_err(|e| AppError::DatabaseError(format!(
+                    "Failed to serialize runner status: {}. Context: operation=update_runner_status, runner_id={}, status={:?}", 
+                    e, id, status
+                )))?;
+            
+            let update = doc! { 
+                "$set": { 
+                    "status": status_bson,
+                    "updated_at": mongodb::bson::DateTime::now()
+                },
+                "$inc": { "version": 1 }
+            };
+
+            self.collection
+                .update_one(filter, update, None)
+                .await
+                .map_err(|e| AppError::DatabaseError(format!(
+                    "Failed to update runner status: {}. Context: operation=update_runner_status, runner_id={}, status={:?}", 
+                    e, id, status
+                )))
         };
 
-        let result = self.collection
-            .update_one(filter, update, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to update runner status: {}", e)))?;
-
+        let result = self.db_manager.execute_with_retry(operation).await?;
+        
+        let duration = start_time.elapsed();
+        
         if result.matched_count == 0 {
-            return Err(AppError::NotFound(format!("Runner not found: {}", id)));
+            return Err(AppError::NotFound(format!(
+                "Runner not found for status update: {}. Context: operation=update_runner_status, status={:?}", 
+                id, status
+            )));
         }
 
+        debug!("Runner status updated in {:?}: {} -> {:?}", duration, id, status);
         Ok(())
     }
 
     async fn update_runner_heartbeat(&self, id: RunnerId) -> Result<()> {
-        let filter = doc! { "runner_id": id.to_string() };
-        let update = doc! { 
-            "$set": { 
-                "last_heartbeat": mongodb::bson::DateTime::now(),
-                "updated_at": mongodb::bson::DateTime::now()
-            },
-            "$inc": { "version": 1 }
+        let start_time = Instant::now();
+        
+        let operation = || async {
+            let filter = doc! { "runner_id": id.to_string() };
+            let update = doc! { 
+                "$set": { 
+                    "last_heartbeat": mongodb::bson::DateTime::now(),
+                    "updated_at": mongodb::bson::DateTime::now()
+                },
+                "$inc": { "version": 1 }
+            };
+
+            self.collection
+                .update_one(filter, update, None)
+                .await
+                .map_err(|e| AppError::DatabaseError(format!(
+                    "Failed to update runner heartbeat: {}. Context: operation=update_runner_heartbeat, runner_id={}", 
+                    e, id
+                )))
         };
 
-        let result = self.collection
-            .update_one(filter, update, None)
-            .await
-            .map_err(|e| AppError::DatabaseError(format!("Failed to update runner heartbeat: {}", e)))?;
-
+        let result = self.db_manager.execute_with_retry(operation).await?;
+        
+        let duration = start_time.elapsed();
+        
         if result.matched_count == 0 {
-            return Err(AppError::NotFound(format!("Runner not found: {}", id)));
+            return Err(AppError::NotFound(format!(
+                "Runner not found for heartbeat update: {}. Context: operation=update_runner_heartbeat", 
+                id
+            )));
         }
 
+        debug!("Runner heartbeat updated in {:?}: {}", duration, id);
         Ok(())
     }
 

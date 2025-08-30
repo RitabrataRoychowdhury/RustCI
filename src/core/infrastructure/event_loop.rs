@@ -219,7 +219,10 @@ impl EventDemultiplexer {
         queue.push(event);
 
         // Sort by priority (highest first)
-        queue.sort_by(|a, b| b.priority.partial_cmp(&a.priority).unwrap());
+        queue.sort_by(|a, b| {
+            b.priority.partial_cmp(&a.priority)
+                .unwrap_or(std::cmp::Ordering::Equal) // Handle NaN values gracefully
+        });
 
         Ok(())
     }

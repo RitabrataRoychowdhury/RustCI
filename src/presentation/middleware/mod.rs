@@ -8,6 +8,7 @@ pub mod enhanced_validation;
 pub mod pipeline;
 pub mod pipeline_manager;
 pub mod rate_limit;
+pub mod response_optimizer;
 pub mod security_pipeline;
 pub mod validation;
 
@@ -18,6 +19,10 @@ pub use auth::auth;
 pub use comprehensive::comprehensive_security_middleware;
 pub use pipeline::create_cors_middleware;
 pub use rate_limit::RateLimiter;
+pub use response_optimizer::{
+    ResponseOptimizer, ResponseOptimizerConfig, create_response_optimizer_middleware,
+    ResponseOptimizationSummary
+};
 // Removed unused import: rate_limit_middleware, security_headers_middleware
 
 use crate::{error::Result, AppState};

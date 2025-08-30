@@ -1,0 +1,104 @@
+name: "local"
+config_overrides:
+  server:
+    host: "localhost"
+    port: 8000
+    max_connections: 50
+    request_timeout_seconds: 30
+    graceful_shutdown_timeout_seconds: 30
+  database:
+    mongodb_uri: "mongodb+srv://ritabrataroychowdhury2002:Physics676@cluster0.uyzku.mongodb.net/dqms?retryWrites=true&w=majority"
+    database_name: "dqms"
+    connection_pool_size: 5
+    connection_timeout_seconds: 10
+    query_timeout_seconds: 30
+    retry_attempts: 3
+    enable_ssl: true
+  security:
+    jwt:
+      secret: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+      expired_in: "1d"
+      signup_expired_in: "1h"
+      refresh_expired_in: "7d"
+    oauth:
+      github:
+        client_id: "Ov23li18bhj2ixmL6GlY"
+        client_secret: "329e1afc2c5009efca526b5e9ae8f3a52bc546bc"
+        redirect_url: "http://localhost:8000/api/sessions/oauth/github/callback"
+    session:
+      secure_cookies: false
+      timeout_minutes: 120
+      max_concurrent_sessions: 10
+    cors:
+      allowed_origins:
+        - "http://localhost:3000"
+        - "http://localhost:8080"
+        - "http://127.0.0.1:3000"
+        - "http://127.0.0.1:8080"
+  observability:
+    logging:
+      level: "debug"
+      format: "pretty"
+      enable_file_rotation: false
+    metrics:
+      enabled: false
+      collection_interval_seconds: 60
+      export_timeout_seconds: 10
+    tracing:
+      enabled: true
+      sample_rate: 1.0
+      service_name: "rustci-local"
+feature_flags:
+  enable_hot_reload: true
+  enable_experimental_features: true
+  enable_metrics_collection: false
+  enable_audit_logging: false
+  enable_distributed_tracing: false
+  enable_valkyrie_protocol: false
+resource_limits:
+  max_memory_mb: 512
+  max_cpu_cores: 1.0
+  max_disk_gb: 5
+  max_network_mbps: 50
+  max_concurrent_connections: 50
+deployment_config:
+  deployment_strategy: "Recreate"
+  health_check_config:
+    enabled: true
+    endpoint: "/health"
+    interval_seconds: 30
+    timeout_seconds: 10
+    failure_threshold: 5
+    success_threshold: 2
+  scaling_config:
+    auto_scaling_enabled: false
+    min_instances: 1
+    max_instances: 1
+    target_cpu_utilization: 90.0
+    target_memory_utilization: 90.0
+    scale_up_cooldown_seconds: 300
+    scale_down_cooldown_seconds: 600
+  monitoring_config:
+    metrics_enabled: false
+    logging_level: "debug"
+    tracing_enabled: true
+    alert_rules: []
+    dashboard_config:
+      enabled: false
+      refresh_interval_seconds: 60
+      panels: []
+encrypted_values: {}
+validation_rules:
+  required_fields:
+    - "security.jwt.secret"
+    - "database.mongodb_uri"
+  custom_validators:
+    - name: "local_port_range"
+      field_path: "server.port"
+      validation_type: !Range
+        min: 3000
+        max: 9000
+      parameters: {}
+      error_message: "Local server port should be between 3000-9000"
+  schema_validation: false
+  strict_mode: false

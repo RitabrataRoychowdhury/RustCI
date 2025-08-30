@@ -429,7 +429,9 @@ impl DefaultJobScheduler {
             // Find jobs ready for execution
             while let Some(scheduled_job) = scheduled_jobs.front() {
                 if scheduled_job.next_execution <= now {
-                    jobs_to_execute.push(scheduled_jobs.pop_front().unwrap());
+                    if let Some(job) = scheduled_jobs.pop_front() {
+                        jobs_to_execute.push(job);
+                    }
                 } else {
                     break;
                 }
