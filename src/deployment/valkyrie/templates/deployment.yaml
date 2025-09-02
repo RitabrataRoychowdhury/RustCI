@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "valkyrie-protocol.fullname" . }}
+  labels:
+    {{- include "valkyrie-protocol.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if not .Values.valkyrie.autoscaling.enabled }}
+  replicas: {{ .Values.valkyrie.replicaCount }}
+  {{- end }}
+  strategy:
+    {{- toYaml .Values.valkyrie.strategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "valkyrie-protocol.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.valkyrie.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "valkyrie-protocol.selectorLabels" . | nindent 8 }}
+        {{- with .Values.valkyrie.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.valkyrie.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "valkyrie-protocol.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.valkyrie.podSecurityContext | nindent 8 }}
+      containers:
+        - name: valkyrie-protocol
+          securityContext:
+            {{- toYaml .Values.valkyrie.securityContext | nindent 12 }}
+          image: "{{ .Values.valkyrie.image.registry }}/{{ .Values.valkyrie.image.repository }}:{{ .Values.valkyrie.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.valkyrie.image.pullPolicy }}
+          ports:
+            - name: valkyrie
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            {{- if .Values.valkyrie.config.transport.quic.enabled }}
+            - name: quic
+              containerPort: 8443
+              protocol: UDP
+            {{- end }}
+          env:
+            - name: VALKYRIE_CONFIG_FILE
+              value: "/etc/valkyrie/config.yaml"
+            - name: VALKYRIE_LOG_LEVEL
+              value: {{ .Values.valkyrie.config.observability.logging.level | quote }}
+            - name: VALKYRIE_LOG_FORMAT
+              value: {{ .Values.valkyrie.config.observability.logging.format | quote }}
+            - name: RUST_LOG
+              value: "valkyrie={{ .Values.valkyrie.config.observability.logging.level }}"
+            - name: RUST_BACKTRACE
+              value: "1"
+            {{- if .Values.valkyrie.config.performance.worker_threads }}
+            - name: TOKIO_WORKER_THREADS
+              value: {{ .Values.valkyrie.config.performance.worker_threads | quote }}
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.valkyrie.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.valkyrie.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.valkyrie.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/valkyrie
+              readOnly: true
+            {{- if .Values.tls.enabled }}
+            - name: tls
+              mountPath: /etc/valkyrie/tls
+              readOnly: true
+            {{- end }}
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: /var/lib/valkyrie
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "valkyrie-protocol.fullname" . }}-config
+        {{- if .Values.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secretName | default (printf "%s-tls" (include "valkyrie-protocol.fullname" .)) }}
+        {{- end }}
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "valkyrie-protocol.fullname" . }}-data
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.valkyrie.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.valkyrie.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.valkyrie.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

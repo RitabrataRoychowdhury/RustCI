@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "valkyrie-protocol.fullname" . }}-config
+  labels:
+    {{- include "valkyrie-protocol.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    # Valkyrie Protocol Configuration
+    protocol:
+      version: {{ .Values.valkyrie.config.protocol.version | quote }}
+      max_connections: {{ .Values.valkyrie.config.protocol.max_connections }}
+      max_message_size: {{ .Values.valkyrie.config.protocol.max_message_size }}
+      connection_timeout: {{ .Values.valkyrie.config.protocol.connection_timeout | quote }}
+      keepalive_interval: {{ .Values.valkyrie.config.protocol.keepalive_interval | quote }}
+
+    transport:
+      tcp:
+        enabled: {{ .Values.valkyrie.config.transport.tcp.enabled }}
+        bind_address: {{ .Values.valkyrie.config.transport.tcp.bind_address | quote }}
+        nodelay: {{ .Values.valkyrie.config.transport.tcp.nodelay }}
+        keepalive: {{ .Values.valkyrie.config.transport.tcp.keepalive }}
+      {{- if .Values.valkyrie.config.transport.quic.enabled }}
+      quic:
+        enabled: {{ .Values.valkyrie.config.transport.quic.enabled }}
+        bind_address: {{ .Values.valkyrie.config.transport.quic.bind_address | quote }}
+        max_streams: {{ .Values.valkyrie.config.transport.quic.max_streams }}
+      {{- end }}
+      websocket:
+        enabled: {{ .Values.valkyrie.config.transport.websocket.enabled }}
+        path: {{ .Values.valkyrie.config.transport.websocket.path | quote }}
+        compression: {{ .Values.valkyrie.config.transport.websocket.compression }}
+
+    security:
+      tls:
+        enabled: {{ .Values.valkyrie.config.security.tls.enabled }}
+        {{- if .Values.tls.enabled }}
+        cert_file: {{ .Values.valkyrie.config.security.tls.cert_file | quote }}
+        key_file: {{ .Values.valkyrie.config.security.tls.key_file | quote }}
+        ca_file: {{ .Values.valkyrie.config.security.tls.ca_file | quote }}
+        {{- end }}
+      noise:
+        enabled: {{ .Values.valkyrie.config.security.noise.enabled }}
+        pattern: {{ .Values.valkyrie.config.security.noise.pattern | quote }}
+      auth:
+        providers:
+          {{- range .Values.valkyrie.config.security.auth.providers }}
+          - type: {{ .type | quote }}
+            config:
+              {{- toYaml .config | nindent 14 }}
+          {{- end }}
+
+    performance:
+      worker_threads: {{ .Values.valkyrie.config.performance.worker_threads }}
+      max_blocking_threads: {{ .Values.valkyrie.config.performance.max_blocking_threads }}
+      thread_stack_size: {{ .Values.valkyrie.config.performance.thread_stack_size }}
+      enable_simd: {{ .Values.valkyrie.config.performance.enable_simd }}
+      enable_zero_copy: {{ .Values.valkyrie.config.performance.enable_zero_copy }}
+      memory_pool_size: {{ .Values.valkyrie.config.performance.memory_pool_size }}
+
+    observability:
+      metrics:
+        enabled: {{ .Values.valkyrie.config.observability.metrics.enabled }}
+        bind_address: {{ .Values.valkyrie.config.observability.metrics.bind_address | quote }}
+        path: {{ .Values.valkyrie.config.observability.metrics.path | quote }}
+      tracing:
+        enabled: {{ .Values.valkyrie.config.observability.tracing.enabled }}
+        {{- if .Values.tracing.jaeger.enabled }}
+        jaeger_endpoint: "http://{{ include "valkyrie-protocol.jaeger.fullname" . }}-collector:14268/api/traces"
+        {{- else }}
+        jaeger_endpoint: {{ .Values.valkyrie.config.observability.tracing.jaeger_endpoint | quote }}
+        {{- end }}
+        sample_rate: {{ .Values.valkyrie.config.observability.tracing.sample_rate }}
+      logging:
+        level: {{ .Values.valkyrie.config.observability.logging.level | quote }}
+        format: {{ .Values.valkyrie.config.observability.logging.format | quote }}
+        output: {{ .Values.valkyrie.config.observability.logging.output | quote }}
+
+  {{- if .Values.configMap.enabled }}
+  {{- with .Values.configMap.data }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+  {{- end }}

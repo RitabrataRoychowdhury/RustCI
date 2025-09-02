@@ -1,0 +1,351 @@
+# Valkyrie Protocol Helm Chart Values
+# This file contains the default configuration values for Valkyrie Protocol deployment
+
+# Global configuration
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# Valkyrie Protocol Server configuration
+valkyrie:
+  # Image configuration
+  image:
+    registry: docker.io
+    repository: rustci/valkyrie-protocol
+    tag: "2.0.0"
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+
+  # Deployment configuration
+  replicaCount: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+
+  # Resource configuration
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+  # Auto-scaling configuration
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 100
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  # Pod configuration
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    fsGroup: 1000
+    runAsNonRoot: true
+    runAsUser: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 1000
+
+  # Node selection
+  nodeSelector: {}
+  tolerations: []
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - valkyrie-protocol
+            topologyKey: kubernetes.io/hostname
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    ports:
+      - name: valkyrie
+        port: 8080
+        targetPort: 8080
+        protocol: TCP
+      - name: metrics
+        port: 9090
+        targetPort: 9090
+        protocol: TCP
+      - name: health
+        port: 8081
+        targetPort: 8081
+        protocol: TCP
+    annotations: {}
+
+  # Ingress configuration
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: valkyrie.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /health/live
+      port: health
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /health/ready
+      port: health
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  # Configuration
+  config:
+    # Protocol configuration
+    protocol:
+      version: "2.0"
+      max_connections: 1000000
+      max_message_size: 67108864  # 64MB
+      connection_timeout: 30s
+      keepalive_interval: 10s
+
+    # Transport configuration
+    transport:
+      tcp:
+        enabled: true
+        bind_address: "0.0.0.0:8080"
+        nodelay: true
+        keepalive: true
+      quic:
+        enabled: true
+        bind_address: "0.0.0.0:8443"
+        max_streams: 1000
+      websocket:
+        enabled: true
+        path: "/ws"
+        compression: true
+      unix:
+        enabled: false  # Not applicable in Kubernetes
+
+    # Security configuration
+    security:
+      tls:
+        enabled: true
+        cert_file: "/etc/valkyrie/tls/tls.crt"
+        key_file: "/etc/valkyrie/tls/tls.key"
+        ca_file: "/etc/valkyrie/tls/ca.crt"
+      noise:
+        enabled: true
+        pattern: "XX"
+        psk: ""  # Will be generated if empty
+      auth:
+        providers:
+          - type: "jwt"
+            config:
+              issuer: "valkyrie"
+              audience: "valkyrie-clients"
+          - type: "mtls"
+            config:
+              verify_client_cert: true
+
+    # Performance configuration
+    performance:
+      worker_threads: 0  # Auto-detect based on CPU cores
+      max_blocking_threads: 512
+      thread_stack_size: 2097152  # 2MB
+      enable_simd: true
+      enable_zero_copy: true
+      memory_pool_size: 1073741824  # 1GB
+
+    # Observability configuration
+    observability:
+      metrics:
+        enabled: true
+        bind_address: "0.0.0.0:9090"
+        path: "/metrics"
+      tracing:
+        enabled: true
+        jaeger_endpoint: ""  # Will be set by Jaeger subchart
+        sample_rate: 0.1
+      logging:
+        level: "info"
+        format: "json"
+        output: "stdout"
+
+# TLS configuration
+tls:
+  enabled: true
+  # Generate self-signed certificates if not provided
+  autoGenerate: true
+  # Existing secret name containing TLS certificates
+  secretName: ""
+  # Certificate configuration for auto-generation
+  certificate:
+    duration: 8760h  # 1 year
+    renewBefore: 720h  # 30 days
+    subject:
+      organizations:
+        - "RustCI"
+      organizationalUnits:
+        - "Valkyrie Protocol"
+    dnsNames:
+      - "valkyrie.local"
+      - "valkyrie-protocol"
+      - "valkyrie-protocol.default.svc.cluster.local"
+    ipAddresses:
+      - "127.0.0.1"
+
+# Service Monitor for Prometheus
+serviceMonitor:
+  enabled: true
+  namespace: ""
+  labels: {}
+  annotations: {}
+  interval: 30s
+  scrapeTimeout: 10s
+  path: /metrics
+  port: metrics
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Network Policy
+networkPolicy:
+  enabled: false
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090
+    - from: []
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8081
+
+# Persistent Volume for configuration and data
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  annotations: {}
+
+# ConfigMap for additional configuration files
+configMap:
+  enabled: true
+  data: {}
+
+# Secret for sensitive configuration
+secret:
+  enabled: true
+  data: {}
+
+# RBAC configuration
+rbac:
+  create: true
+  rules:
+    - apiGroups: [""]
+      resources: ["pods", "services", "endpoints"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["apps"]
+      resources: ["deployments", "replicasets"]
+      verbs: ["get", "list", "watch"]
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Prometheus configuration (subchart)
+prometheus:
+  enabled: true
+  server:
+    persistentVolume:
+      enabled: true
+      size: 50Gi
+  alertmanager:
+    enabled: true
+    persistentVolume:
+      enabled: true
+      size: 10Gi
+
+# Grafana configuration (subchart)
+grafana:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 10Gi
+  adminPassword: "admin"  # Change in production
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://{{ include "valkyrie-protocol.fullname" . }}-prometheus-server
+          access: proxy
+          isDefault: true
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'valkyrie'
+          orgId: 1
+          folder: 'Valkyrie Protocol'
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/valkyrie
+
+# Jaeger configuration (subchart)
+tracing:
+  jaeger:
+    enabled: true
+    agent:
+      enabled: true
+    collector:
+      enabled: true
+    query:
+      enabled: true
+    storage:
+      type: memory
+
+# Additional labels to apply to all resources
+commonLabels: {}
+
+# Additional annotations to apply to all resources
+commonAnnotations: {}

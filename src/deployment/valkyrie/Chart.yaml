@@ -1,0 +1,35 @@
+apiVersion: v2
+name: valkyrie-protocol
+description: A Helm chart for Valkyrie Protocol - Universal Distributed Communication Framework
+type: application
+version: 2.0.0
+appVersion: "2.0.0"
+home: https://github.com/rustci/valkyrie-protocol
+sources:
+  - https://github.com/rustci/valkyrie-protocol
+maintainers:
+  - name: RustCI Team
+    email: team@rustci.io
+keywords:
+  - valkyrie
+  - protocol
+  - distributed
+  - communication
+  - high-performance
+  - sub-millisecond
+annotations:
+  category: Infrastructure
+  licenses: MIT
+dependencies:
+  - name: prometheus
+    version: "25.8.0"
+    repository: "https://prometheus-community.github.io/helm-charts"
+    condition: prometheus.enabled
+  - name: grafana
+    version: "7.0.19"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: grafana.enabled
+  - name: jaeger
+    version: "0.71.14"
+    repository: "https://jaegertracing.github.io/helm-charts"
+    condition: tracing.jaeger.enabled

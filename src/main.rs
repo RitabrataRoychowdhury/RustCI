@@ -2,7 +2,7 @@ use axum::{
     extract::{Request, State},
     http::StatusCode,
     middleware::Next,
-    response::Json,
+    response::{Json, Redirect},
     routing::get,
     Router,
 };
@@ -17,11 +17,12 @@ use utoipa::OpenApi;
 
 // Use the library modules
 use RustAutoDevOps::{
-    config::{HotReloadConfigManager, StartupConfigValidator, StartupReadiness, RemediationSeverity},
+    config::{HotReloadConfigManager, StartupConfigValidator, StartupReadiness},
     core::networking::security::AuditLogger,
     infrastructure::database::DatabaseManager,
     presentation::routes::{auth_router, ci_router, complete_control_plane_router, pr_router},
     presentation::swagger::ApiDoc,
+    api::interactive_docs::interactive_docs_router,
     core::observability::{
         audit::{AuditConfig, EnhancedAuditLogger},
         monitoring::HealthStatus,
@@ -462,28 +463,37 @@ async fn create_app(state: AppState) -> std::result::Result<Router, Box<dyn std:
     let router = Router::new()
         .route("/api/healthchecker", get(health_check_handler))
         .route("/health", get(health_check_handler))
-        .nest("/api/sessions", auth_router(state.clone()))
-        .nest("/api/ci", ci_router())
-        .nest("/api/pr", pr_router())
-        .nest("/api/control-plane", complete_control_plane_router())
-        // Add observability endpoints
-        .nest(
-            "/observability",
-            state
-                .observability
-                .create_router()
-                .with_state(state.observability.clone()),
-        )
-        // Add OpenAPI spec endpoint
+        // Add documentation routes WITHOUT authentication middleware
+        .nest("/docs", interactive_docs_router())
+        .route("/swagger-ui", get(|| async { 
+            Redirect::permanent("/docs/swagger-ui") 
+        }))
         .route("/api-docs/openapi.json", get(|| async { Json(ApiDoc::openapi()) }))
         .with_state(state.clone())
-        // Enhanced middleware pipeline with comprehensive security
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            |state: State<AppState>, req: Request, next: Next| async move {
-                comprehensive_security_middleware(state, req, next).await
-            },
-        ))
+        // Create a separate router for protected routes WITH authentication middleware
+        .merge(
+            Router::new()
+                .nest("/api/sessions", auth_router(state.clone()))
+                .nest("/api/ci", ci_router())
+                .nest("/api/pr", pr_router())
+                .nest("/api/control-plane", complete_control_plane_router())
+                // Add observability endpoints
+                .nest(
+                    "/observability",
+                    state
+                        .observability
+                        .create_router()
+                        .with_state(state.observability.clone()),
+                )
+                .with_state(state.clone())
+                // Enhanced middleware pipeline with comprehensive security
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    |state: State<AppState>, req: Request, next: Next| async move {
+                        comprehensive_security_middleware(state, req, next).await
+                    },
+                ))
+        )
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .layer(cors);
