@@ -5,6 +5,7 @@ use crate::{
         pipeline::{PipelineExecution, TriggerInfo},
     },
     core::networking::security::{Permission, SecurityContext},
+    core::security::input_sanitizer::{InputSanitizer, ValidationRule},
     error::{AppError, Result},
     upload::create_upload_handler,
     AppState,
@@ -105,7 +106,37 @@ pub async fn create_pipeline(
     // Validate pipeline creation permissions
     security_ctx.require_permission(&Permission::WritePipelines)?;
 
-    create_pipeline_from_yaml(&state, &request.yaml_content, request.pipeline_type).await
+    // Validate and sanitize YAML content
+    let sanitizer = InputSanitizer::new()
+        .map_err(|e| AppError::InternalServerError(format!("Failed to initialize input sanitizer: {}", e)))?;
+    
+    let validation_rules = vec![
+        ValidationRule::Required,
+        ValidationRule::Length { min: 10, max: 100_000 }, // Reasonable YAML size limits
+        ValidationRule::SqlInjection,
+        ValidationRule::XssProtection,
+        ValidationRule::CommandInjection,
+    ];
+
+    let validation_result = sanitizer.validate_and_sanitize(&request.yaml_content, &validation_rules)
+        .map_err(|e| AppError::ValidationError(format!("Input validation failed: {}", e)))?;
+
+    if !validation_result.is_valid {
+        let violations: Vec<String> = validation_result.violations
+            .iter()
+            .map(|v| format!("{}: {}", v.rule, v.description))
+            .collect();
+        
+        return Err(AppError::ValidationError(format!(
+            "YAML content validation failed: {}",
+            violations.join(", ")
+        )));
+    }
+
+    let sanitized_yaml = validation_result.sanitized_input
+        .unwrap_or_else(|| request.yaml_content.clone());
+
+    create_pipeline_from_yaml(&state, &sanitized_yaml, request.pipeline_type).await
 }
 
 /// Create a new CI pipeline from uploaded YAML file (multipart)
@@ -242,8 +273,86 @@ pub async fn trigger_pipeline(
     // Validate pipeline execution permissions
     security_ctx.require_permission(&Permission::ExecutePipelines)?;
 
-    // Check repository access if specified
+    // Validate and sanitize input fields
+    let sanitizer = InputSanitizer::new()
+        .map_err(|e| AppError::InternalServerError(format!("Failed to initialize input sanitizer: {}", e)))?;
+
+    // Validate trigger_type
+    let trigger_type_rules = vec![
+        ValidationRule::Required,
+        ValidationRule::Length { min: 1, max: 50 },
+        ValidationRule::Alphanumeric,
+    ];
+    let trigger_type_result = sanitizer.validate_and_sanitize(&request.trigger_type, &trigger_type_rules)?;
+    if !trigger_type_result.is_valid {
+        return Err(AppError::ValidationError(format!(
+            "Invalid trigger_type: {}",
+            trigger_type_result.violations.iter()
+                .map(|v| v.description.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
+    }
+
+    // Validate optional fields
+    let string_validation_rules = vec![
+        ValidationRule::Length { min: 0, max: 200 },
+        ValidationRule::SqlInjection,
+        ValidationRule::XssProtection,
+        ValidationRule::CommandInjection,
+    ];
+
+    let mut sanitized_branch = None;
+    if let Some(ref branch) = request.branch {
+        let branch_result = sanitizer.validate_and_sanitize(branch, &string_validation_rules)?;
+        if !branch_result.is_valid {
+            return Err(AppError::ValidationError(format!(
+                "Invalid branch: {}",
+                branch_result.violations.iter()
+                    .map(|v| v.description.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
+        sanitized_branch = branch_result.sanitized_input;
+    }
+
+    let mut sanitized_commit_hash = None;
+    if let Some(ref commit_hash) = request.commit_hash {
+        let commit_rules = vec![
+            ValidationRule::Length { min: 7, max: 40 }, // Git commit hash length
+            ValidationRule::CustomRegex {
+                pattern: r"^[a-fA-F0-9]+$".to_string(),
+                description: "Git commit hash format".to_string(),
+            },
+        ];
+        let commit_result = sanitizer.validate_and_sanitize(commit_hash, &commit_rules)?;
+        if !commit_result.is_valid {
+            return Err(AppError::ValidationError(format!(
+                "Invalid commit_hash: {}",
+                commit_result.violations.iter()
+                    .map(|v| v.description.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
+        sanitized_commit_hash = commit_result.sanitized_input;
+    }
+
+    let mut sanitized_repository = None;
     if let Some(ref repository) = request.repository {
+        let repo_result = sanitizer.validate_and_sanitize(repository, &string_validation_rules)?;
+        if !repo_result.is_valid {
+            return Err(AppError::ValidationError(format!(
+                "Invalid repository: {}",
+                repo_result.violations.iter()
+                    .map(|v| v.description.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
+        sanitized_repository = repo_result.sanitized_input.clone();
+        
         // TODO: Implement repository access validation
         debug!(
             user_id = %security_ctx.user_id,
@@ -252,18 +361,70 @@ pub async fn trigger_pipeline(
         );
     }
 
+    // Validate environment variables if provided
+    let mut sanitized_environment = None;
+    if let Some(ref env_vars) = request.environment {
+        let mut sanitized_env = HashMap::new();
+        for (key, value) in env_vars {
+            // Validate environment variable names
+            let key_rules = vec![
+                ValidationRule::Required,
+                ValidationRule::Length { min: 1, max: 100 },
+                ValidationRule::CustomRegex {
+                    pattern: r"^[A-Z_][A-Z0-9_]*$".to_string(),
+                    description: "Environment variable name format".to_string(),
+                },
+            ];
+            let key_result = sanitizer.validate_and_sanitize(key, &key_rules)?;
+            if !key_result.is_valid {
+                return Err(AppError::ValidationError(format!(
+                    "Invalid environment variable name '{}': {}",
+                    key,
+                    key_result.violations.iter()
+                        .map(|v| v.description.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
+            }
+
+            // Validate environment variable values
+            let value_rules = vec![
+                ValidationRule::Length { min: 0, max: 1000 },
+                ValidationRule::SqlInjection,
+                ValidationRule::XssProtection,
+                ValidationRule::CommandInjection,
+            ];
+            let value_result = sanitizer.validate_and_sanitize(value, &value_rules)?;
+            if !value_result.is_valid {
+                return Err(AppError::ValidationError(format!(
+                    "Invalid environment variable value for '{}': {}",
+                    key,
+                    value_result.violations.iter()
+                        .map(|v| v.description.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
+            }
+
+            let sanitized_key = key_result.sanitized_input.unwrap_or_else(|| key.clone());
+            let sanitized_value = value_result.sanitized_input.unwrap_or_else(|| value.clone());
+            sanitized_env.insert(sanitized_key, sanitized_value);
+        }
+        sanitized_environment = Some(sanitized_env);
+    }
+
     let trigger_info = TriggerInfo {
-        trigger_type: request.trigger_type,
+        trigger_type: trigger_type_result.sanitized_input.unwrap_or(request.trigger_type),
         triggered_by: Some(format!("user:{}", security_ctx.user_id)),
-        commit_hash: request.commit_hash,
-        branch: request.branch,
-        repository: request.repository,
+        commit_hash: sanitized_commit_hash.or(request.commit_hash),
+        branch: sanitized_branch.or(request.branch),
+        repository: sanitized_repository.or(request.repository),
         webhook_payload: None,
     };
 
     let ci_engine = get_ci_engine(&state)?;
     let execution_id = ci_engine
-        .trigger_pipeline(pipeline_id, trigger_info, request.environment)
+        .trigger_pipeline(pipeline_id, trigger_info, sanitized_environment.or(request.environment))
         .await?;
 
     info!(

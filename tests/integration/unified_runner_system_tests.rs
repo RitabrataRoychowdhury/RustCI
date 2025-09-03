@@ -43,7 +43,7 @@ async fn test_capability_detection() -> Result<()> {
         }
         Err(_) => {
             // Expected for non-existent endpoint
-            println!(\"✓ Capability detection handled non-existent endpoint correctly\");
+            println!("✓ Capability detection handled non-existent endpoint correctly");
         }
     }
     
@@ -63,12 +63,12 @@ async fn test_unified_runner_registry() -> Result<()> {
     
     // Create mock runner metadata
     let mut metadata = rustci::infrastructure::runners::unified_registry::RunnerMetadata::default();
-    metadata.name = Some(\"test-runner\".to_string());
-    metadata.labels.insert(\"environment\".to_string(), \"test\".to_string());
+    metadata.name = Some("test-runner".to_string());
+    metadata.labels.insert("environment".to_string(), "test".to_string());
     
     // Register a runner
     let runner_id = registry.register_runner(
-        \"localhost:8080\".to_string(),
+        "localhost:8080".to_string(),
         metadata,
     ).await?;
     
@@ -78,7 +78,7 @@ async fn test_unified_runner_registry() -> Result<()> {
     
     let runner = registered_runner.unwrap();
     assert_eq!(runner.id, runner_id);
-    assert_eq!(runner.endpoint, \"localhost:8080\");
+    assert_eq!(runner.endpoint, "localhost:8080");
     
     // Test listing runners
     let all_runners = registry.list_runners().await;
@@ -92,12 +92,12 @@ async fn test_unified_runner_registry() -> Result<()> {
     assert_eq!(updated_runner.status, RunnerStatus::Busy);
     
     // Test deregistration
-    registry.deregister_runner(runner_id, \"Test completed\".to_string()).await?;
+    registry.deregister_runner(runner_id, "Test completed".to_string()).await?;
     
     let deregistered_runner = registry.get_runner(runner_id).await;
     assert!(deregistered_runner.is_none());
     
-    println!(\"✓ Unified runner registry tests passed\");
+    println!("✓ Unified runner registry tests passed");
     Ok(())
 }
 
@@ -117,17 +117,17 @@ async fn test_protocol_load_balancer() -> Result<()> {
     
     // Register some test runners
     let mut metadata1 = rustci::infrastructure::runners::unified_registry::RunnerMetadata::default();
-    metadata1.name = Some(\"runner-1\".to_string());
-    let runner1_id = registry.register_runner(\"localhost:8081\".to_string(), metadata1).await?;
+    metadata1.name = Some("runner-1".to_string());
+    let runner1_id = registry.register_runner("localhost:8081".to_string(), metadata1).await?;
     
     let mut metadata2 = rustci::infrastructure::runners::unified_registry::RunnerMetadata::default();
-    metadata2.name = Some(\"runner-2\".to_string());
-    let runner2_id = registry.register_runner(\"localhost:8082\".to_string(), metadata2).await?;
+    metadata2.name = Some("runner-2".to_string());
+    let runner2_id = registry.register_runner("localhost:8082".to_string(), metadata2).await?;
     
     // Create a test job execution context
     let job = Job {
         id: Uuid::new_v4(),
-        name: \"test-job\".to_string(),
+        name: "test-job".to_string(),
         status: JobStatus::Pending,
         metadata: HashMap::new(),
         created_at: std::time::SystemTime::now(),
@@ -150,10 +150,10 @@ async fn test_protocol_load_balancer() -> Result<()> {
     match load_balancer.select_runner(&context).await {
         Ok((selected_runner_id, protocol)) => {
             assert!(selected_runner_id == runner1_id || selected_runner_id == runner2_id);
-            println!(\"✓ Load balancer selected runner {} with protocol {:?}\", selected_runner_id, protocol);
+            println!("✓ Load balancer selected runner {} with protocol {:?}", selected_runner_id, protocol);
         }
         Err(e) => {
-            println!(\"Load balancer selection failed (expected for test): {}\", e);
+            println!("Load balancer selection failed (expected for test): {}", e);
         }
     }
     
@@ -161,7 +161,7 @@ async fn test_protocol_load_balancer() -> Result<()> {
     let stats = load_balancer.get_statistics().await;
     assert!(stats.total_runners >= 0);
     
-    println!(\"✓ Protocol load balancer tests passed\");
+    println!("✓ Protocol load balancer tests passed");
     Ok(())
 }
 
@@ -199,7 +199,7 @@ async fn test_unified_runner_interface() -> Result<()> {
     let protocol_performance = interface.get_protocol_performance().await;
     assert!(protocol_performance.is_empty()); // No performance data yet
     
-    println!(\"✓ Unified runner interface tests passed\");
+    println!("✓ Unified runner interface tests passed");
     Ok(())
 }
 
@@ -233,9 +233,9 @@ async fn test_unified_runner_system_workflow() -> Result<()> {
     
     // Register multiple runners with different capabilities
     let runners = vec![
-        (\"valkyrie-runner\", \"localhost:9001\", create_valkyrie_capabilities()),
-        (\"http-runner\", \"localhost:9002\", create_http_capabilities()),
-        (\"hybrid-runner\", \"localhost:9003\", create_hybrid_capabilities()),
+        ("valkyrie-runner", "localhost:9001", create_valkyrie_capabilities()),
+        ("http-runner", "localhost:9002", create_http_capabilities()),
+        ("hybrid-runner", "localhost:9003", create_hybrid_capabilities()),
     ];
     
     let mut runner_ids = Vec::new();
@@ -257,9 +257,9 @@ async fn test_unified_runner_system_workflow() -> Result<()> {
     
     // Test runner selection for different job types
     let test_jobs = vec![
-        (\"low-latency-job\", JobPriority::Critical),
-        (\"normal-job\", JobPriority::Normal),
-        (\"batch-job\", JobPriority::Low),
+        ("low-latency-job", JobPriority::Critical),
+        ("normal-job", JobPriority::Normal),
+        ("batch-job", JobPriority::Low),
     ];
     
     for (job_name, priority) in test_jobs {
@@ -288,11 +288,11 @@ async fn test_unified_runner_system_workflow() -> Result<()> {
         match load_balancer.select_runner(&context).await {
             Ok((selected_runner_id, protocol)) => {
                 assert!(runner_ids.contains(&selected_runner_id));
-                println!(\"✓ Selected runner {} with protocol {:?} for {}\", 
+                println!("✓ Selected runner {} with protocol {:?} for {}", 
                         selected_runner_id, protocol, job_name);
             }
             Err(e) => {
-                println!(\"Runner selection failed for {} (expected in test): {}\", job_name, e);
+                println!("Runner selection failed for {} (expected in test): {}", job_name, e);
             }
         }
     }
@@ -310,7 +310,7 @@ async fn test_unified_runner_system_workflow() -> Result<()> {
     let interface_metrics = interface.get_metrics().await;
     assert_eq!(interface_metrics.total_jobs, 0); // No actual job execution in test
     
-    println!(\"✓ End-to-end unified runner system workflow test passed\");
+    println!("✓ End-to-end unified runner system workflow test passed");
     Ok(())
 }
 
@@ -329,9 +329,9 @@ async fn test_protocol_migration() -> Result<()> {
     
     // Register a hybrid runner
     let mut metadata = rustci::infrastructure::runners::unified_registry::RunnerMetadata::default();
-    metadata.name = Some(\"hybrid-runner\".to_string());
+    metadata.name = Some("hybrid-runner".to_string());
     
-    let runner_id = registry.register_runner(\"localhost:9004\".to_string(), metadata).await?;
+    let runner_id = registry.register_runner("localhost:9004".to_string(), metadata).await?;
     
     // Update with hybrid capabilities
     let hybrid_capabilities = create_hybrid_capabilities();
@@ -349,7 +349,7 @@ async fn test_protocol_migration() -> Result<()> {
     let updated_runner = registry.get_runner(runner_id).await.unwrap();
     assert!(matches!(updated_runner.runner_type, RunnerType::Valkyrie { .. }));
     
-    println!(\"✓ Protocol migration test passed\");
+    println!("✓ Protocol migration test passed");
     Ok(())
 }
 
@@ -370,9 +370,9 @@ async fn test_runner_health_monitoring() -> Result<()> {
     
     // Register a runner
     let mut metadata = rustci::infrastructure::runners::unified_registry::RunnerMetadata::default();
-    metadata.name = Some(\"health-test-runner\".to_string());
+    metadata.name = Some("health-test-runner".to_string());
     
-    let runner_id = registry.register_runner(\"localhost:9999\".to_string(), metadata).await?;
+    let runner_id = registry.register_runner("localhost:9999".to_string(), metadata).await?;
     
     // Verify initial status is online
     let runner = registry.get_runner(runner_id).await.unwrap();
@@ -383,9 +383,9 @@ async fn test_runner_health_monitoring() -> Result<()> {
     
     // Check if status changed (it might not in this test environment)
     let updated_runner = registry.get_runner(runner_id).await.unwrap();
-    println!(\"Runner status after health check: {:?}\", updated_runner.status);
+    println!("Runner status after health check: {:?}", updated_runner.status);
     
-    println!(\"✓ Runner health monitoring test completed\");
+    println!("✓ Runner health monitoring test completed");
     Ok(())
 }
 
@@ -396,15 +396,15 @@ fn create_valkyrie_capabilities() -> DetectedCapabilities {
         protocol_support: ProtocolSupport {
             valkyrie: ValkyrieProtocolSupport {
                 supported: true,
-                version: Some(\"2.0.0\".to_string()),
-                features: vec![\"zero_copy\".to_string(), \"intelligent_routing\".to_string()],
+                version: Some("2.0.0".to_string()),
+                features: vec!["zero_copy".to_string(), "intelligent_routing".to_string()],
                 performance_tier: PerformanceTier::High,
                 latency_benchmark: Some(Duration::from_micros(50)),
                 throughput_benchmark: Some(1000000),
             },
             http: HttpProtocolSupport {
                 supported: false,
-                version: \"HTTP/1.1\".to_string(),
+                version: "HTTP/1.1".to_string(),
                 features: Vec::new(),
                 max_concurrent_requests: None,
                 keep_alive_support: false,
@@ -446,11 +446,11 @@ fn create_http_capabilities() -> DetectedCapabilities {
             },
             http: HttpProtocolSupport {
                 supported: true,
-                version: \"HTTP/1.1\".to_string(),
-                features: vec![\"keep_alive\".to_string()],
+                version: "HTTP/1.1".to_string(),
+                features: vec!["keep_alive".to_string()],
                 max_concurrent_requests: Some(100),
                 keep_alive_support: true,
-                compression_support: vec![\"gzip\".to_string()],
+                compression_support: vec!["gzip".to_string()],
             },
             websocket: rustci::infrastructure::runners::capability_detector::WebSocketSupport {
                 supported: false,
@@ -480,19 +480,19 @@ fn create_hybrid_capabilities() -> DetectedCapabilities {
         protocol_support: ProtocolSupport {
             valkyrie: ValkyrieProtocolSupport {
                 supported: true,
-                version: Some(\"2.0.0\".to_string()),
-                features: vec![\"zero_copy\".to_string()],
+                version: Some("2.0.0".to_string()),
+                features: vec!["zero_copy".to_string()],
                 performance_tier: PerformanceTier::Standard,
                 latency_benchmark: Some(Duration::from_micros(200)),
                 throughput_benchmark: Some(500000),
             },
             http: HttpProtocolSupport {
                 supported: true,
-                version: \"HTTP/1.1\".to_string(),
-                features: vec![\"keep_alive\".to_string()],
+                version: "HTTP/1.1".to_string(),
+                features: vec!["keep_alive".to_string()],
                 max_concurrent_requests: Some(50),
                 keep_alive_support: true,
-                compression_support: vec![\"gzip\".to_string()],
+                compression_support: vec!["gzip".to_string()],
             },
             websocket: rustci::infrastructure::runners::capability_detector::WebSocketSupport {
                 supported: false,
@@ -524,21 +524,21 @@ fn create_default_hardware_capabilities() -> HardwareCapabilities {
         cpu: CpuCapabilities {
             cores: 4,
             threads: 8,
-            architecture: \"x86_64\".to_string(),
-            features: vec![\"AVX2\".to_string()],
+            architecture: "x86_64".to_string(),
+            features: vec!["AVX2".to_string()],
             frequency: Some(3000),
             cache_sizes: vec![32768, 262144, 8388608],
         },
         memory: MemoryCapabilities {
             total: 8 * 1024 * 1024 * 1024,
             available: 6 * 1024 * 1024 * 1024,
-            memory_type: \"DDR4\".to_string(),
+            memory_type: "DDR4".to_string(),
             bandwidth: Some(25600),
         },
         storage: StorageCapabilities {
             total: 500 * 1024 * 1024 * 1024,
             available: 400 * 1024 * 1024 * 1024,
-            storage_type: \"NVMe SSD\".to_string(),
+            storage_type: "NVMe SSD".to_string(),
             read_speed: Some(3500),
             write_speed: Some(3000),
             iops: Some(500000),
@@ -546,8 +546,8 @@ fn create_default_hardware_capabilities() -> HardwareCapabilities {
         gpu: None,
         network: NetworkHardware {
             interfaces: vec![NetworkInterface {
-                name: \"eth0\".to_string(),
-                interface_type: \"ethernet\".to_string(),
+                name: "eth0".to_string(),
+                interface_type: "ethernet".to_string(),
                 speed: Some(1000),
                 mtu: Some(1500),
             }],
@@ -562,35 +562,35 @@ fn create_default_software_capabilities() -> SoftwareCapabilities {
     
     SoftwareCapabilities {
         operating_system: OperatingSystem {
-            name: \"Linux\".to_string(),
-            version: \"5.4.0\".to_string(),
-            distribution: Some(\"Ubuntu\".to_string()),
-            kernel_version: Some(\"5.4.0-74-generic\".to_string()),
+            name: "Linux".to_string(),
+            version: "5.4.0".to_string(),
+            distribution: Some("Ubuntu".to_string()),
+            kernel_version: Some("5.4.0-74-generic".to_string()),
         },
         container_runtime: vec![ContainerRuntime {
-            name: \"Docker\".to_string(),
-            version: \"20.10.7\".to_string(),
-            features: vec![\"buildkit\".to_string()],
+            name: "Docker".to_string(),
+            version: "20.10.7".to_string(),
+            features: vec!["buildkit".to_string()],
         }],
         programming_languages: vec![ProgrammingLanguage {
-            name: \"Rust\".to_string(),
-            version: \"1.70.0\".to_string(),
-            package_managers: vec![\"cargo\".to_string()],
+            name: "Rust".to_string(),
+            version: "1.70.0".to_string(),
+            package_managers: vec!["cargo".to_string()],
         }],
         build_tools: vec![BuildTool {
-            name: \"cargo\".to_string(),
-            version: \"1.70.0\".to_string(),
-            features: vec![\"workspace\".to_string()],
+            name: "cargo".to_string(),
+            version: "1.70.0".to_string(),
+            features: vec!["workspace".to_string()],
         }],
         testing_frameworks: vec![TestingFramework {
-            name: \"cargo test\".to_string(),
-            version: \"1.70.0\".to_string(),
+            name: "cargo test".to_string(),
+            version: "1.70.0".to_string(),
             parallel_support: true,
         }],
         deployment_tools: vec![DeploymentTool {
-            name: \"kubectl\".to_string(),
-            version: \"1.21.0\".to_string(),
-            cloud_providers: vec![\"AWS\".to_string()],
+            name: "kubectl".to_string(),
+            version: "1.21.0".to_string(),
+            cloud_providers: vec!["AWS".to_string()],
         }],
     }
 }
@@ -616,7 +616,7 @@ fn create_default_performance_capabilities() -> PerformanceCapabilities {
             supports_horizontal_scaling: false,
             supports_vertical_scaling: true,
             auto_scaling_enabled: false,
-            scaling_metrics: vec![\"cpu\".to_string(), \"memory\".to_string()],
+            scaling_metrics: vec!["cpu".to_string(), "memory".to_string()],
         },
     }
 }
@@ -626,21 +626,21 @@ fn create_default_network_capabilities() -> NetworkCapabilities {
     
     NetworkCapabilities {
         connectivity: ConnectivityInfo {
-            public_ip: Some(\"203.0.113.1\".to_string()),
-            private_ip: Some(\"10.0.1.100\".to_string()),
-            hostname: \"test-runner\".to_string(),
+            public_ip: Some("203.0.113.1".to_string()),
+            private_ip: Some("10.0.1.100".to_string()),
+            hostname: "test-runner".to_string(),
             ports: vec![PortInfo {
                 port: 8080,
-                protocol: \"TCP\".to_string(),
-                service: \"HTTP\".to_string(),
+                protocol: "TCP".to_string(),
+                service: "HTTP".to_string(),
                 accessible: true,
             }],
-            firewall_rules: vec![\"allow-http\".to_string()],
+            firewall_rules: vec!["allow-http".to_string()],
         },
         security: NetworkSecurity {
             tls_support: TlsSupport {
-                versions: vec![\"TLS 1.2\".to_string(), \"TLS 1.3\".to_string()],
-                cipher_suites: vec![\"ECDHE-RSA-AES256-GCM-SHA384\".to_string()],
+                versions: vec!["TLS 1.2".to_string(), "TLS 1.3".to_string()],
+                cipher_suites: vec!["ECDHE-RSA-AES256-GCM-SHA384".to_string()],
                 certificate_validation: true,
             },
             vpn_support: false,
@@ -661,7 +661,7 @@ fn create_default_security_capabilities() -> SecurityCapabilities {
     
     SecurityCapabilities {
         authentication: AuthenticationCapabilities {
-            methods: vec![\"JWT\".to_string(), \"API_KEY\".to_string()],
+            methods: vec!["JWT".to_string(), "API_KEY".to_string()],
             multi_factor: false,
             certificate_auth: true,
             api_key_auth: true,
@@ -669,7 +669,7 @@ fn create_default_security_capabilities() -> SecurityCapabilities {
         authorization: AuthorizationCapabilities {
             rbac_support: true,
             abac_support: false,
-            policy_engine: Some(\"OPA\".to_string()),
+            policy_engine: Some("OPA".to_string()),
             fine_grained_permissions: true,
         },
         encryption: EncryptionCapabilities {

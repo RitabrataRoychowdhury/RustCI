@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use super::mfa::*;
+    use super::*;
     use std::collections::HashMap;
 
     #[tokio::test]

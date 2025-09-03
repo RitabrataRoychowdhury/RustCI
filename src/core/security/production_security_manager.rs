@@ -3,6 +3,7 @@
 //! Provides enterprise-grade security management for production environments.
 
 use crate::error::{AppError, Result};
+use crate::core::security::input_sanitizer::{InputSanitizer, ValidationRule, ValidationResult};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn, error};
@@ -16,6 +17,7 @@ pub struct ProductionSecurityConfig {
     pub enable_rate_limiting: bool,
     pub enable_encryption: bool,
     pub security_level: SecurityLevel,
+    #[serde(skip)]
     pub audit_logger: Option<Arc<crate::core::observability::audit::EnhancedAuditLogger>>,
 }
 
@@ -69,12 +71,16 @@ pub struct SecurityHealthStatus {
 pub struct ProductionSecurityManager {
     config: ProductionSecurityConfig,
     health_status: Arc<RwLock<SecurityHealthStatus>>,
+    input_sanitizer: InputSanitizer,
 }
 
 impl ProductionSecurityManager {
     /// Create a new production security manager
     pub async fn new(config: ProductionSecurityConfig) -> Result<Self> {
         info!("🔒 Initializing production security manager");
+        
+        let input_sanitizer = InputSanitizer::new()
+            .map_err(|e| AppError::InternalServerError(format!("Failed to initialize input sanitizer: {}", e)))?;
         
         let health_status = SecurityHealthStatus {
             overall_status: "healthy".to_string(),
@@ -88,7 +94,44 @@ impl ProductionSecurityManager {
         Ok(Self {
             config,
             health_status: Arc::new(RwLock::new(health_status)),
+            input_sanitizer,
         })
+    }
+
+    /// Validate and sanitize input according to security rules
+    pub async fn validate_and_sanitize_input(
+        &self,
+        input: &str,
+        validation_rules: &[ValidationRule],
+    ) -> Result<String> {
+        info!("🔍 Validating and sanitizing input");
+        
+        let result = self.input_sanitizer.validate_and_sanitize(input, validation_rules)?;
+        
+        if !result.is_valid {
+            let violations: Vec<String> = result.violations
+                .iter()
+                .map(|v| format!("{}: {}", v.rule, v.description))
+                .collect();
+            
+            warn!("Input validation failed: {}", violations.join(", "));
+            
+            return Err(AppError::ValidationError(format!(
+                "Input validation failed: {}",
+                violations.join(", ")
+            )));
+        }
+        
+        Ok(result.sanitized_input.unwrap_or_else(|| input.to_string()))
+    }
+
+    /// Get validation result without throwing error
+    pub async fn get_validation_result(
+        &self,
+        input: &str,
+        validation_rules: &[ValidationRule],
+    ) -> Result<ValidationResult> {
+        self.input_sanitizer.validate_and_sanitize(input, validation_rules)
     }
     
     /// Check the health of security components

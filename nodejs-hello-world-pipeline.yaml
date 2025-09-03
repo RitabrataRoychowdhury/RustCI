@@ -1,0 +1,108 @@
+name: "Node.js Hello World Pipeline"
+description: "Deploy Node.js Hello World application from GitHub"
+
+triggers:
+  - trigger_type: manual
+    config: {}
+  - trigger_type: push
+    config:
+      branches: ["main", "master"]
+
+stages:
+  - name: "Source Checkout"
+    steps:
+      - name: "clone-repository"
+        step_type: shell
+        config:
+          command: |
+            echo "=== Cloning Node.js Hello World Repository ==="
+            rm -rf /tmp/nodejs-hello-world
+            git clone https://github.com/dockersamples/helloworld-demo-node.git /tmp/nodejs-hello-world
+            cd /tmp/nodejs-hello-world
+            echo "Repository cloned successfully"
+            ls -la
+            echo "=== Repository Contents ==="
+            find . -type f -name "*.js" -o -name "*.json" -o -name "Dockerfile" | head -10
+
+  - name: "Build and Test"
+    steps:
+      - name: "docker-build"
+        step_type: shell
+        config:
+          command: |
+            echo "=== Building Docker Image ==="
+            cd /tmp/nodejs-hello-world
+            
+            # Show Dockerfile contents
+            echo "=== Dockerfile Contents ==="
+            cat Dockerfile
+            
+            # Build Docker image
+            docker build -t nodejs-hello-world:latest .
+            
+            echo "=== Docker Image Built Successfully ==="
+            docker images | grep nodejs-hello-world
+
+      - name: "test-application"
+        step_type: shell
+        config:
+          command: |
+            echo "=== Testing Application ==="
+            cd /tmp/nodejs-hello-world
+            
+            # Run container in background
+            docker run -d --name nodejs-test-temp -p 8080:8080 nodejs-hello-world:latest
+            
+            # Wait for application to start
+            sleep 10
+            
+            # Test the application
+            echo "Testing application endpoint..."
+            if curl -f http://localhost:8080/ | grep -i "hello"; then
+                echo "✅ Application test passed!"
+            else
+                echo "❌ Application test failed!"
+                exit 1
+            fi
+            
+            # Cleanup test container
+            docker stop nodejs-test-temp || true
+            docker rm nodejs-test-temp || true
+
+  - name: "Deploy"
+    steps:
+      - name: "deploy-application"
+        step_type: shell
+        config:
+          command: |
+            echo "=== Deploying Application ==="
+            
+            # Stop any existing deployment
+            docker stop nodejs-hello-world-prod 2>/dev/null || true
+            docker rm nodejs-hello-world-prod 2>/dev/null || true
+            
+            # Deploy new version
+            docker run -d \
+              --name nodejs-hello-world-prod \
+              --restart unless-stopped \
+              -p 3000:8080 \
+              nodejs-hello-world:latest
+            
+            echo "=== Application Deployed Successfully ==="
+            echo "Application is running on http://localhost:3000"
+            
+            # Verify deployment
+            sleep 5
+            if curl -f http://localhost:3000/ >/dev/null 2>&1; then
+                echo "✅ Deployment verification passed!"
+            else
+                echo "❌ Deployment verification failed!"
+                exit 1
+            fi
+
+environment:
+  NODE_ENV: "production"
+  PORT: "8080"
+
+timeout: 1800
+retry_count: 1

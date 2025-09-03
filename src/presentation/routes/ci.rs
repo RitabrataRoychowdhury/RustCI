@@ -3,9 +3,11 @@ use crate::{
         cancel_execution, create_pipeline, create_pipeline_multipart, get_execution, get_pipeline,
         get_pipeline_yaml, list_executions, list_pipelines, trigger_pipeline, webhook_handler,
     },
+    core::security::input_validation_middleware::input_validation_middleware,
     AppState,
 };
 use axum::{
+    middleware,
     routing::{delete, get, post},
     Router,
 };
@@ -31,4 +33,6 @@ pub fn ci_router() -> Router<AppState> {
         .route("/executions/:execution_id/cancel", delete(cancel_execution))
         // Add a simple test endpoint
         .route("/test", get(|| async { "CI Engine is working!" }))
+        // Apply input validation middleware to all routes
+        .layer(middleware::from_fn(input_validation_middleware))
 }

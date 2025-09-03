@@ -31,6 +31,9 @@ pub mod performance;
 // Resource management and lifecycle
 pub mod resources;
 
+// Security controls and input validation
+pub mod security;
+
 // Re-export commonly used types for easy access
 pub use cluster::{ClusterCoordinator, NodeRegistry, LeaderElectionManager};
 pub use jobs::{DefaultJobScheduler, JobQueue, InMemoryJobQueue, DistributedJobScheduler};

@@ -12,6 +12,7 @@ pub mod monitor;
 pub mod performance_alerting_system;
 pub mod resource_manager;
 pub mod self_healing;
+pub mod validation;
 
 // Alerting
 pub use alerting::{
@@ -43,7 +44,7 @@ pub use connection_pool::{
 // Dashboard
 pub use dashboard::{
     ProductionPerformanceDashboard, DashboardMetrics, PerformanceDashboard,
-    PerformanceReport, AlertSummary, SystemOverview, HealthStatus as DashboardHealthStatus,
+    PerformanceReport as DashboardPerformanceReport, AlertSummary, SystemOverview, HealthStatus as DashboardHealthStatus,
     ComponentHealth, HistoricalData, TimeRange, TimeSeriesPoint
 };
 
@@ -104,4 +105,17 @@ pub use performance_alerting_system::{
     PerformanceAlertingSystem, PerformanceAlertingConfig, PerformanceThresholds,
     NotificationSettings, PerformanceAlertRule, EscalationPolicy, EscalationStep,
     AlertEvent, AlertEventType, PerformanceAlertingMetrics
+};
+
+// Performance Validation
+pub use validation::{
+    PerformanceValidator, ProductionPerformanceValidator, ValidationResults, BenchmarkResults,
+    ComponentValidationResult, LatencyBenchmarks, ThroughputBenchmarks, ResourceBenchmarks,
+    StressTestResults, LoadTestResults, LatencyStats, ResourceUtilization, TestEnvironment,
+    ComparisonReport, RegressionReport, PerformanceBaseline, PerformanceRequirements,
+    PerformanceDelta, PerformanceChange, PerformanceRegression, PerformanceRecommendation,
+    ComponentMetrics, PerformanceReport, ExecutiveSummary, TrendAnalysis, HistoricalDataPoint,
+    SeasonalPattern, ValidationStatus, PerformanceGrade, RegressionSeverity, ChangeType,
+    ChangeSignificance, RecommendationCategory, RecommendationPriority, ImplementationEffort,
+    PerformanceTrend, ValidationConfig, LoadPattern
 };

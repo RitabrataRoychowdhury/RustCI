@@ -258,7 +258,7 @@ impl MultiFactorAuthProvider {
 
     /// Set up TOTP for a user
     async fn setup_totp(&self, request: &MfaSetupRequest) -> Result<MfaSetupResponse> {
-        let secret = Secret::generate_secret();
+        let secret = Secret::Raw(rand::random::<[u8; 20]>().to_vec());
         let account_name = request.setup_data
             .as_ref()
             .and_then(|data| data.get("account_name"))
@@ -277,18 +277,20 @@ impl MultiFactorAuthProvider {
             1,
             30,
             secret.to_bytes().unwrap(),
-            Some(issuer.clone()),
-            account_name.clone(),
         ).map_err(|e| AppError::ValidationError(format!("Failed to create TOTP: {}", e)))?;
 
-        let qr_code_url = totp.get_qr().map_err(|e| {
-            AppError::ValidationError(format!("Failed to generate QR code: {}", e))
-        })?;
+        let qr_code_url = format!(
+            "otpauth://totp/{}:{}?secret={}&issuer={}",
+            issuer,
+            account_name,
+            base64::encode(secret.to_bytes().unwrap()),
+            issuer
+        );
 
         let method_config = MfaMethodConfig {
             method: MfaMethod::Totp,
             config: MfaMethodData::Totp {
-                secret: secret.to_encoded(),
+                secret: base64::encode(secret.to_bytes().unwrap()),
                 qr_code_url: qr_code_url.clone(),
                 issuer,
                 account_name,
@@ -326,7 +328,7 @@ impl MultiFactorAuthProvider {
 
         let mut setup_data = HashMap::new();
         setup_data.insert("qr_code_url".to_string(), qr_code_url);
-        setup_data.insert("secret".to_string(), secret.to_encoded());
+        setup_data.insert("secret".to_string(), base64::encode(secret.to_bytes().unwrap()));
 
         info!("TOTP MFA setup completed for user: {}", request.user_id);
 
@@ -485,8 +487,6 @@ impl MultiFactorAuthProvider {
                             1,
                             30,
                             secret_bytes,
-                            None,
-                            "".to_string(),
                         ) {
                             return totp.check_current(code).unwrap_or(false);
                         }
@@ -564,16 +564,19 @@ impl MultiFactorAuthProvider {
     /// Increment failed attempts for user
     async fn increment_failed_attempts(&self, user_id: &str) -> u32 {
         let mut failed_attempts = self.failed_attempts.write().await;
-        let (attempts, _) = failed_attempts.entry(user_id.to_string()).or_insert((0, None));
-        *attempts += 1;
+        let current_attempts = {
+            let (attempts, _) = failed_attempts.entry(user_id.to_string()).or_insert((0, None));
+            *attempts += 1;
+            *attempts
+        };
 
-        let remaining = if *attempts >= self.max_failed_attempts {
+        let remaining = if current_attempts >= self.max_failed_attempts {
             // Set lockout expiration
             let lockout_until = Utc::now() + Duration::minutes(self.lockout_duration_minutes);
-            failed_attempts.insert(user_id.to_string(), (*attempts, Some(lockout_until)));
+            failed_attempts.insert(user_id.to_string(), (current_attempts, Some(lockout_until)));
             0
         } else {
-            self.max_failed_attempts - *attempts
+            self.max_failed_attempts - current_attempts
         };
 
         remaining

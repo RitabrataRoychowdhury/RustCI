@@ -147,7 +147,7 @@ impl SystemIntegrationTests {
                 let mut successful_ops = 0;
                 for i in 0..operations_per_thread {
                     let lookup_id = ids[i % ids.len()];
-                    if registry.lookup(&lookup_id).is_some() {
+                    if registry.lookup(&lookup_id).is_ok() {
                         successful_ops += 1;
                     }
                 }
@@ -220,7 +220,7 @@ impl SystemIntegrationTests {
             let lookup_id = service_ids[i % service_ids.len()];
             
             let start = Instant::now();
-            if self.service_registry.lookup(&lookup_id).is_some() {
+            if self.service_registry.lookup(&lookup_id).is_ok() {
                 successful_ops += 1;
             }
             let latency = start.elapsed();
@@ -251,7 +251,7 @@ impl SystemIntegrationTests {
         println!("🔥 Validating memory usage and leak detection...");
         
         // Get initial memory baseline (simplified - in real implementation you'd use proper memory profiling)
-        let initial_size = self.connection_registry.get_stats().entries;
+        let initial_size = self.connection_registry.get_stats().total_insertions;
         
         // Perform many operations that could cause memory leaks
         let num_cycles = 1000;
@@ -288,7 +288,7 @@ impl SystemIntegrationTests {
         }
         
         // Check final memory usage
-        let final_size = self.connection_registry.get_stats().entries;
+        let final_size = self.connection_registry.get_stats().total_insertions;
         let memory_growth = final_size.saturating_sub(initial_size);
         
         // Memory usage should be reasonable (< 100MB estimated growth)

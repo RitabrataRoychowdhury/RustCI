@@ -5,7 +5,7 @@
 
 use crate::api::versioning::{ApiVersion, ApiVersionExtractor, VersionTransformer, DefaultVersionTransformer};
 use axum::{
-    extract::{Extension, Request},
+    extract::Request,
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
@@ -337,8 +337,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_versioned_router_creation() {
-        let v1_router = Router::new().route("/test", get(|| async { "v1" }));
-        let v2_router = Router::new().route("/test", get(|| async { "v2" }));
+        let v1_router: Router<()> = Router::new().route("/test", get(|| async { "v1" }));
+        let v2_router: Router<()> = Router::new().route("/test", get(|| async { "v2" }));
 
         let versioned_router = VersionedRouter::new()
             .version(ApiVersion::V1, v1_router)

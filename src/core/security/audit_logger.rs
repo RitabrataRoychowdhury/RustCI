@@ -424,6 +424,9 @@ impl EnhancedAuditLogger {
             Self::check_security_alerts(&event, correlation_tracker, alert_thresholds, metrics).await;
         }
 
+        // Store sequence number for logging before moving integrity_event
+        let sequence_number = integrity_event.sequence_number;
+        
         // Add to buffer
         let mut buffer_guard = event_buffer.write().await;
         buffer_guard.push_back(integrity_event);
@@ -456,7 +459,7 @@ impl EnhancedAuditLogger {
             action = ?event.action,
             user_id = ?event.user_id,
             success = event.success,
-            sequence = integrity_event.sequence_number,
+            sequence = sequence_number,
             "🔒 Audit event processed with integrity verification"
         );
 
