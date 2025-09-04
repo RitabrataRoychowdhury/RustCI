@@ -13,7 +13,7 @@ graph TB
     subgraph "RustCI Control Plane"
         subgraph "API Layer"
             RAPI[RustCI API Server]
-            VAPI[Valkyrie API Gateway]
+            VAPI[RustCI API Gateway]
             AUTH[Authentication Service]
         end
         
@@ -31,7 +31,7 @@ graph TB
         end
         
         subgraph "Networking Layer"
-            VALK[Valkyrie Protocol]
+            VALK[RustCI Communication Protocol]
             LB[Load Balancer]
             DISC[Service Discovery]
         end
@@ -76,14 +76,14 @@ graph TB
 | RustCI Component | Kubernetes Equivalent | Purpose | Key Differences |
 |------------------|----------------------|---------|-----------------|
 | **RustCI API Server** | kube-apiserver | Central API gateway | CI/CD-specific endpoints, job lifecycle management |
-| **Valkyrie API Gateway** | Ingress Controller | Enhanced API routing | High-performance protocol, sub-100μs latency |
+| **RustCI API Gateway** | Ingress Controller | Enhanced API routing | High-performance protocol, sub-100μs latency |
 | **Control Plane Manager** | kube-controller-manager | Resource lifecycle management | CI/CD pipeline orchestration, job state management |
 | **Job Scheduler** | kube-scheduler | Resource allocation | CI/CD job scheduling, runner affinity, QoS-aware |
 | **Execution Coordinator** | kubelet (conceptually) | Job execution management | Pipeline step coordination, artifact management |
 | **Pipeline Orchestrator** | Custom Controllers | Workflow management | DAG execution, conditional logic, parallel stages |
 | **Runner Manager** | Node Controller | Compute resource management | CI/CD runner lifecycle, capability matching |
 | **MongoDB Cluster** | etcd | Persistent state storage | Document-based, optimized for CI/CD metadata |
-| **Valkyrie Protocol** | Container Runtime Interface | Communication protocol | High-performance, zero-copy, intelligent routing |
+| **RustCI Communication Protocol** | Container Runtime Interface | Communication protocol | High-performance, zero-copy, intelligent routing |
 | **Service Discovery** | kube-dns/CoreDNS | Service location | Runner discovery, load balancing |
 ## Detailed Component Architecture
 
@@ -118,10 +118,10 @@ graph LR
 - **Differences**: CI/CD-specific resources (Jobs, Pipelines, Runners vs Pods, Services, Deployments)
 - **Enhancements**: WebSocket support for real-time updates, dual API versioning (v1/v2)
 
-#### Valkyrie API Gateway
+#### RustCI API Gateway
 ```mermaid
 graph LR
-    subgraph "Valkyrie API Gateway"
+    subgraph "RustCI API Gateway"
         PROTO[Protocol Handler]
         ROUTE[Intelligent Routing]
         LB[Load Balancing]
@@ -130,7 +130,7 @@ graph LR
         METRICS[Metrics Collection]
     end
     
-    VALK_CLIENT[Valkyrie Clients] --> PROTO
+    RUSTCI_CLIENT[RustCI Clients] --> PROTO
     PROTO --> ROUTE
     ROUTE --> LB
     LB --> QOS
@@ -272,10 +272,10 @@ graph TB
 
 ### 4. Networking Layer
 
-#### Valkyrie Protocol Stack
+#### RustCI Communication Protocol Stack
 ```mermaid
 graph TB
-    subgraph "Valkyrie Protocol"
+    subgraph "RustCI Communication Protocol"
         subgraph "Application Layer"
             API[API Gateway]
             STREAM[Streaming API]
@@ -542,7 +542,7 @@ graph TB
 |------------------|--------|------------|
 | **Authentication** | OAuth 2.0, JWT, mTLS, API Keys | X.509, OIDC, Service Accounts |
 | **Authorization** | RBAC + ABAC + Policy Engine | RBAC + ABAC |
-| **Network Security** | Zero Trust + Valkyrie Protocol | Network Policies + Service Mesh |
+| **Network Security** | Zero Trust + RustCI Communication Protocol | Network Policies + Service Mesh |
 | **Encryption** | End-to-end + at-rest | TLS + at-rest (optional) |
 | **Audit** | Comprehensive CI/CD audit trail | Basic API audit logs |
 
@@ -567,7 +567,7 @@ graph TB
         subgraph "Tracing"
             JAEGER[Jaeger]
             OTEL[OpenTelemetry]
-            VALKYRIE_TRACE[Valkyrie Tracing]
+            RUSTCI_TRACE[RustCI Tracing]
         end
         
         subgraph "Alerting"
@@ -582,7 +582,7 @@ graph TB
     FLUENTD --> ELASTIC
     ELASTIC --> KIBANA
     JAEGER --> OTEL
-    OTEL --> VALKYRIE_TRACE
+    OTEL --> RUSTCI_TRACE
     PROM --> ALERT_MGR
     ALERT_MGR --> PAGER
     ALERT_MGR --> SLACK
@@ -631,7 +631,7 @@ graph LR
 | API Version | Purpose | Compatibility |
 |-------------|---------|---------------|
 | **v1 API** | Legacy compatibility | 100% backward compatible |
-| **v2 API** | Enhanced features | Valkyrie-optimized |
+| **v2 API** | Enhanced features | RustCI-optimized |
 | **GraphQL** | Flexible queries | Cross-version support |
 | **WebSocket** | Real-time updates | Event streaming |
 

@@ -137,8 +137,8 @@ external_services:
     enabled: false
     channels: []
 
-# Valkyrie Protocol Configuration
-valkyrie:
+# RustCI Communication Protocol Configuration
+communication_protocol:
   enabled: true
   protocol:
     version: "2.0"
@@ -164,26 +164,26 @@ valkyrie:
       max_data: 1073741824  # 1GB
     websocket:
       enabled: true
-      path: "/valkyrie/ws"
+      path: "/rustci-communication/ws"
       compression: true
     unix:
       enabled: true
-      socket_path: "/tmp/valkyrie.sock"
+      socket_path: "/tmp/rustci-communication.sock"
       
   security:
     mode: "token"  # "plaintext", "token", "noise", "mtls", "post_quantum", "zero_trust"
     token:
-      secret: "${VALKYRIE_TOKEN_SECRET}"
+      secret: "${RUSTCI_COMMUNICATION_TOKEN_SECRET}"
       algorithm: "HS256"
       expires_in_seconds: 3600
     mtls:
-      cert_file: "/etc/valkyrie/certs/server.crt"
-      key_file: "/etc/valkyrie/certs/server.key"
-      ca_file: "/etc/valkyrie/certs/ca.crt"
+      cert_file: "/etc/rustci/certs/server.crt"
+      key_file: "/etc/rustci/certs/server.key"
+      ca_file: "/etc/rustci/certs/ca.crt"
       verify_client: true
     post_quantum:
       enabled: false
-      key_bundle: "${VALKYRIE_PQ_KEY_BUNDLE}"
+      key_bundle: "${RUSTCI_COMMUNICATION_PQ_KEY_BUNDLE}"
     intrusion_detection:
       enabled: true
       max_failed_attempts: 5
@@ -193,7 +193,7 @@ valkyrie:
         - "::1"
     audit:
       enabled: true
-      log_file: "/var/log/valkyrie/audit.log"
+      log_file: "/var/log/rustci/communication-audit.log"
       max_file_size_mb: 100
       max_files: 10
       
@@ -241,8 +241,8 @@ valkyrie:
       requests_per_minute: 1000
       burst_size: 100
     tls:
-      cert_file: "/etc/valkyrie/certs/bridge.crt"
-      key_file: "/etc/valkyrie/certs/bridge.key"
+      cert_file: "/etc/rustci/certs/bridge.crt"
+      key_file: "/etc/rustci/certs/bridge.key"
       
   observability:
     metrics:
@@ -253,7 +253,7 @@ valkyrie:
       custom_metrics: {}
     tracing:
       enabled: true
-      service_name: "valkyrie-protocol"
+      service_name: "rustci-communication-protocol"
       service_version: "2.0.0"
       sample_rate: 0.1
       jaeger_endpoint: "http://localhost:14268/api/traces"
@@ -270,19 +270,19 @@ valkyrie:
       
   cluster:
     enabled: false
-    node_id: "${VALKYRIE_NODE_ID}"
+    node_id: "${RUSTCI_COMMUNICATION_NODE_ID}"
     discovery:
       method: "static"  # "static", "dns", "kubernetes", "consul"
       static_nodes:
-        - "valkyrie-node-1:8080"
-        - "valkyrie-node-2:8080"
-        - "valkyrie-node-3:8080"
+        - "rustci-node-1:8080"
+        - "rustci-node-2:8080"
+        - "rustci-node-3:8080"
       dns:
-        service_name: "_valkyrie._tcp.example.com"
+        service_name: "_rustci-communication._tcp.example.com"
         refresh_interval_seconds: 60
       kubernetes:
-        namespace: "valkyrie-system"
-        label_selector: "app=valkyrie"
+        namespace: "rustci-system"
+        label_selector: "app=rustci-communication"
         port: 8080
     consensus:
       algorithm: "raft"
@@ -312,5 +312,5 @@ features:
   enable_distributed_tracing: false
   enable_hot_reload: true
   enable_experimental_features: false
-  enable_valkyrie_protocol: true
+  enable_communication_protocol: true
   custom_flags: {}

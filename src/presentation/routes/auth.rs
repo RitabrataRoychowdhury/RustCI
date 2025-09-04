@@ -6,6 +6,7 @@ use crate::{
         logout_handler,
     },
     presentation::middleware::auth,
+    core::networking::security::SecurityContext,
     AppState,
 };
 use axum::{
@@ -26,11 +27,11 @@ pub fn auth_router(state: AppState) -> Router<AppState> {
         .route(
             "/me",
             get(
-                |Extension(user_id): Extension<Uuid>, state: State<AppState>| {
-                    get_me_handler(user_id, state)
+                |Extension(security_context): Extension<SecurityContext>, state: State<AppState>| {
+                    get_me_handler(security_context.user_id, state)
                 },
             )
-            .route_layer(middleware::from_fn_with_state(state.clone(), auth)),
+            .route_layer(middleware::from_fn_with_state(state.clone(), auth::enhanced_auth)),
         )
         .with_state(state) // ✅ Add this to make it Router<AppState>
 }

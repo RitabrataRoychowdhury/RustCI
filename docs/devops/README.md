@@ -1,4 +1,4 @@
-# RustCI & Valkyrie DevOps Guide
+# RustCI DevOps Guide
 
 **Complete deployment and operations guide for enterprise environments**
 
@@ -41,7 +41,7 @@ curl http://localhost:8080/health
 graph TB
     A[Load Balancer] --> B[RustCI API Gateway]
     B --> C[Pipeline Engine]
-    B --> D[Valkyrie Protocol]
+    B --> D[Communication Protocol]
     C --> E[Runner Pool]
     D --> F[Message Queue]
     E --> G[Docker Runners]
@@ -242,7 +242,7 @@ mongodb:
     enabled: true
     size: 100Gi
 
-valkyrie:
+communication_protocol:
   enabled: true
   performance:
     maxConnections: 10000
@@ -266,7 +266,7 @@ valkyrie:
 | `RUST_LOG` | Log level | `info` | No |
 | `WORKERS` | Number of worker threads | `4` | No |
 | `MAX_CONNECTIONS` | Max concurrent connections | `1000` | No |
-| `VALKYRIE_ENABLED` | Enable Valkyrie protocol | `true` | No |
+| `COMMUNICATION_PROTOCOL_ENABLED` | Enable communication protocol | `true` | No |
 
 ### Configuration Files
 
@@ -302,7 +302,7 @@ runners:
   native:
     enabled: false  # Disable in production for security
 
-valkyrie:
+communication_protocol:
   enabled: true
   performance:
     max_connections: 10000
@@ -523,11 +523,11 @@ rustci_pipelines_total{status="success|failed|running"}
 rustci_pipeline_duration_seconds{pipeline_name}
 rustci_pipeline_queue_size
 
-# Valkyrie protocol metrics
-valkyrie_messages_total{type="sent|received|failed"}
-valkyrie_latency_seconds{percentile="50|95|99"}
-valkyrie_connections_active
-valkyrie_throughput_ops_per_second
+# Communication protocol metrics
+communication_protocol_messages_total{type="sent|received|failed"}
+communication_protocol_latency_seconds{percentile="50|95|99"}
+communication_protocol_connections_active
+communication_protocol_throughput_ops_per_second
 
 # System metrics
 rustci_memory_usage_bytes
@@ -540,7 +540,7 @@ rustci_disk_usage_bytes
 ```json
 {
   "dashboard": {
-    "title": "RustCI & Valkyrie Monitoring",
+    "title": "RustCI Monitoring",
     "panels": [
       {
         "title": "Pipeline Success Rate",
@@ -552,17 +552,17 @@ rustci_disk_usage_bytes
         ]
       },
       {
-        "title": "Valkyrie Latency",
+        "title": "Communication Protocol Latency",
         "type": "graph",
         "targets": [
           {
-            "expr": "histogram_quantile(0.50, valkyrie_latency_seconds)"
+            "expr": "histogram_quantile(0.50, communication_protocol_latency_seconds)"
           },
           {
-            "expr": "histogram_quantile(0.95, valkyrie_latency_seconds)"
+            "expr": "histogram_quantile(0.95, communication_protocol_latency_seconds)"
           },
           {
-            "expr": "histogram_quantile(0.99, valkyrie_latency_seconds)"
+            "expr": "histogram_quantile(0.99, communication_protocol_latency_seconds)"
           }
         ]
       }
@@ -585,13 +585,13 @@ groups:
         annotations:
           summary: "High pipeline failure rate detected"
           
-      - alert: ValkyrieHighLatency
-        expr: histogram_quantile(0.95, valkyrie_latency_seconds) > 0.001
+      - alert: CommunicationProtocolHighLatency
+        expr: histogram_quantile(0.95, communication_protocol_latency_seconds) > 0.001
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "Valkyrie P95 latency above 1ms"
+          summary: "Communication Protocol P95 latency above 1ms"
           
       - alert: SystemResourcesHigh
         expr: rustci_memory_usage_bytes / rustci_memory_total_bytes > 0.9
@@ -687,7 +687,7 @@ autoscaling:
 ```yaml
 # High-performance configuration
 performance:
-  valkyrie:
+  communication_protocol:
     worker_threads: 16
     max_connections: 50000
     buffer_size: 131072
@@ -717,8 +717,8 @@ performance:
 # Run load tests
 ./scripts/load-test.sh --concurrent=1000 --duration=300s
 
-# Benchmark Valkyrie protocol
-./scripts/valkyrie-benchmark.sh --connections=10000 --duration=60s
+# Benchmark communication protocol
+./scripts/communication-protocol-benchmark.sh --connections=10000 --duration=60s
 ```
 
 ## 🔧 Troubleshooting
@@ -745,8 +745,8 @@ kubectl logs -l app=rustci-runner
 
 #### Network Issues
 ```bash
-# Test Valkyrie connectivity
-./scripts/valkyrie-test.sh --target=localhost:8080
+# Test communication protocol connectivity
+./scripts/communication-protocol-test.sh --target=localhost:8080
 
 # Check network latency
 curl http://localhost:8080/api/v1/stats/network
@@ -813,8 +813,8 @@ curl http://localhost:8080/metrics
 # Get detailed stats
 curl http://localhost:8080/api/v1/stats
 
-# Get Valkyrie performance
-curl http://localhost:8080/api/v1/valkyrie/stats
+# Get communication protocol performance
+curl http://localhost:8080/api/v1/communication-protocol/stats
 ```
 
 ---

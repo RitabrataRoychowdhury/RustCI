@@ -46,7 +46,7 @@ feature_flags:
   enable_metrics_collection: true
   enable_audit_logging: true
   enable_distributed_tracing: true
-  enable_valkyrie_protocol: true
+  enable_communication_protocol: true
 encrypted_values:
   "security.jwt.secret": 
     encrypted_data: "cHJvZHVjdGlvbi1qd3Qtc2VjcmV0LWtleS12ZXJ5LXNlY3VyZQ=="

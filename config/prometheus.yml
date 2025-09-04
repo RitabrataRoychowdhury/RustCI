@@ -47,42 +47,42 @@ scrape_configs:
     metrics_path: "/stats/prometheus"
     scrape_interval: 15s
 
-  # Valkyrie Protocol Metrics
-  - job_name: "valkyrie-protocol"
+  # RustCI Protocol Metrics
+  - job_name: "rustci-protocol"
     static_configs:
       - targets: ["localhost:8081"]
-    metrics_path: "/valkyrie/metrics"
+    metrics_path: "/rustci/metrics"
     scrape_interval: 10s
     scrape_timeout: 5s
     honor_labels: true
 
-  # Valkyrie Health Metrics
-  - job_name: "valkyrie-health"
+  # RustCI Health Metrics
+  - job_name: "rustci-health"
     static_configs:
       - targets: ["localhost:8081"]
-    metrics_path: "/valkyrie/health"
+    metrics_path: "/rustci/health"
     scrape_interval: 30s
     scrape_timeout: 10s
 
-  # Valkyrie Internal Observability
-  - job_name: "valkyrie-internal"
+  # RustCI Internal Observability
+  - job_name: "rustci-internal"
     static_configs:
       - targets: ["localhost:8081"]
-    metrics_path: "/valkyrie/internal/metrics"
+    metrics_path: "/rustci/internal/metrics"
     scrape_interval: 5s
     scrape_timeout: 3s
     honor_labels: true
 
-  # Valkyrie Correlation Tracking
-  - job_name: "valkyrie-tracing"
+  # RustCI Correlation Tracking
+  - job_name: "rustci-tracing"
     static_configs:
       - targets: ["localhost:8081"]
-    metrics_path: "/valkyrie/tracing/metrics"
+    metrics_path: "/rustci/tracing/metrics"
     scrape_interval: 15s
     scrape_timeout: 5s
 
-  # Pushgateway for Valkyrie batch jobs
-  - job_name: "valkyrie-pushgateway"
+  # Pushgateway for RustCI batch jobs
+  - job_name: "rustci-pushgateway"
     static_configs:
       - targets: ["localhost:9091"]
     honor_labels: true

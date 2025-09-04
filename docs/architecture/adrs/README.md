@@ -6,12 +6,7 @@ This directory contains Architecture Decision Records (ADRs) for the RustCI proj
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
-| [ADR-001](001-event-driven-architecture.md) | Event-Driven Architecture with CQRS | Accepted | 2024-01-01 |
-| [ADR-002](002-saga-pattern-implementation.md) | SAGA Pattern for Distributed Transactions | Accepted | 2024-01-02 |
-| [ADR-003](003-dependency-injection-container.md) | Dependency Injection Container Design | Accepted | 2024-01-03 |
 | [ADR-004](004-testing-strategy.md) | Comprehensive Testing Strategy | Accepted | 2024-01-04 |
-| [ADR-005](005-deployment-strategy.md) | Blue-Green Deployment Strategy | Accepted | 2024-01-05 |
-| [ADR-006](006-observability-framework.md) | Observability and Monitoring Framework | Accepted | 2024-01-06 |
 
 ## ADR Template
 

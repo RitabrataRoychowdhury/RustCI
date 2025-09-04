@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Valkyrie Protocol Configuration Schema",
-  "description": "JSON Schema for validating Valkyrie Protocol configuration files",
+  "title": "RustCI Communication Protocol Configuration Schema",
+  "description": "JSON Schema for validating RustCI Communication Protocol configuration files",
   "type": "object",
   "properties": {
     "global": {
@@ -9,12 +9,22 @@
       "properties": {
         "environment": {
           "type": "string",
-          "enum": ["development", "staging", "production"],
+          "enum": [
+            "development",
+            "staging",
+            "production"
+          ],
           "description": "Deployment environment"
         },
         "log_level": {
           "type": "string",
-          "enum": ["trace", "debug", "info", "warn", "error"],
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
           "description": "Logging level"
         },
         "enable_metrics": {
@@ -33,7 +43,10 @@
           "description": "Configuration reload interval in seconds"
         }
       },
-      "required": ["environment", "log_level"],
+      "required": [
+        "environment",
+        "log_level"
+      ],
       "additionalProperties": false
     },
     "server": {
@@ -81,7 +94,10 @@
           "description": "Graceful shutdown timeout in seconds"
         }
       },
-      "required": ["bind_address", "port"],
+      "required": [
+        "bind_address",
+        "port"
+      ],
       "additionalProperties": false
     },
     "client": {
@@ -149,11 +165,15 @@
               "description": "Enable jitter"
             }
           },
-          "required": ["max_attempts"],
+          "required": [
+            "max_attempts"
+          ],
           "additionalProperties": false
         }
       },
-      "required": ["endpoint"],
+      "required": [
+        "endpoint"
+      ],
       "additionalProperties": false
     },
     "transport": {
@@ -163,7 +183,12 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["tcp", "quic", "unix", "websocket"]
+            "enum": [
+              "tcp",
+              "quic",
+              "unix",
+              "websocket"
+            ]
           },
           "minItems": 1,
           "uniqueItems": true,
@@ -171,7 +196,12 @@
         },
         "default_transport": {
           "type": "string",
-          "enum": ["tcp", "quic", "unix", "websocket"],
+          "enum": [
+            "tcp",
+            "quic",
+            "unix",
+            "websocket"
+          ],
           "description": "Default transport protocol"
         },
         "tcp": {
@@ -235,7 +265,9 @@
               "description": "Socket file permissions (octal)"
             }
           },
-          "required": ["socket_path"],
+          "required": [
+            "socket_path"
+          ],
           "additionalProperties": false
         },
         "websocket": {
@@ -254,7 +286,10 @@
           "additionalProperties": false
         }
       },
-      "required": ["enabled_transports", "default_transport"],
+      "required": [
+        "enabled_transports",
+        "default_transport"
+      ],
       "additionalProperties": false
     },
     "security": {
@@ -266,7 +301,10 @@
         },
         "encryption_algorithm": {
           "type": "string",
-          "enum": ["chacha20poly1305", "aes256gcm"],
+          "enum": [
+            "chacha20poly1305",
+            "aes256gcm"
+          ],
           "description": "Encryption algorithm"
         },
         "enable_authentication": {
@@ -275,7 +313,11 @@
         },
         "authentication_method": {
           "type": "string",
-          "enum": ["jwt", "mtls", "apikey"],
+          "enum": [
+            "jwt",
+            "mtls",
+            "apikey"
+          ],
           "description": "Authentication method"
         },
         "jwt": {
@@ -300,7 +342,9 @@
               "description": "JWT audience"
             }
           },
-          "required": ["secret_key"],
+          "required": [
+            "secret_key"
+          ],
           "additionalProperties": false
         },
         "api_key": {
@@ -320,7 +364,10 @@
               "description": "List of valid API keys"
             }
           },
-          "required": ["header_name", "valid_keys"],
+          "required": [
+            "header_name",
+            "valid_keys"
+          ],
           "additionalProperties": false
         },
         "mtls": {
@@ -335,7 +382,9 @@
               "description": "Verify client certificates"
             }
           },
-          "required": ["ca_cert_path"],
+          "required": [
+            "ca_cert_path"
+          ],
           "additionalProperties": false
         }
       },
@@ -375,16 +424,16 @@
           "minimum": 1,
           "description": "Maximum restart attempts"
         },
-        "valkyrie": {
+        "communication_protocol": {
           "type": "object",
           "properties": {
             "enabled": {
               "type": "boolean",
-              "description": "Enable Valkyrie plugin"
+              "description": "Enable RustCI communication plugin"
             },
             "endpoint": {
               "type": "string",
-              "description": "Valkyrie server endpoint"
+              "description": "RustCI communication server endpoint"
             },
             "connection_timeout_ms": {
               "type": "integer",
@@ -469,7 +518,9 @@
               "description": "Enable compression"
             }
           },
-          "required": ["base_url"],
+          "required": [
+            "base_url"
+          ],
           "additionalProperties": false
         }
       },
@@ -514,7 +565,11 @@
             },
             "backend": {
               "type": "string",
-              "enum": ["jaeger", "zipkin", "otlp"],
+              "enum": [
+                "jaeger",
+                "zipkin",
+                "otlp"
+              ],
               "description": "Tracing backend"
             },
             "jaeger": {
@@ -545,7 +600,10 @@
           "properties": {
             "format": {
               "type": "string",
-              "enum": ["json", "text"],
+              "enum": [
+                "json",
+                "text"
+              ],
               "description": "Log format"
             },
             "structured": {
@@ -666,6 +724,8 @@
       }
     }
   },
-  "required": ["global"],
+  "required": [
+    "global"
+  ],
   "additionalProperties": false
 }

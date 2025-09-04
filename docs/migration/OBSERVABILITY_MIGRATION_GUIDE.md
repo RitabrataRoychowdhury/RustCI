@@ -1,12 +1,12 @@
-# Valkyrie Protocol Observability Migration Guide
+# RustCI Protocol Observability Migration Guide
 
 ## Overview
 
-This guide helps you migrate from legacy observability systems to the new Valkyrie Protocol observability system. The migration provides enhanced features, better performance, and self-contained operation without external dependencies.
+This guide helps you migrate from legacy observability systems to the new RustCI Protocol observability system. The migration provides enhanced features, better performance, and self-contained operation without external dependencies.
 
 ## Why Migrate?
 
-### Benefits of Valkyrie Observability
+### Benefits of RustCI Observability
 
 ✅ **Self-Contained**: No external dependencies required  
 ✅ **High Performance**: Sub-millisecond metric recording  
@@ -19,9 +19,9 @@ This guide helps you migrate from legacy observability systems to the new Valkyr
 
 ### Migration Timeline
 
-- **Phase 1**: Install and configure Valkyrie observability alongside existing systems
+- **Phase 1**: Install and configure RustCI observability alongside existing systems
 - **Phase 2**: Gradually migrate metrics, logging, and health checks
-- **Phase 3**: Switch to Valkyrie dashboard and disable legacy systems
+- **Phase 3**: Switch to RustCI dashboard and disable legacy systems
 - **Phase 4**: Remove legacy observability dependencies
 
 ## Pre-Migration Checklist
@@ -42,15 +42,15 @@ The easiest way to migrate is using the provided automated migration script:
 
 ```bash
 # Make the script executable
-chmod +x scripts/migrate-to-valkyrie-observability.sh
+chmod +x scripts/migrate-to-rustci-observability.sh
 
 # Run the migration
-./scripts/migrate-to-valkyrie-observability.sh
+./scripts/migrate-to-rustci-observability.sh
 ```
 
 The script will:
 1. Create a backup of your current configuration
-2. Generate Valkyrie observability configuration
+2. Generate RustCI observability configuration
 3. Update environment variables
 4. Create migration and rollback tools
 5. Validate the new configuration
@@ -58,50 +58,50 @@ The script will:
 ### Migration Script Output
 
 ```
-🛡️ Valkyrie Protocol Observability Migration Tool
+🛡️ RustCI Protocol Observability Migration Tool
 =================================================
 
-[2024-01-15 10:30:00] Starting Valkyrie Protocol observability migration
-[2024-01-15 10:30:01] Creating backup directory: ./valkyrie-migration-backup-20240115_103000
+[2024-01-15 10:30:00] Starting RustCI Protocol observability migration
+[2024-01-15 10:30:01] Creating backup directory: ./rustci-migration-backup-20240115_103000
 [2024-01-15 10:30:01] Backed up config.yaml
-[2024-01-15 10:30:02] Created Valkyrie observability configuration: config/valkyrie.yaml
-[2024-01-15 10:30:02] Updated .env with Valkyrie observability variables
-[2024-01-15 10:30:03] Created data migration tool: tools/valkyrie-data-migrator.sh
-[2024-01-15 10:30:03] Created rollback tool: tools/valkyrie-rollback.sh
+[2024-01-15 10:30:02] Created RustCI observability configuration: config/rustci.yaml
+[2024-01-15 10:30:02] Updated .env with RustCI observability variables
+[2024-01-15 10:30:03] Created data migration tool: tools/rustci-data-migrator.sh
+[2024-01-15 10:30:03] Created rollback tool: tools/rustci-rollback.sh
 [2024-01-15 10:30:04] Configuration file syntax validated
 [2024-01-15 10:30:04] Migration validation completed
 [2024-01-15 10:30:04] Migration completed successfully
 
-🎉 Valkyrie Protocol Observability Migration Complete!
+🎉 RustCI Protocol Observability Migration Complete!
 =====================================================
 
-📁 Backup created in: ./valkyrie-migration-backup-20240115_103000
-⚙️  Configuration file: config/valkyrie.yaml
-📊 Migration log: valkyrie-observability-migration.log
+📁 Backup created in: ./rustci-migration-backup-20240115_103000
+⚙️  Configuration file: config/rustci.yaml
+📊 Migration log: rustci-observability-migration.log
 
 🔧 Migration tools created:
-   • tools/valkyrie-data-migrator.sh - Migrate existing data
-   • tools/valkyrie-rollback.sh - Rollback migration
+   • tools/rustci-data-migrator.sh - Migrate existing data
+   • tools/rustci-rollback.sh - Rollback migration
 
 📋 Next steps:
-   1. Review the configuration in config/valkyrie.yaml
-   2. Run: tools/valkyrie-data-migrator.sh (if you have existing data)
-   3. Restart RustCI to enable Valkyrie observability
+   1. Review the configuration in config/rustci.yaml
+   2. Run: tools/rustci-data-migrator.sh (if you have existing data)
+   3. Restart RustCI to enable RustCI observability
    4. Access dashboard at: http://localhost:8081
 
-🔄 To rollback: tools/valkyrie-rollback.sh ./valkyrie-migration-backup-20240115_103000
+🔄 To rollback: tools/rustci-rollback.sh ./rustci-migration-backup-20240115_103000
 ```
 
 ## Manual Migration
 
-### Step 1: Install Valkyrie Observability
+### Step 1: Install RustCI Observability
 
-Add Valkyrie observability to your project:
+Add RustCI observability to your project:
 
 ```toml
 # Cargo.toml
 [dependencies]
-rustci = { version = "1.0", features = ["valkyrie-observability"] }
+rustci = { version = "1.0", features = ["rustci-observability"] }
 ```
 
 ### Step 2: Configuration Migration
@@ -130,10 +130,10 @@ observability:
         target: "localhost:5432"
 ```
 
-#### Valkyrie Configuration (After)
+#### RustCI Configuration (After)
 
 ```yaml
-# config/valkyrie.yaml (new)
+# config/rustci.yaml (new)
 observability:
   metrics_enabled: true
   logging_enabled: true
@@ -172,7 +172,7 @@ observability:
         enabled: true
   
   dashboard:
-    title: "RustCI Valkyrie Dashboard"
+    title: "RustCI Dashboard"
     widgets:
       - id: "system_overview"
         type: "system_overview"
@@ -206,10 +206,10 @@ gauge.set(1024.0);
 histogram.observe(0.5);
 ```
 
-**Valkyrie Code (After):**
+**RustCI Code (After):**
 ```rust
-// Valkyrie metrics
-use rustci::core::networking::valkyrie::observability::{
+// RustCI metrics
+use rustci::core::networking::rustci::observability::{
     ObservabilityManager, ObservabilityConfig, MetricValue
 };
 use std::collections::HashMap;
@@ -244,10 +244,10 @@ warn!("High memory usage: {}MB", memory_mb);
 error!("Database connection failed: {}", error);
 ```
 
-**Valkyrie Code (After):**
+**RustCI Code (After):**
 ```rust
-// Valkyrie logging
-use rustci::core::networking::valkyrie::observability::LogLevel;
+// RustCI logging
+use rustci::core::networking::rustci::observability::LogLevel;
 use std::collections::HashMap;
 
 let logger = manager.logger();
@@ -284,10 +284,10 @@ async fn health_check() -> impl Responder {
 }
 ```
 
-**Valkyrie Code (After):**
+**RustCI Code (After):**
 ```rust
-// Valkyrie health checks
-use rustci::core::networking::valkyrie::observability::{
+// RustCI health checks
+use rustci::core::networking::rustci::observability::{
     HealthCheck, HealthCheckType, HealthCheckConfig
 };
 
@@ -332,19 +332,19 @@ Update your environment variables:
 ```bash
 # .env (add these variables)
 
-# Enable Valkyrie observability
-VALKYRIE_OBSERVABILITY_ENABLED=true
-VALKYRIE_METRICS_ENABLED=true
-VALKYRIE_LOGGING_ENABLED=true
-VALKYRIE_HEALTH_ENABLED=true
-VALKYRIE_DASHBOARD_ENABLED=true
+# Enable RustCI observability
+RUSTCI_OBSERVABILITY_ENABLED=true
+RUSTCI_METRICS_ENABLED=true
+RUSTCI_LOGGING_ENABLED=true
+RUSTCI_HEALTH_ENABLED=true
+RUSTCI_DASHBOARD_ENABLED=true
 
 # Configuration
-VALKYRIE_METRICS_RETENTION_SECONDS=3600
-VALKYRIE_LOG_RETENTION_SECONDS=86400
-VALKYRIE_HEALTH_CHECK_INTERVAL=30
-VALKYRIE_DASHBOARD_REFRESH_SECONDS=5
-VALKYRIE_DASHBOARD_PORT=8081
+RUSTCI_METRICS_RETENTION_SECONDS=3600
+RUSTCI_LOG_RETENTION_SECONDS=86400
+RUSTCI_HEALTH_CHECK_INTERVAL=30
+RUSTCI_DASHBOARD_REFRESH_SECONDS=5
+RUSTCI_DASHBOARD_PORT=8081
 
 # Legacy system (disable gradually)
 LEGACY_METRICS_ENABLED=false
@@ -359,7 +359,7 @@ PROMETHEUS_ENABLED=false
 For gradual migration, use the backward compatibility layer:
 
 ```rust
-use rustci::core::networking::valkyrie::observability::{
+use rustci::core::networking::rustci::observability::{
     LegacyObservabilityAdapter, CompatibilityConfig
 };
 
@@ -388,7 +388,7 @@ legacy_adapter.record_gauge("memory_usage", 1024.0, None).await?;
 Handle different protocol versions:
 
 ```rust
-use rustci::core::networking::valkyrie::observability::ProtocolVersionNegotiator;
+use rustci::core::networking::rustci::observability::ProtocolVersionNegotiator;
 
 let negotiator = ProtocolVersionNegotiator::new();
 
@@ -406,7 +406,7 @@ if let Some(version) = negotiator.negotiate_version(&client_versions) {
 Detect available features for graceful degradation:
 
 ```rust
-use rustci::core::networking::valkyrie::observability::FeatureDetector;
+use rustci::core::networking::rustci::observability::FeatureDetector;
 
 let detector = FeatureDetector::new();
 
@@ -427,10 +427,10 @@ Use the data migration tool to convert existing observability data:
 
 ```bash
 # Run data migration
-./tools/valkyrie-data-migrator.sh
+./tools/rustci-data-migrator.sh
 
 # The tool will:
-# 1. Convert existing metrics to Valkyrie format
+# 1. Convert existing metrics to RustCI format
 # 2. Transform logs to structured format
 # 3. Migrate health check configurations
 # 4. Preserve historical data where possible
@@ -441,13 +441,13 @@ Use the data migration tool to convert existing observability data:
 For custom data migration needs:
 
 ```rust
-// Example: Migrate Prometheus metrics to Valkyrie
+// Example: Migrate Prometheus metrics to RustCI
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 async fn migrate_prometheus_data(
     prometheus_file: &str,
-    valkyrie_metrics: &MetricsCollector,
+    rustci_metrics: &MetricsCollector,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let file = File::open(prometheus_file)?;
     let reader = BufReader::new(file);
@@ -455,7 +455,7 @@ async fn migrate_prometheus_data(
     for line in reader.lines() {
         let line = line?;
         if let Some((metric_name, value, labels)) = parse_prometheus_line(&line) {
-            valkyrie_metrics.record(
+            rustci_metrics.record(
                 &metric_name,
                 MetricValue::Gauge(value),
                 labels,
@@ -477,7 +477,7 @@ fn parse_prometheus_line(line: &str) -> Option<(String, f64, HashMap<String, Str
 
 ### Validation Steps
 
-1. **Start Both Systems**: Run legacy and Valkyrie observability in parallel
+1. **Start Both Systems**: Run legacy and RustCI observability in parallel
 2. **Compare Metrics**: Verify metrics are being recorded correctly
 3. **Test Logging**: Ensure logs are structured and searchable
 4. **Health Checks**: Confirm health checks are working
@@ -489,11 +489,11 @@ fn parse_prometheus_line(line: &str) -> Option<(String, f64, HashMap<String, Str
 #!/bin/bash
 # test-migration.sh
 
-echo "🧪 Testing Valkyrie Observability Migration"
+echo "🧪 Testing RustCI Observability Migration"
 
 # Test metrics endpoint
 echo "Testing metrics..."
-curl -s http://localhost:8081/metrics | grep -q "valkyrie_" && echo "✅ Metrics OK" || echo "❌ Metrics Failed"
+curl -s http://localhost:8081/metrics | grep -q "rustci_" && echo "✅ Metrics OK" || echo "❌ Metrics Failed"
 
 # Test health endpoint
 echo "Testing health..."
@@ -501,11 +501,11 @@ curl -s http://localhost:8081/health | grep -q "healthy" && echo "✅ Health OK"
 
 # Test dashboard
 echo "Testing dashboard..."
-curl -s http://localhost:8081/dashboard | grep -q "Valkyrie" && echo "✅ Dashboard OK" || echo "❌ Dashboard Failed"
+curl -s http://localhost:8081/dashboard | grep -q "RustCI" && echo "✅ Dashboard OK" || echo "❌ Dashboard Failed"
 
 # Test logging
 echo "Testing logging..."
-tail -n 10 /var/log/rustci/valkyrie.log | grep -q "correlation_id" && echo "✅ Logging OK" || echo "❌ Logging Failed"
+tail -n 10 /var/log/rustci/rustci.log | grep -q "correlation_id" && echo "✅ Logging OK" || echo "❌ Logging Failed"
 
 echo "🎉 Migration test complete!"
 ```
@@ -518,12 +518,12 @@ If you need to rollback the migration:
 
 ```bash
 # Use the generated rollback script
-./tools/valkyrie-rollback.sh ./valkyrie-migration-backup-20240115_103000
+./tools/rustci-rollback.sh ./rustci-migration-backup-20240115_103000
 
 # This will:
 # 1. Restore original configuration files
 # 2. Revert environment variables
-# 3. Disable Valkyrie observability
+# 3. Disable RustCI observability
 # 4. Re-enable legacy systems
 ```
 
@@ -531,7 +531,7 @@ If you need to rollback the migration:
 
 For manual rollback:
 
-1. **Stop Valkyrie Observability**
+1. **Stop RustCI Observability**
    ```rust
    manager.stop().await?;
    ```
@@ -539,13 +539,13 @@ For manual rollback:
 2. **Restore Configuration**
    ```bash
    cp backup/config.yaml config.yaml
-   rm config/valkyrie.yaml
+   rm config/rustci.yaml
    ```
 
 3. **Update Environment**
    ```bash
    # .env
-   VALKYRIE_OBSERVABILITY_ENABLED=false
+   RUSTCI_OBSERVABILITY_ENABLED=false
    LEGACY_METRICS_ENABLED=true
    PROMETHEUS_ENABLED=true
    ```
@@ -588,7 +588,7 @@ println!("Total metrics: {}", summary.total_metrics);
 curl http://localhost:8081/health
 
 # Check logs for errors
-tail -f /var/log/rustci/valkyrie.log | grep -i error
+tail -f /var/log/rustci/rustci.log | grep -i error
 ```
 
 ### Debug Mode
@@ -669,19 +669,19 @@ if health_summary.overall_status != HealthStatus::Healthy {
 
 ### Getting Help
 
-- 📖 [Observability Guide](./observability-guide.md)
-- 🔧 [API Reference](./api-reference.md)
-- 🐛 [Troubleshooting Guide](./troubleshooting.md)
+- 📖 [Architecture Documentation](../architecture/README.md)
+- 🔧 [API Reference](../api/README.md)
+- 🐛 [Deployment Guide](../deployment/guide.md)
 - 💬 [Community Discussions](https://github.com/rustci/discussions)
 - 🎫 [Issue Tracker](https://github.com/rustci/issues)
 
 ### Migration Support
 
 For migration assistance:
-- Review the [FAQ](./faq.md)
-- Check [known issues](./known-issues.md)
+- Review the [User Documentation](../user/README.md)
+- Check [Development Documentation](../development/README.md)
 - Join the [migration support channel](https://discord.gg/rustci-migration)
 
 ---
 
-**Next Steps**: After completing the migration, see the [Observability Guide](./observability-guide.md) for advanced usage patterns and best practices.
+**Next Steps**: After completing the migration, see the [Architecture Documentation](../architecture/README.md) for advanced usage patterns and best practices.

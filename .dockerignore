@@ -20,18 +20,34 @@ Dockerfile
 .dockerignore
 
 # Documentation that's not needed in container
-README.md
-LICENSE
-SYSTEM_DESIGN.md
-API_DOCUMENTATION.md
-integration_validation.md
+CHANGELOG.md
+CONTRIBUTING.md
 
-# Keep docs/ and examples/ as they might be needed by the application
-# *.md
+# Keep essential docs
+# README.md
+# LICENSE
 
-# Test files
+# Test files and artifacts
 tests/
-test-commands-fixed.md
+*test-results*/
+*test_results*/
+*performance-results*/
+*security-test-results*/
+*benchmark-results*/
+*industry-test-results*/
+test_*.log
+test_*.json
+test_*.txt
+*_SUMMARY.md
+*_COMPLETE.md
+*_STATUS.md
+*_RESULTS*.md
+*_VALIDATION*.md
+*_IMPLEMENTATION*.md
+*_INTEGRATION*.md
+*_COMPLETION*.md
+*_FIX*.md
+*_GUIDE.md
 
 # Environment files
 .env

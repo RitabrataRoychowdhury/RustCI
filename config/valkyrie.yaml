@@ -1,5 +1,5 @@
-# Valkyrie Protocol Configuration
-# This is the main configuration file for Valkyrie Protocol components
+# RustCI Communication Protocol Configuration
+# This is the main configuration file for RustCI Communication Protocol components
 
 # Global settings
 global:
@@ -126,7 +126,7 @@ transport:
   # Unix socket settings
   unix:
     # Socket file path
-    socket_path: "/tmp/valkyrie.sock"
+    socket_path: "/tmp/rustci-communication.sock"
     
     # Socket permissions
     socket_permissions: 0o600
@@ -162,10 +162,10 @@ security:
     expiration_time: 3600
     
     # Issuer
-    issuer: "valkyrie-protocol"
+    issuer: "rustci-communication-protocol"
     
     # Audience
-    audience: "valkyrie-clients"
+    audience: "rustci-clients"
   
   # API Key settings (when using API key authentication)
   api_key:
@@ -208,13 +208,13 @@ plugins:
   # Maximum restart attempts
   max_restart_attempts: 3
   
-  # Valkyrie plugin configuration
-  valkyrie:
-    # Enable Valkyrie plugin
+  # RustCI communication plugin configuration
+  communication_protocol:
+    # Enable communication plugin
     enabled: true
     
-    # Valkyrie server endpoint
-    endpoint: "${VALKYRIE_ENDPOINT:tcp://localhost:8080}"
+    # Communication server endpoint
+    endpoint: "${RUSTCI_COMMUNICATION_ENDPOINT:tcp://localhost:8080}"
     
     # Connection settings
     connection_timeout_ms: 5000
@@ -290,7 +290,7 @@ observability:
       agent_endpoint: "localhost:6831"
       
       # Service name
-      service_name: "valkyrie-protocol"
+      service_name: "rustci-communication-protocol"
     
     # Sampling rate (0.0 to 1.0)
     sampling_rate: 0.1
@@ -304,7 +304,7 @@ observability:
     structured: true
     
     # Log file path (optional)
-    file_path: "logs/valkyrie.log"
+    file_path: "logs/rustci-communication.log"
     
     # Log rotation
     rotation:

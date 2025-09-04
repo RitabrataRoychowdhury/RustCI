@@ -1,10 +1,10 @@
-# Prometheus Configuration for Valkyrie Protocol Monitoring
+# Prometheus Configuration for RustCI Protocol Monitoring
 
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    cluster: 'valkyrie-protocol'
+    cluster: 'rustci-protocol'
     environment: 'production'
 
 # Alertmanager configuration
@@ -27,10 +27,10 @@ scrape_configs:
     scrape_interval: 30s
     metrics_path: /metrics
 
-  # Valkyrie Protocol servers
-  - job_name: 'valkyrie-protocol'
+  # RustCI Protocol servers
+  - job_name: 'rustci-protocol'
     static_configs:
-      - targets: ['valkyrie-server:9090']
+      - targets: ['rustci-server:9090']
     scrape_interval: 15s
     metrics_path: /metrics
     scrape_timeout: 10s
@@ -43,12 +43,12 @@ scrape_configs:
       - source_labels: [__param_target]
         target_label: instance
       - target_label: __address__
-        replacement: valkyrie-server:9090
+        replacement: rustci-server:9090
 
   # HAProxy load balancer
   - job_name: 'haproxy'
     static_configs:
-      - targets: ['valkyrie-lb:8404']
+      - targets: ['rustci-lb:8404']
     scrape_interval: 30s
     metrics_path: /stats
     params:

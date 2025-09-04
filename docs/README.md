@@ -1,121 +1,131 @@
 # RustCI Documentation
 
-This directory contains all documentation for the RustCI project, organized by category.
+Welcome to the RustCI documentation! This directory contains comprehensive documentation organized by audience and use case.
 
-## Directory Structure
+## Documentation Structure
 
-### 📊 Reports (`reports/`)
-Technical reports and validation documents:
-- `ARCHITECTURE_VALIDATION_REPORT.md` - Comprehensive architecture validation findings
-- `pipeline-validation-report.md` - Pipeline validation results
+### 👥 User Documentation (`user/`)
+End-user guides and tutorials:
+- [Installation Guide](user/installation.md) - How to install and set up RustCI
+- [Quick Start Guide](user/quick-start.md) - Get started with your first pipeline
+- [Configuration Guide](user/configuration.md) - Configuration options and examples
+- [Pipeline Examples](user/pipeline-examples/) - Working pipeline examples
+- [Troubleshooting Guide](user/troubleshooting.md) - Common issues and solutions
 
-### 📋 Summaries (`summaries/`)
-Project summaries and completion reports:
-- `BUILD_OPTIMIZATION_SUMMARY.md` - Build performance optimization results
-- `DEBUGGING_REFACTORING_FINAL_SUMMARY.md` - Complete debugging and refactoring summary
-- `TASKS_1_2_COMPLETION_SUMMARY.md` - Tasks 1 & 2 completion details
-- `TASK_4_COMPLETION_SUMMARY.md` - Task 4 completion details
-- `VALKYRIE_ORGANIZATION_SUMMARY.md` - Valkyrie protocol organization summary
-- `VALKYRIE_NEXT_STEPS.md` - Future development roadmap for Valkyrie
-- `VALKYRIE_TESTING_SUITE_SUMMARY.md` - Testing suite implementation summary
+### 🔌 API Documentation (`api/`)
+API reference and integration guides:
+- [API Overview](api/README.md) - API documentation overview
+- [Current API State](api/current-api-state.md) - Current API endpoints and status
+- [Usage Guide](api/usage-guide.md) - API usage examples
+- [Configuration Schema](api/configuration-schema.md) - Complete configuration reference
+- [OpenAPI Specification](api/openapi-baseline.json) - Machine-readable API spec
 
-### 🔧 Implementation (`implementation/`)
-Implementation guides and technical details:
-- `BACKWARD_COMPATIBILITY_IMPLEMENTATION.md` - Backward compatibility implementation
-- `CONTROL_PLANE_IMPLEMENTATION.md` - Control plane implementation details
-- `NATIVE_RUNNER_ENHANCEMENTS.md` - Native runner enhancement specifications
+### 🏗️ Architecture Documentation (`architecture/`)
+System architecture and design:
+- [Architecture Overview](architecture/README.md) - Architecture documentation index
+- [System Design](architecture/system-design.md) - High-level system architecture
+- [Comprehensive Architecture](architecture/comprehensive-system-architecture.md) - Detailed architecture
+- [Communication Protocol](architecture/node-communication-protocol.md) - Inter-node communication
+- [Connectors](architecture/connectors.md) - Connector system architecture
+- [Architecture Decision Records](architecture/adrs/) - Design decisions and rationale
 
-### 🔄 Migration (`migration/`)
+### 🚀 Deployment Documentation (`deployment/`)
+Deployment guides and operations:
+- [Deployment Overview](deployment/README.md) - Deployment documentation index
+- [Deployment Guide](deployment/guide.md) - General deployment instructions
+- [Kubernetes Deployment](deployment/kubernetes.md) - Deploy on Kubernetes
+- [Enterprise Deployment](deployment/enterprise-deployment.md) - Enterprise-grade deployment
+
+### 💻 Development Documentation (`development/`)
+Developer guides and contribution information:
+- [Development Overview](development/README.md) - Development documentation index
+- [Development Setup](development/setup/README.md) - Local development environment
+- [Control Plane Implementation](development/CONTROL_PLANE_IMPLEMENTATION.md) - Control plane development
+- [Native Runner Enhancements](development/NATIVE_RUNNER_ENHANCEMENTS.md) - Native runner development
+- [Automated Pipeline Testing](development/automated-pipeline-testing.md) - Testing framework
+
+### 🔄 Migration Documentation (`migration/`)
 Migration guides and procedures:
-- `OBSERVABILITY_MIGRATION_GUIDE.md` - Guide for migrating observability systems
+- [Observability Migration](migration/OBSERVABILITY_MIGRATION_GUIDE.md) - Observability system migration
+- [Configuration Migration](migration/configuration-migration.md) - Configuration migration guide
 
-### 🧹 Cleanup (`cleanup/`)
-Code cleanup documentation:
-- `CODEBASE_CLEANUP_PLAN.md` - Systematic cleanup planning
-- `CODEBASE_CLEANUP_SUMMARY.md` - Cleanup execution summary
+### ⚙️ DevOps Documentation (`devops/`)
+Operations and DevOps guides:
+- [DevOps Guide](devops/README.md) - Complete DevOps and operations guide
+- [YAML Compatibility](devops/yaml-compatibility.md) - YAML configuration compatibility
 
-### 🏗️ Architecture (`architecture/`)
-System architecture documentation:
-- `system-design.md` - Overall system design
-- `node-communication-protocol.md` - Node communication protocol specification
+### 📁 Archive (`archive/`)
+Historical documentation and legacy content:
+- [Archive Overview](archive/README.md) - Information about archived content
+- [Summaries](archive/summaries/) - Historical project summaries
+- [Cleanup Documentation](archive/cleanup/) - Legacy cleanup documentation
+- [Legacy Protocol Documentation](archive/valkyrie/) - Historical protocol documentation
 
-### 🔌 API (`api/`)
-API documentation:
-- `current-api-state.md` - Current API state and endpoints
+## Getting Started
 
-### 🧪 Testing (`testing/`)
-Testing documentation:
-- `automated-pipeline-testing.md` - Automated testing procedures
+### For New Users
+1. Start with the [Installation Guide](user/installation.md) or [Getting Started](user/getting-started/)
+2. Follow the [Quick Start Guide](user/quick-start.md) to run your first pipeline
+3. Explore [Pipeline Examples](user/pipeline-examples/) for real-world use cases
+4. Configure your setup with the [Configuration Guide](user/configuration.md)
+5. Need help? Check the [Troubleshooting Guide](user/troubleshooting.md)
 
-### 📝 Pipeline Examples (`pipeline-examples/`)
-Example pipeline configurations:
-- `README.md` - Pipeline examples overview
-- `simple-pipeline.yaml` - Basic pipeline example
-- `standard-pipeline.yaml` - Standard pipeline configuration
-- `advanced-pipeline.yaml` - Advanced pipeline features
-- `docker-deployment-pipeline.yaml` - Docker deployment pipeline
+### For Developers
+1. Review the [Architecture Overview](architecture/README.md) to understand the system
+2. Set up your [Development Environment](development/setup/README.md)
+3. Read the [System Design](architecture/system-design.md) for technical details
+4. Explore the [API Documentation](api/README.md) and [API Reference](api/reference/README.md)
+5. Check [Development Guidelines](development/README.md) for contribution standards
 
-### 🚀 Valkyrie (`valkyrie/`)
-Valkyrie Protocol documentation:
-- `getting-started.md` - Getting started with Valkyrie
-- `api-reference.md` - API reference documentation
-- `deployment-guide.md` - Deployment procedures
-- `observability-guide.md` - Observability setup and usage
-- `observability-adapters.md` - Observability adapter documentation
-- `external-observability.md` - External observability integration
-- `FINAL_VALKYRIE_PROTOCOL_SPEC.md` - Complete protocol specification
+### For Operators
+1. Read the [Deployment Guide](deployment/README.md) for deployment options
+2. Choose your deployment method: [Kubernetes](deployment/kubernetes.md), [Docker](deployment/guide.md), etc.
+3. Review the [DevOps Guide](devops/README.md) for operational best practices
+4. Set up monitoring using [Architecture Guidelines](architecture/README.md)
+5. Configure security following [Enterprise Deployment](deployment/enterprise-deployment.md)
+
+### For Contributors
+1. Set up the [Development Environment](development/setup/README.md)
+2. Read the [Contributing Guidelines](../CONTRIBUTING.md)
+3. Explore the [Architecture Documentation](architecture/README.md)
+4. Check existing [Issues](https://github.com/rustci/rustci/issues)
 
 ## Navigation Tips
 
-- **For developers**: Start with `architecture/system-design.md` for system overview
-- **For operators**: Check `valkyrie/deployment-guide.md` for deployment procedures
-- **For troubleshooting**: Review reports in `reports/` directory
-- **For project status**: Check summaries in `summaries/` directory
-- **For implementation details**: Browse `implementation/` directory
+- **Quick answers**: Check the [Troubleshooting Guide](user/troubleshooting.md)
+- **API integration**: Start with [API Documentation](api/README.md)
+- **System understanding**: Review [Architecture Documentation](architecture/README.md)
+- **Deployment help**: See [Deployment Documentation](deployment/README.md)
+- **Historical context**: Browse the [Archive](archive/README.md)
 
-## Document Maintenance
+## Document Organization
 
-All documentation is organized to maintain clarity and findability. When adding new documentation:
+This documentation follows a user-centric organization:
 
-1. Place it in the appropriate category directory
-2. Update this README.md with the new document
-3. Ensure proper cross-references between related documents
-4. Follow the established naming conventions
+- **Audience-based structure**: Documentation is organized by who needs it
+- **Progressive disclosure**: Start simple, dive deeper as needed
+- **Cross-references**: Related topics are linked for easy navigation
+- **Searchable content**: All documentation is indexed and searchable
+- **Version controlled**: Documentation evolves with the codebase
 
-## Recent Updates
+## Contributing to Documentation
 
-- **Debugging & Refactoring**: Completed comprehensive debugging and refactoring effort ✅
-- **Build Optimization**: Achieved significant build performance improvements ✅
-- **Architecture Validation**: Validated refactored architecture with detailed analysis ✅
-- **Documentation Organization**: Organized all documentation into structured directories ✅
-- **Valkyrie Protocol**: Implemented world-class protocol with advanced features ✅
-- **Code Quality**: Maintained excellent warning discipline (7 warnings, target ≤10) ✅
+We welcome documentation improvements! To contribute:
 
-## Current Status
+1. Follow the existing structure and style
+2. Update cross-references when adding new content
+3. Test all links and examples
+4. Submit pull requests with clear descriptions
 
-**Phase**: 🚨 CRITICAL - Compilation Stabilization Required  
-**Challenge**: 108 compilation errors from advanced feature integration  
-**Root Cause**: Complex type system interactions in Valkyrie Protocol  
-**Solution**: Systematic stabilization in `.kiro/specs/compilation-stabilization/`  
-**Estimated Resolution**: 12-18 hours  
-**Impact**: Blocks all development until resolved  
+## Getting Help
 
-### Key Metrics
-- **Compilation Errors**: 108 (critical, was 0)
-- **Warnings**: 7 (excellent, target ≤10) ✅
-- **Build Status**: FAILING ❌
-- **Development Status**: BLOCKED ❌
-- **Architecture Quality**: EXCELLENT ✅
-- **Feature Completeness**: ADVANCED ✅
-
-### Next Steps
-1. **Immediate**: Execute compilation stabilization tasks
-2. **Focus**: Type system harmonization and trait completion
-3. **Goal**: Return to stable, compilable state
-4. **Then**: Resume Valkyrie Protocol Phase 2 development
+- **Community**: [GitHub Discussions](https://github.com/rustci/rustci/discussions)
+- **Issues**: [GitHub Issues](https://github.com/rustci/rustci/issues)
+- **Chat**: [Discord Community](https://discord.gg/rustci)
 
 ---
 
-**Last Updated**: Compilation stabilization phase initiated  
-**Total Documents**: 25+ organized documents across 8 categories  
-**Project Status**: Advanced features complete, compilation stabilization in progress
+**Documentation Status**: ✅ Reorganized and up-to-date  
+**Last Updated**: January 2025  
+**Total Sections**: 8 major documentation categories  
+**Coverage**: Complete user, developer, and operator documentation

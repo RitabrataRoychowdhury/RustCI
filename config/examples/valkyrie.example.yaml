@@ -1,5 +1,5 @@
-# Valkyrie Protocol Configuration
-# This is a comprehensive configuration file for the Valkyrie Protocol
+# RustCI Communication Protocol Configuration
+# This is a comprehensive configuration file for the RustCI Communication Protocol
 # Copy this file and customize it for your deployment
 
 # Protocol Core Configuration
@@ -71,19 +71,19 @@ transport:
   # WebSocket Transport Configuration
   websocket:
     enabled: true
-    path: "/valkyrie/ws"
+    path: "/communication-protocol/ws"
     compression: true
     max_frame_size: 16777216  # 16MB
     ping_interval_seconds: 30
     pong_timeout_seconds: 10
     subprotocols:
-      - "valkyrie.v2"
-      - "valkyrie.v1"
+      - "rustci-protocol.v2"
+      - "rustci-protocol.v1"
   
   # Unix Socket Transport Configuration
   unix:
     enabled: true
-    socket_path: "/tmp/valkyrie.sock"
+    socket_path: "/tmp/rustci-communication.sock"
     permissions: "0660"
     cleanup_on_exit: true
 
@@ -94,20 +94,20 @@ security:
   
   # Token-based authentication
   token:
-    secret: "${VALKYRIE_TOKEN_SECRET}"
+    secret: "${RUSTCI_COMMUNICATION_TOKEN_SECRET}"
     algorithm: "HS256"  # "HS256", "HS384", "HS512", "RS256", "RS384", "RS512"
     expires_in_seconds: 3600
     refresh_expires_in_seconds: 86400
-    issuer: "valkyrie-protocol"
-    audience: "valkyrie-nodes"
+    issuer: "rustci-communication-protocol"
+    audience: "rustci-nodes"
     custom_claims: {}
   
   # Mutual TLS Configuration
   mtls:
     enabled: false
-    cert_file: "/etc/valkyrie/certs/server.crt"
-    key_file: "/etc/valkyrie/certs/server.key"
-    ca_file: "/etc/valkyrie/certs/ca.crt"
+    cert_file: "/etc/rustci/certs/server.crt"
+    key_file: "/etc/rustci/certs/server.key"
+    ca_file: "/etc/rustci/certs/ca.crt"
     verify_client: true
     cipher_suites:
       - "TLS_AES_256_GCM_SHA384"
@@ -120,8 +120,8 @@ security:
   noise:
     enabled: false
     pattern: "Noise_XK_25519_ChaChaPoly_BLAKE2s"
-    private_key: "${VALKYRIE_NOISE_PRIVATE_KEY}"
-    public_key: "${VALKYRIE_NOISE_PUBLIC_KEY}"
+    private_key: "${RUSTCI_COMMUNICATION_NOISE_PRIVATE_KEY}"
+    public_key: "${RUSTCI_COMMUNICATION_NOISE_PUBLIC_KEY}"
   
   # Post-Quantum Cryptography (Experimental)
   post_quantum:
@@ -130,7 +130,7 @@ security:
     signature: "dilithium3"   # "dilithium2", "dilithium3", "dilithium5"
     encryption: "chacha20_poly1305"
     hash: "blake3"
-    key_bundle: "${VALKYRIE_PQ_KEY_BUNDLE}"
+    key_bundle: "${RUSTCI_COMMUNICATION_PQ_KEY_BUNDLE}"
   
   # Zero-Trust Configuration
   zero_trust:
@@ -138,7 +138,7 @@ security:
     verify_every_request: true
     certificate_transparency: true
     policy_engine: "opa"  # "opa", "cedar", "custom"
-    policy_file: "/etc/valkyrie/policies/zero_trust.rego"
+    policy_file: "/etc/rustci/policies/zero_trust.rego"
   
   # Intrusion Detection System
   intrusion_detection:
@@ -158,19 +158,19 @@ security:
       window_size_seconds: 300
     pattern_matching:
       enabled: true
-      rules_file: "/etc/valkyrie/ids/rules.yaml"
+      rules_file: "/etc/rustci/ids/rules.yaml"
   
   # Security Audit Logging
   audit:
     enabled: true
-    log_file: "/var/log/valkyrie/audit.log"
+    log_file: "/var/log/rustci/audit.log"
     max_file_size_mb: 100
     max_files: 10
     log_level: "info"
     include_payload: false
     encryption:
       enabled: false
-      key: "${VALKYRIE_AUDIT_ENCRYPTION_KEY}"
+      key: "${RUSTCI_COMMUNICATION_AUDIT_ENCRYPTION_KEY}"
     remote_syslog:
       enabled: false
       server: "syslog.example.com:514"
@@ -289,9 +289,9 @@ bridge:
   
   # TLS configuration for HTTPS
   tls:
-    cert_file: "/etc/valkyrie/certs/bridge.crt"
-    key_file: "/etc/valkyrie/certs/bridge.key"
-    ca_file: "/etc/valkyrie/certs/ca.crt"
+    cert_file: "/etc/rustci/certs/bridge.crt"
+    key_file: "/etc/rustci/certs/bridge.key"
+    ca_file: "/etc/rustci/certs/ca.crt"
     cipher_suites:
       - "TLS_AES_256_GCM_SHA384"
       - "TLS_CHACHA20_POLY1305_SHA256"
@@ -333,7 +333,7 @@ observability:
     
     # Metric labels
     default_labels:
-      service: "valkyrie-protocol"
+      service: "rustci-communication-protocol"
       version: "2.0.0"
       environment: "${ENVIRONMENT:-development}"
     
@@ -353,7 +353,7 @@ observability:
   # Distributed tracing
   tracing:
     enabled: true
-    service_name: "valkyrie-protocol"
+    service_name: "rustci-communication-protocol"
     service_version: "2.0.0"
     sample_rate: 0.1
     
@@ -379,7 +379,7 @@ observability:
     # Custom trace attributes
     default_attributes:
       deployment.environment: "${ENVIRONMENT:-development}"
-      service.namespace: "valkyrie"
+      service.namespace: "rustci-communication"
   
   # Logging configuration
   logging:
@@ -394,7 +394,7 @@ observability:
         level: "info"
       - type: "file"
         level: "debug"
-        path: "/var/log/valkyrie/valkyrie.log"
+        path: "/var/log/rustci/communication-protocol.log"
         max_size_mb: 100
         max_files: 10
         compress: true
@@ -434,7 +434,7 @@ observability:
 # Cluster Configuration
 cluster:
   enabled: false
-  node_id: "${VALKYRIE_NODE_ID:-node-1}"
+  node_id: "${RUSTCI_COMMUNICATION_NODE_ID:-node-1}"
   
   # Service discovery
   discovery:
@@ -442,37 +442,37 @@ cluster:
     
     # Static node list
     static_nodes:
-      - "valkyrie-node-1:8080"
-      - "valkyrie-node-2:8080"
-      - "valkyrie-node-3:8080"
+      - "rustci-communication-node-1:8080"
+      - "rustci-communication-node-2:8080"
+      - "rustci-communication-node-3:8080"
     
     # DNS-based discovery
     dns:
-      service_name: "_valkyrie._tcp.example.com"
+      service_name: "_rustci-communication._tcp.example.com"
       refresh_interval_seconds: 60
       resolver_timeout_seconds: 5
     
     # Kubernetes discovery
     kubernetes:
-      namespace: "valkyrie-system"
-      label_selector: "app=valkyrie"
+      namespace: "rustci-communication-system"
+      label_selector: "app=rustci-communication"
       port: 8080
       kubeconfig: null  # null means in-cluster config
     
     # Consul discovery
     consul:
       address: "localhost:8500"
-      service_name: "valkyrie"
+      service_name: "rustci-communication"
       health_check_interval_seconds: 30
       tags:
-        - "valkyrie"
+        - "rustci-communication"
         - "v2.0"
     
     # etcd discovery
     etcd:
       endpoints:
         - "localhost:2379"
-      prefix: "/valkyrie/nodes"
+      prefix: "/rustci-communication/nodes"
       lease_ttl_seconds: 60
   
   # Consensus algorithm

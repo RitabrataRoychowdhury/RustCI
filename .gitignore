@@ -35,6 +35,38 @@ Icon?
 *.log
 *.tmp
 
+# === Test Results and Artifacts ===
+*test-results*/
+*test_results*/
+*performance-results*/
+*security-test-results*/
+*benchmark-results*/
+*industry-test-results*/
+test_*.log
+test_*.json
+test_*.txt
+*_SUMMARY.md
+*_COMPLETE.md
+*_STATUS.md
+*_RESULTS*.md
+*_VALIDATION*.md
+*_IMPLEMENTATION*.md
+*_INTEGRATION*.md
+*_COMPLETION*.md
+*_FIX*.md
+*_GUIDE.md
+simple_performance_*
+standalone_performance_*
+test_environment_*
+test_industry*
+test_startup_*
+test-auth-*
+
+# === Pipeline and Deployment Artifacts ===
+*-pipeline.yaml
+k3s-*.yaml
+nodejs-*.yaml
+
 # === dotenv/environment files (optional) ===
 # Uncomment if you store secrets in .env
 #.env

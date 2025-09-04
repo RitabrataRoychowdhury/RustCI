@@ -54,7 +54,7 @@ feature_flags:
   enable_metrics_collection: false
   enable_audit_logging: false
   enable_distributed_tracing: false
-  enable_valkyrie_protocol: false
+  enable_communication_protocol: false
 resource_limits:
   max_memory_mb: 512
   max_cpu_cores: 1.0

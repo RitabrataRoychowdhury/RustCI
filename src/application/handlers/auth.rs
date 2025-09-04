@@ -324,9 +324,8 @@ pub async fn get_me_handler(
     info!("🔄 Fetching user profile for ID: {}", user_id);
 
     // Find user in MongoDB by UUID
+    // Convert UUID to string for MongoDB query (serde serializes UUID as string by default)
     let user_id_str = user_id.to_string();
-
-    // Since we're storing UUID in the user document, we need to find by UUID field, not MongoDB _id
     let user = data
         .db
         .database

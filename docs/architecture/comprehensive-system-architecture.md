@@ -1,14 +1,14 @@
-# RustCI & Valkyrie Protocol: Comprehensive System Architecture
+# RustCI: Comprehensive System Architecture
 
 ## Executive Summary
 
-RustCI is an enterprise-grade CI/CD platform built in Rust, featuring the revolutionary **Valkyrie Protocol** - a high-performance, secure, and fault-tolerant distributed communication system. This document provides a comprehensive architectural overview of both systems and their integration.
+RustCI is an enterprise-grade CI/CD platform built in Rust, featuring a high-performance, secure, and fault-tolerant distributed communication system. This document provides a comprehensive architectural overview of the system and its components.
 
 ## Table of Contents
 
 1. [System Overview](#system-overview)
 2. [RustCI Architecture](#rustci-architecture)
-3. [Valkyrie Protocol Architecture](#valkyrie-protocol-architecture)
+3. [Communication Protocol Architecture](#communication-protocol-architecture)
 4. [Integration Architecture](#integration-architecture)
 5. [Security Architecture](#security-architecture)
 6. [Performance Architecture](#performance-architecture)
@@ -45,9 +45,9 @@ RustCI is an enterprise-grade CI/CD platform built in Rust, featuring the revolu
 │  │  • Execution    │  │  • PR Builder   │  │  • Scaling      │  │  • Cleanup  │ │
 │  └─────────────────┘  └─────────────────┘  └─────────────────┘  └─────────────┘ │
 ├─────────────────────────────────────────────────────────────────────────────────┤
-│                          Valkyrie Protocol Layer                                │
+│                          RustCI Communication Layer                             │
 │  ┌─────────────────────────────────────────────────────────────────────────────┐ │
-│  │                        Valkyrie Communication Engine                        │ │
+│  │                        RustCI Communication Engine                          │ │
 │  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │ │
 │  │  │ Universal       │  │ QoS-Aware       │  │ Service Registry│            │ │
 │  │  │ Adapter Factory │  │ Stream Mgmt     │  │ & Discovery     │            │ │

@@ -7,7 +7,7 @@ graph TB
     subgraph "RustCI Control Plane Architecture"
         subgraph "RustCI API Layer"
             RAPI[RustCI API Server<br/>• REST API v1/v2<br/>• WebSocket<br/>• gRPC<br/>• <1ms response]
-            VAPI[Valkyrie Gateway<br/>• Binary Protocol<br/>• <100μs latency<br/>• Zero-copy<br/>• ML routing]
+            RAPI2[RustCI Gateway<br/>• Binary Protocol<br/>• <100μs latency<br/>• Zero-copy<br/>• ML routing]
             RAUTH[Auth Service<br/>• OAuth 2.0<br/>• JWT + mTLS<br/>• RBAC + ABAC]
         end
         
@@ -24,7 +24,7 @@ graph TB
         end
         
         subgraph "RustCI Networking"
-            RVALK[Valkyrie Protocol<br/>• High-performance<br/>• Intelligent routing<br/>• Load balancing<br/>• Service mesh]
+            RPROTO[RustCI Protocol<br/>• High-performance<br/>• Intelligent routing<br/>• Load balancing<br/>• Service mesh]
             RDISC[Service Discovery<br/>• Runner discovery<br/>• Health monitoring<br/>• Auto-scaling]
         end
         
@@ -186,7 +186,7 @@ timeline
                             : HTTP API
     
     section Phase 2 - Enhancement
-        Valkyrie Integration : Valkyrie Protocol
+        RustCI Integration : RustCI Protocol
                             : High-Performance API
                             : Intelligent Routing
                             : Zero-Copy Operations
@@ -251,7 +251,7 @@ graph TB
 | **API Protocol** | Binary + REST | REST/gRPC | 10-50x performance improvement |
 | **Storage Model** | Document (MongoDB) | Key-Value (etcd) | Better CI/CD metadata handling |
 | **Scheduling Focus** | Job-centric | Pod-centric | CI/CD-aware resource allocation |
-| **Network Protocol** | Valkyrie (custom) | Standard TCP/HTTP | Sub-100μs communication |
+| **Network Protocol** | RustCI (custom) | Standard TCP/HTTP | Sub-100μs communication |
 | **Resource Model** | Runner-based | Node-based | CI/CD capability matching |
 | **State Management** | Pipeline-aware | Container-aware | Workflow state optimization |
 | **Scaling Model** | Job throughput | Pod density | 100x higher job processing |
