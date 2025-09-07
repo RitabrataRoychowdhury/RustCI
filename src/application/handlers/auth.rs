@@ -324,13 +324,17 @@ pub async fn get_me_handler(
     info!("🔄 Fetching user profile for ID: {}", user_id);
 
     // Find user in MongoDB by UUID
-    // Convert UUID to string for MongoDB query (serde serializes UUID as string by default)
-    let user_id_str = user_id.to_string();
+    // Convert UUID to BSON Binary format for MongoDB query (using Generic subtype like other parts of the codebase)
+    use mongodb::bson::{Binary, Bson};
+    let user_id_binary = Binary {
+        subtype: mongodb::bson::spec::BinarySubtype::Generic,
+        bytes: user_id.as_bytes().to_vec(),
+    };
     let user = data
         .db
         .database
         .collection::<User>("users")
-        .find_one(mongodb::bson::doc! {"id": user_id_str}, None)
+        .find_one(mongodb::bson::doc! {"id": Bson::Binary(user_id_binary)}, None)
         .await
         .map_err(|e| AppError::DatabaseError(format!("Failed to find user: {}", e)))?;
 
