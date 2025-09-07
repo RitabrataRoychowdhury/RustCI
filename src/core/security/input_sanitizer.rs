@@ -28,7 +28,10 @@ pub enum ValidationRule {
     /// Validate numeric input
     Numeric,
     /// Custom regex validation
-    CustomRegex { pattern: String, description: String },
+    CustomRegex {
+        pattern: String,
+        description: String,
+    },
     /// Length validation
     Length { min: usize, max: usize },
     /// Required field validation
@@ -132,18 +135,23 @@ impl InputSanitizer {
         let sql_injection_patterns = Self::compile_sql_patterns()?;
         let xss_patterns = Self::compile_xss_patterns()?;
         let command_injection_patterns = Self::compile_command_patterns()?;
-        
-        let email_regex = Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
-            .map_err(|e| AppError::InternalServerError(format!("Failed to compile email regex: {}", e)))?;
-        
-        let url_regex = Regex::new(r"^https?://[^\s/$.?#].[^\s]*$")
-            .map_err(|e| AppError::InternalServerError(format!("Failed to compile URL regex: {}", e)))?;
-        
-        let alphanumeric_regex = Regex::new(r"^[a-zA-Z0-9]+$")
-            .map_err(|e| AppError::InternalServerError(format!("Failed to compile alphanumeric regex: {}", e)))?;
-        
-        let numeric_regex = Regex::new(r"^[0-9]+$")
-            .map_err(|e| AppError::InternalServerError(format!("Failed to compile numeric regex: {}", e)))?;
+
+        let email_regex =
+            Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").map_err(|e| {
+                AppError::InternalServerError(format!("Failed to compile email regex: {}", e))
+            })?;
+
+        let url_regex = Regex::new(r"^https?://[^\s/$.?#].[^\s]*$").map_err(|e| {
+            AppError::InternalServerError(format!("Failed to compile URL regex: {}", e))
+        })?;
+
+        let alphanumeric_regex = Regex::new(r"^[a-zA-Z0-9]+$").map_err(|e| {
+            AppError::InternalServerError(format!("Failed to compile alphanumeric regex: {}", e))
+        })?;
+
+        let numeric_regex = Regex::new(r"^[0-9]+$").map_err(|e| {
+            AppError::InternalServerError(format!("Failed to compile numeric regex: {}", e))
+        })?;
 
         Ok(Self {
             config,
@@ -164,7 +172,10 @@ impl InputSanitizer {
         rules: &[ValidationRule],
     ) -> Result<ValidationResult, AppError> {
         let correlation_id = Uuid::new_v4();
-        debug!("Starting input validation for correlation_id: {}", correlation_id);
+        debug!(
+            "Starting input validation for correlation_id: {}",
+            correlation_id
+        );
 
         // Check input length first
         if input.len() > self.config.max_input_length {
@@ -173,7 +184,10 @@ impl InputSanitizer {
                 sanitized_input: None,
                 violations: vec![ValidationViolation {
                     rule: "MaxLength".to_string(),
-                    description: format!("Input exceeds maximum length of {} characters", self.config.max_input_length),
+                    description: format!(
+                        "Input exceeds maximum length of {} characters",
+                        self.config.max_input_length
+                    ),
                     severity: ViolationSeverity::Error,
                     position: Some(self.config.max_input_length),
                     suggested_fix: Some("Reduce input length".to_string()),
@@ -192,7 +206,7 @@ impl InputSanitizer {
                 Ok(rule_result) => {
                     if !rule_result.violations.is_empty() {
                         violations.extend(rule_result.violations);
-                        
+
                         // Update risk level
                         if rule_result.risk_level as u8 > max_risk_level as u8 {
                             max_risk_level = rule_result.risk_level;
@@ -220,8 +234,11 @@ impl InputSanitizer {
             }
         }
 
-        let is_valid = violations.is_empty() || 
-            (!self.config.strict_mode && violations.iter().all(|v| v.severity != ViolationSeverity::Critical));
+        let is_valid = violations.is_empty()
+            || (!self.config.strict_mode
+                && violations
+                    .iter()
+                    .all(|v| v.severity != ViolationSeverity::Critical));
 
         // Log violations if configured
         if self.config.log_violations && !violations.is_empty() {
@@ -259,9 +276,10 @@ impl InputSanitizer {
             ValidationRule::Url => self.validate_url(input),
             ValidationRule::Alphanumeric => self.validate_alphanumeric(input),
             ValidationRule::Numeric => self.validate_numeric(input),
-            ValidationRule::CustomRegex { pattern, description } => {
-                self.validate_custom_regex(input, pattern, description)
-            }
+            ValidationRule::CustomRegex {
+                pattern,
+                description,
+            } => self.validate_custom_regex(input, pattern, description),
             ValidationRule::Length { min, max } => self.validate_length(input, *min, *max),
             ValidationRule::Required => self.validate_required(input),
             ValidationRule::Whitelist { allowed_values } => {
@@ -279,10 +297,15 @@ impl InputSanitizer {
             if let Some(mat) = pattern.find(input) {
                 violations.push(ValidationViolation {
                     rule: "SqlInjection".to_string(),
-                    description: format!("Potential SQL injection detected at position {}", mat.start()),
+                    description: format!(
+                        "Potential SQL injection detected at position {}",
+                        mat.start()
+                    ),
                     severity: ViolationSeverity::Critical,
                     position: Some(mat.start()),
-                    suggested_fix: Some("Remove or escape SQL keywords and special characters".to_string()),
+                    suggested_fix: Some(
+                        "Remove or escape SQL keywords and special characters".to_string(),
+                    ),
                 });
 
                 // Sanitize by removing dangerous patterns
@@ -291,8 +314,12 @@ impl InputSanitizer {
         }
 
         let is_valid = violations.is_empty();
-        let risk_level = if is_valid { RiskLevel::Low } else { RiskLevel::Critical };
-        
+        let risk_level = if is_valid {
+            RiskLevel::Low
+        } else {
+            RiskLevel::Critical
+        };
+
         Ok(ValidationResult {
             is_valid,
             sanitized_input: Some(sanitized),
@@ -310,10 +337,15 @@ impl InputSanitizer {
             if let Some(mat) = pattern.find(input) {
                 violations.push(ValidationViolation {
                     rule: "XssProtection".to_string(),
-                    description: format!("Potential XSS attack detected at position {}", mat.start()),
+                    description: format!(
+                        "Potential XSS attack detected at position {}",
+                        mat.start()
+                    ),
                     severity: ViolationSeverity::Critical,
                     position: Some(mat.start()),
-                    suggested_fix: Some("HTML encode or remove script tags and event handlers".to_string()),
+                    suggested_fix: Some(
+                        "HTML encode or remove script tags and event handlers".to_string(),
+                    ),
                 });
 
                 // Sanitize by HTML encoding
@@ -322,8 +354,12 @@ impl InputSanitizer {
         }
 
         let is_valid = violations.is_empty();
-        let risk_level = if is_valid { RiskLevel::Low } else { RiskLevel::Critical };
-        
+        let risk_level = if is_valid {
+            RiskLevel::Low
+        } else {
+            RiskLevel::Critical
+        };
+
         Ok(ValidationResult {
             is_valid,
             sanitized_input: Some(sanitized),
@@ -341,7 +377,10 @@ impl InputSanitizer {
             if let Some(mat) = pattern.find(input) {
                 violations.push(ValidationViolation {
                     rule: "CommandInjection".to_string(),
-                    description: format!("Potential command injection detected at position {}", mat.start()),
+                    description: format!(
+                        "Potential command injection detected at position {}",
+                        mat.start()
+                    ),
                     severity: ViolationSeverity::Critical,
                     position: Some(mat.start()),
                     suggested_fix: Some("Remove or escape shell metacharacters".to_string()),
@@ -353,8 +392,12 @@ impl InputSanitizer {
         }
 
         let is_valid = violations.is_empty();
-        let risk_level = if is_valid { RiskLevel::Low } else { RiskLevel::Critical };
-        
+        let risk_level = if is_valid {
+            RiskLevel::Low
+        } else {
+            RiskLevel::Critical
+        };
+
         Ok(ValidationResult {
             is_valid,
             sanitized_input: Some(sanitized),
@@ -366,7 +409,7 @@ impl InputSanitizer {
     /// Validate email format
     fn validate_email(&self, input: &str) -> Result<ValidationResult, AppError> {
         let is_valid = self.email_regex.is_match(input);
-        
+
         Ok(ValidationResult {
             is_valid,
             sanitized_input: Some(input.to_string()),
@@ -381,14 +424,18 @@ impl InputSanitizer {
                     suggested_fix: Some("Use format: user@domain.com".to_string()),
                 }]
             },
-            risk_level: if is_valid { RiskLevel::Low } else { RiskLevel::Medium },
+            risk_level: if is_valid {
+                RiskLevel::Low
+            } else {
+                RiskLevel::Medium
+            },
         })
     }
 
     /// Validate URL format
     fn validate_url(&self, input: &str) -> Result<ValidationResult, AppError> {
         let is_valid = self.url_regex.is_match(input);
-        
+
         Ok(ValidationResult {
             is_valid,
             sanitized_input: Some(input.to_string()),
@@ -403,14 +450,18 @@ impl InputSanitizer {
                     suggested_fix: Some("Use format: https://domain.com/path".to_string()),
                 }]
             },
-            risk_level: if is_valid { RiskLevel::Low } else { RiskLevel::Medium },
+            risk_level: if is_valid {
+                RiskLevel::Low
+            } else {
+                RiskLevel::Medium
+            },
         })
     }
 
     /// Validate alphanumeric input
     fn validate_alphanumeric(&self, input: &str) -> Result<ValidationResult, AppError> {
         let is_valid = self.alphanumeric_regex.is_match(input);
-        
+
         Ok(ValidationResult {
             is_valid,
             sanitized_input: Some(input.chars().filter(|c| c.is_alphanumeric()).collect()),
@@ -425,14 +476,18 @@ impl InputSanitizer {
                     suggested_fix: Some("Use only letters and numbers".to_string()),
                 }]
             },
-            risk_level: if is_valid { RiskLevel::Low } else { RiskLevel::Low },
+            risk_level: if is_valid {
+                RiskLevel::Low
+            } else {
+                RiskLevel::Low
+            },
         })
     }
 
     /// Validate numeric input
     fn validate_numeric(&self, input: &str) -> Result<ValidationResult, AppError> {
         let is_valid = self.numeric_regex.is_match(input);
-        
+
         Ok(ValidationResult {
             is_valid,
             sanitized_input: Some(input.chars().filter(|c| c.is_numeric()).collect()),
@@ -447,7 +502,11 @@ impl InputSanitizer {
                     suggested_fix: Some("Use only numbers".to_string()),
                 }]
             },
-            risk_level: if is_valid { RiskLevel::Low } else { RiskLevel::Low },
+            risk_level: if is_valid {
+                RiskLevel::Low
+            } else {
+                RiskLevel::Low
+            },
         })
     }
 
@@ -460,9 +519,9 @@ impl InputSanitizer {
     ) -> Result<ValidationResult, AppError> {
         let regex = Regex::new(pattern)
             .map_err(|e| AppError::ValidationError(format!("Invalid regex pattern: {}", e)))?;
-        
+
         let is_valid = regex.is_match(input);
-        
+
         Ok(ValidationResult {
             is_valid,
             sanitized_input: Some(input.to_string()),
@@ -477,15 +536,24 @@ impl InputSanitizer {
                     suggested_fix: Some(format!("Input must match pattern: {}", pattern)),
                 }]
             },
-            risk_level: if is_valid { RiskLevel::Low } else { RiskLevel::Medium },
+            risk_level: if is_valid {
+                RiskLevel::Low
+            } else {
+                RiskLevel::Medium
+            },
         })
     }
 
     /// Validate input length
-    fn validate_length(&self, input: &str, min: usize, max: usize) -> Result<ValidationResult, AppError> {
+    fn validate_length(
+        &self,
+        input: &str,
+        min: usize,
+        max: usize,
+    ) -> Result<ValidationResult, AppError> {
         let len = input.len();
         let is_valid = len >= min && len <= max;
-        
+
         Ok(ValidationResult {
             is_valid,
             sanitized_input: Some(input.to_string()),
@@ -494,20 +562,30 @@ impl InputSanitizer {
             } else {
                 vec![ValidationViolation {
                     rule: "Length".to_string(),
-                    description: format!("Input length {} is outside allowed range {}-{}", len, min, max),
+                    description: format!(
+                        "Input length {} is outside allowed range {}-{}",
+                        len, min, max
+                    ),
                     severity: ViolationSeverity::Error,
                     position: None,
-                    suggested_fix: Some(format!("Input must be between {} and {} characters", min, max)),
+                    suggested_fix: Some(format!(
+                        "Input must be between {} and {} characters",
+                        min, max
+                    )),
                 }]
             },
-            risk_level: if is_valid { RiskLevel::Low } else { RiskLevel::Medium },
+            risk_level: if is_valid {
+                RiskLevel::Low
+            } else {
+                RiskLevel::Medium
+            },
         })
     }
 
     /// Validate required field
     fn validate_required(&self, input: &str) -> Result<ValidationResult, AppError> {
         let is_valid = !input.trim().is_empty();
-        
+
         Ok(ValidationResult {
             is_valid,
             sanitized_input: Some(input.trim().to_string()),
@@ -522,14 +600,22 @@ impl InputSanitizer {
                     suggested_fix: Some("Provide a non-empty value".to_string()),
                 }]
             },
-            risk_level: if is_valid { RiskLevel::Low } else { RiskLevel::Medium },
+            risk_level: if is_valid {
+                RiskLevel::Low
+            } else {
+                RiskLevel::Medium
+            },
         })
     }
 
     /// Validate whitelist
-    fn validate_whitelist(&self, input: &str, allowed_values: &[String]) -> Result<ValidationResult, AppError> {
+    fn validate_whitelist(
+        &self,
+        input: &str,
+        allowed_values: &[String],
+    ) -> Result<ValidationResult, AppError> {
         let is_valid = allowed_values.contains(&input.to_string());
-        
+
         Ok(ValidationResult {
             is_valid,
             sanitized_input: Some(input.to_string()),
@@ -544,7 +630,11 @@ impl InputSanitizer {
                     suggested_fix: Some(format!("Use one of: {}", allowed_values.join(", "))),
                 }]
             },
-            risk_level: if is_valid { RiskLevel::Low } else { RiskLevel::Medium },
+            risk_level: if is_valid {
+                RiskLevel::Low
+            } else {
+                RiskLevel::Medium
+            },
         })
     }
 
@@ -609,7 +699,7 @@ impl InputSanitizer {
     /// Compile command injection detection patterns
     fn compile_command_patterns() -> Result<Vec<Regex>, AppError> {
         let patterns = vec![
-            r"[;&|`$(){}[\]\\]",
+            r"[;&|`$(){}\[\]\\]",
             r"(?i)\b(rm|del|format|fdisk|mkfs)\b",
             r"(?i)\b(cat|type|more|less)\b\s+/",
             r"(?i)\b(wget|curl|nc|netcat)\b",
@@ -622,7 +712,10 @@ impl InputSanitizer {
             .into_iter()
             .map(|pattern| {
                 Regex::new(pattern).map_err(|e| {
-                    AppError::InternalServerError(format!("Failed to compile command pattern: {}", e))
+                    AppError::InternalServerError(format!(
+                        "Failed to compile command pattern: {}",
+                        e
+                    ))
                 })
             })
             .collect()

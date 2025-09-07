@@ -3,7 +3,7 @@
 //! This module provides middleware for automatic input validation and sanitization
 //! across all API endpoints.
 
-use crate::core::security::input_sanitizer::{InputSanitizer, ValidationRule, ValidationResult};
+use crate::core::security::input_sanitizer::{InputSanitizer, ValidationRule};
 use crate::error::AppError;
 use axum::{
     body::Body,
@@ -262,10 +262,13 @@ impl InputValidationMiddleware {
             Value::Object(obj) => {
                 let mut sanitized_object = serde_json::Map::new();
                 for (key, val) in obj {
-                    // Validate object keys
+                    // Validate object keys - allow alphanumeric plus underscores for API fields
                     let key_rules = vec![
                         ValidationRule::Length { min: 1, max: 100 },
-                        ValidationRule::Alphanumeric,
+                        ValidationRule::CustomRegex {
+                            pattern: r"^[a-zA-Z0-9_]+$".to_string(),
+                            description: "Alphanumeric characters and underscores only".to_string(),
+                        },
                     ];
                     let key_result = self.sanitizer.validate_and_sanitize(key, &key_rules)?;
                     
@@ -297,7 +300,7 @@ impl InputValidationMiddleware {
     fn should_skip_header_validation(&self, header_name: &str) -> bool {
         matches!(
             header_name.to_lowercase().as_str(),
-            "authorization" | "cookie" | "set-cookie" | "content-length" | "content-encoding"
+            "authorization" | "cookie" | "set-cookie" | "content-length" | "content-encoding" | "content-type" | "accept" | "user-agent" | "host" | "connection" | "cache-control" | "accept-encoding" | "accept-language"
         )
     }
 
