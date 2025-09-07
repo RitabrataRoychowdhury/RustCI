@@ -176,18 +176,28 @@ impl PipelineExecutor {
                     // Skip all special handling and just execute as shell
                     self.execute_shell_step(step, workspace, &step_env).await
                 } else {
-                    // For shell steps, check if they need special handling based on name
-                    match step.name.as_str() {
-                        name if name.starts_with("clone") || name.starts_with("checkout") => {
-                            self.execute_repository_step(step, workspace, &step_env)
-                                .await
-                        }
-                        name if name.starts_with("build") || name.starts_with("compile") => {
-                            self.execute_build_step(step, workspace, &step_env).await
-                        }
-                        _ => {
-                            // Regular shell step - don't trigger deployment logic
-                            self.execute_shell_step(step, workspace, &step_env).await
+                    // For shell steps, prioritize actual command/script over name-based detection
+                    if step.config.command.is_some() || step.config.script.is_some() {
+                        // If step has a command or script, execute it as shell regardless of name
+                        info!("🔧 EXECUTOR DEBUG - Shell step has command/script, executing as shell step");
+                        self.execute_shell_step(step, workspace, &step_env).await
+                    } else {
+                        // Only use name-based detection if no command/script is provided
+                        match step.name.as_str() {
+                            name if name.starts_with("clone") || name.starts_with("checkout") => {
+                                info!("🔧 EXECUTOR DEBUG - Detected repository step by name: {}", name);
+                                self.execute_repository_step(step, workspace, &step_env)
+                                    .await
+                            }
+                            name if name.starts_with("build") || name.starts_with("compile") => {
+                                info!("🔧 EXECUTOR DEBUG - Detected build step by name: {}", name);
+                                self.execute_build_step(step, workspace, &step_env).await
+                            }
+                            _ => {
+                                // Regular shell step - don't trigger deployment logic
+                                info!("🔧 EXECUTOR DEBUG - Executing as regular shell step");
+                                self.execute_shell_step(step, workspace, &step_env).await
+                            }
                         }
                     }
                 }
@@ -282,15 +292,15 @@ impl PipelineExecutor {
 
         // Apply environment variable substitution to the command
         let mut command = raw_command.clone();
-        debug!("🔧 Raw command: {}", raw_command);
-        debug!("🔧 Available environment variables: {:?}", env);
+        info!("🔧 EXECUTOR DEBUG - Raw command: {}", raw_command);
+        info!("🔧 EXECUTOR DEBUG - Available environment variables: {:?}", env);
         
         for (key, value) in env {
             let placeholder = format!("${{{}}}", key);
             command = command.replace(&placeholder, value);
         }
 
-        debug!("🔧 Executing: {}", command);
+        info!("🔧 EXECUTOR DEBUG - Final command after substitution: {}", command);
 
         // For Git clone operations, use workspace root; for other operations, use SOURCE_DIR if available
         let working_dir = if command.contains("git clone") {
@@ -306,8 +316,8 @@ impl PipelineExecutor {
                 .unwrap_or_else(|| workspace.path.clone())
         };
 
-        debug!(
-            "🐚 Executing enhanced shell command: {} in directory: {:?}",
+        info!(
+            "🐚 EXECUTOR DEBUG - Executing enhanced shell command: {} in directory: {:?}",
             command, working_dir
         );
 
@@ -319,7 +329,7 @@ impl PipelineExecutor {
                     working_dir.display(), e
                 ))
             })?;
-            info!("📁 Created working directory: {:?}", working_dir);
+            info!("📁 EXECUTOR DEBUG - Created working directory: {:?}", working_dir);
         }
 
         let mut cmd = if cfg!(target_os = "windows") {
@@ -339,21 +349,40 @@ impl PipelineExecutor {
             cmd.env(key, value);
         }
 
+        info!("🚀 EXECUTOR DEBUG - About to execute command with tokio::process::Command");
+        let start_time = std::time::Instant::now();
+        
         let output = cmd.output().await.map_err(|e| {
+            error!("❌ EXECUTOR DEBUG - Failed to execute command: {}", e);
             AppError::InternalServerError(format!("Failed to execute command: {}", e))
         })?;
 
+        let execution_duration = start_time.elapsed();
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         let exit_code = output.status.code().unwrap_or(-1);
 
+        info!("⏱️ EXECUTOR DEBUG - Command execution completed in {:?}", execution_duration);
+        info!("📤 EXECUTOR DEBUG - Exit code: {}", exit_code);
+        info!("📤 EXECUTOR DEBUG - Stdout length: {} bytes", stdout.len());
+        info!("📤 EXECUTOR DEBUG - Stderr length: {} bytes", stderr.len());
+        
+        if !stdout.is_empty() {
+            info!("📤 EXECUTOR DEBUG - Stdout: {}", stdout);
+        }
+        if !stderr.is_empty() {
+            info!("📤 EXECUTOR DEBUG - Stderr: {}", stderr);
+        }
+
         if !output.status.success() {
+            error!("❌ EXECUTOR DEBUG - Command failed with exit code {}: {}", exit_code, stderr);
             return Err(AppError::InternalServerError(format!(
                 "Command failed with exit code {}: {}",
                 exit_code, stderr
             )));
         }
 
+        info!("✅ EXECUTOR DEBUG - Command executed successfully");
         Ok((exit_code, stdout, stderr))
     }
 

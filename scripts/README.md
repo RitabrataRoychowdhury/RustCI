@@ -1,359 +1,185 @@
-# RustCI & Valkyrie Testing Scripts
+# RustCI Scripts Directory
 
-This directory contains comprehensive testing scripts for all RustCI and Valkyrie functionalities. These scripts provide automated testing, performance validation, and security assessment capabilities.
+This directory contains organized scripts for managing and testing RustCI.
 
-## 📋 Available Scripts
+## Directory Structure
 
-### 🚀 Comprehensive Testing
+```
+scripts/
+├── auth/                   # Authentication and token management
+│   ├── get-admin-token.sh     # Get JWT token for API access
+│   └── generate-token.sh      # Generate authentication tokens
+├── runners/                # Runner environment management
+│   ├── setup-dind-environment.sh    # Docker-in-Docker setup
+│   ├── setup-fake-ec2.sh          # Fake EC2 instances for testing
+│   ├── manage-runners.sh           # Check and manage all runners
+│   └── k8s-test-server.sh          # Kubernetes test environment
+├── deployment/             # Deployment testing scripts
+│   ├── quick-deploy-test.sh        # Quick Node.js deployment test
+│   ├── test-nodejs-deployment.sh   # Full Node.js deployment test
+│   ├── deploy.sh                   # General deployment script
+│   └── unified-deployment-test.sh  # Comprehensive deployment tests
+├── testing/                # Testing and validation scripts
+│   ├── test-*.sh                   # Various test scripts
+│   └── validate-*.sh               # Validation scripts
+├── performance/            # Performance testing and benchmarking
+│   ├── performance-*.sh            # Performance test scripts
+│   ├── benchmark-*.sh              # Benchmarking scripts
+│   └── valkyrie-*.sh              # Valkyrie performance tests
+└── maintenance/            # Maintenance and utility scripts
+    ├── cleanup-*.sh                # Cleanup scripts
+    ├── migrate-*.sh                # Migration scripts
+    └── fix-*.sh                    # Fix and repair scripts
+```
 
-#### `test-all-functionalities.sh`
-**Complete system testing script covering all implemented features**
+## Quick Start
 
+### 1. Setup Authentication
 ```bash
-# Run all tests with interactive setup
-./scripts/test-all-functionalities.sh
-
-# Run all tests without authentication
-./scripts/test-all-functionalities.sh --skip-setup
-
-# Test against production server
-./scripts/test-all-functionalities.sh --url https://prod.example.com
-
-# Use specific JWT token
-./scripts/test-all-functionalities.sh --token "eyJ..."
+./auth/get-admin-token.sh
 ```
 
-**Features Tested:**
-- ✅ Error handling system with correlation tracking
-- ✅ Configuration management and hot-reload
-- ✅ Database operations and connection pooling
-- ✅ Performance optimization (auto-scaling, load balancing)
-- ✅ API robustness (versioning, rate limiting, authentication)
-- ✅ Resource management and lifecycle
-- ✅ Deployment capabilities (blue-green, circuit breakers)
-- ✅ Testing framework and quality gates
-- ✅ Valkyrie protocol optimization
-- ✅ Self-healing system
-- ✅ Complete pipeline workflows
-
-### 🔍 Individual Component Testing
-
-#### `test-individual-components.sh`
-**Test specific components in isolation for detailed analysis**
-
+### 2. Setup Runners
 ```bash
-# Test specific component
-./scripts/test-individual-components.sh valkyrie
-./scripts/test-individual-components.sh performance
-./scripts/test-individual-components.sh security
-
-# Test with authentication
-./scripts/test-individual-components.sh --token "eyJ..." api
-
-# Test all components
-./scripts/test-individual-components.sh all
+./runners/manage-runners.sh setup
 ```
 
-**Available Components:**
-- `error-handling` - Error handling system
-- `configuration` - Configuration management
-- `database` - Database operations
-- `performance` - Performance optimization
-- `api` - API robustness
-- `resources` - Resource management
-- `deployment` - Deployment capabilities
-- `valkyrie` - Valkyrie protocol
-- `self-healing` - Self-healing system
-- `testing` - Testing framework
-- `pipeline` - Pipeline workflow
-- `all` - All components
-
-### ⚡ Valkyrie Performance Testing
-
-#### `test-valkyrie-performance.sh`
-**Comprehensive Valkyrie protocol performance validation**
-
+### 3. Test Deployment
 ```bash
-# Run all performance tests
-./scripts/test-valkyrie-performance.sh
-
-# Test specific performance aspect
-./scripts/test-valkyrie-performance.sh latency
-./scripts/test-valkyrie-performance.sh throughput
-
-# Custom configuration
-./scripts/test-valkyrie-performance.sh --iterations 50000 --clients 20 --duration 60
+./deployment/quick-deploy-test.sh
 ```
 
-**Performance Tests:**
-- **Latency Benchmark** - Sub-millisecond validation
-- **Throughput Benchmark** - High-performance validation  
-- **Connection Pool Test** - Scalability validation
-- **Batch Optimization** - Processing efficiency
-- **Memory Efficiency** - Zero-copy validation
+## Common Workflows
 
-**Performance Criteria:**
-- P50 latency < 100μs (Excellent)
-- P95 latency < 300μs (Excellent)
-- P99 latency < 500μs (Excellent)
-- >99.5% sub-millisecond requests
-- >50% very fast (<100μs) requests
-- Throughput >100,000 ops/sec
-
-### 🔒 Security Testing
-
-#### `test-security-features.sh`
-**Comprehensive security assessment and vulnerability testing**
-
+### Full Environment Setup
 ```bash
-# Run all security tests
-./scripts/test-security-features.sh
+# 1. Get authentication token
+./auth/get-admin-token.sh
 
-# Test specific security aspect
-./scripts/test-security-features.sh authentication
-./scripts/test-security-features.sh input-validation
+# 2. Setup all available runners
+./runners/manage-runners.sh setup
 
-# Test against HTTPS endpoint
-./scripts/test-security-features.sh --url https://secure.example.com
+# 3. Check runner status
+./runners/manage-runners.sh status
+
+# 4. Test deployment
+./deployment/quick-deploy-test.sh
 ```
 
-**Security Tests:**
-- **Authentication** - OAuth, JWT, token validation
-- **Input Validation** - SQL injection, XSS, command injection
-- **Rate Limiting** - API throttling and abuse prevention
-- **TLS Security** - HTTPS, certificate validation
-- **Security Headers** - CORS, CSP, security headers
-- **Session Management** - Cookie security, session timeout
-- **API Security** - Method validation, path traversal
-
-### 📊 Existing Scripts (Enhanced)
-
-#### `test-api-endpoints.sh`
-**Enhanced API endpoint testing with comprehensive coverage**
-
-#### `test-pipeline-execution.sh`
-**Complete pipeline lifecycle testing**
-
-#### `valkyrie-test.sh`
-**Valkyrie protocol validation suite**
-
-#### `simple-valkyrie-performance-test.sh`
-**Quick Valkyrie performance validation**
-
-## 🛠️ Usage Examples
-
-### Quick Start Testing
-
+### Troubleshooting
 ```bash
-# 1. Start RustCI server
-cargo run --bin RustAutoDevOps
+# Check runner status
+./runners/manage-runners.sh status
 
-# 2. Run comprehensive tests (in another terminal)
-./scripts/test-all-functionalities.sh
+# Test runner connectivity
+./runners/manage-runners.sh test
 
-# 3. Test Valkyrie performance
-./scripts/test-valkyrie-performance.sh
-
-# 4. Security assessment
-./scripts/test-security-features.sh
+# Run comprehensive tests
+./testing/test-all-functionalities.sh
 ```
 
-### Production Testing
-
+### Performance Testing
 ```bash
-# Test against production environment
-export BASE_URL="https://rustci.production.com"
-export JWT_TOKEN="your-production-jwt-token"
+# Run performance benchmarks
+./performance/performance-comparison.sh
 
-./scripts/test-all-functionalities.sh --skip-setup
-./scripts/test-security-features.sh
-./scripts/test-valkyrie-performance.sh --iterations 100000
+# Test Valkyrie performance
+./performance/valkyrie-test.sh
 ```
 
-### CI/CD Integration
+## Script Categories
 
+### Authentication Scripts (`auth/`)
+- **get-admin-token.sh**: Interactive script to get JWT tokens via OAuth
+- **generate-token.sh**: Generate tokens programmatically
+
+### Runner Scripts (`runners/`)
+- **manage-runners.sh**: Central script to manage all runner types
+- **setup-dind-environment.sh**: Setup Docker-in-Docker for isolated execution
+- **setup-fake-ec2.sh**: Create fake EC2-like instances for testing
+- **k8s-test-server.sh**: Setup Kubernetes test environment
+
+### Deployment Scripts (`deployment/`)
+- **quick-deploy-test.sh**: Fast deployment test for development
+- **test-nodejs-deployment.sh**: Comprehensive Node.js deployment test
+- **deploy.sh**: General deployment script
+- **unified-deployment-test.sh**: Test multiple deployment scenarios
+
+### Testing Scripts (`testing/`)
+- Various test scripts for different components and scenarios
+- Validation scripts for configuration and setup
+
+### Performance Scripts (`performance/`)
+- Performance benchmarking and load testing
+- Valkyrie protocol performance tests
+- System performance analysis
+
+### Maintenance Scripts (`maintenance/`)
+- Cleanup and maintenance utilities
+- Migration scripts for configuration changes
+- Fix scripts for common issues
+
+## Usage Examples
+
+### Check System Status
 ```bash
-# Automated testing in CI pipeline
-./scripts/test-all-functionalities.sh --skip-setup --url http://localhost:8000
-./scripts/test-valkyrie-performance.sh --iterations 10000 --duration 30
-./scripts/test-security-features.sh --url http://localhost:8000
+# Check if RustCI is running
+curl http://localhost:8000/healthchecker
+
+# Check all runners
+./runners/manage-runners.sh status
+
+# Check authentication
+./auth/get-admin-token.sh
 ```
 
-## 📈 Test Output
-
-All scripts generate comprehensive output including:
-
-### 📁 Test Results Directory
-```
-test-results-YYYYMMDD-HHMMSS/
-├── comprehensive_test_report.md     # Main test report
-├── health_check.json               # Server health status
-├── error_handling_test.json        # Error handling results
-├── performance_metrics.json        # Performance data
-├── security_test_report.md         # Security assessment
-├── valkyrie_performance_report.md  # Valkyrie performance
-└── ... (individual test files)
-```
-
-### 📋 Reports Generated
-
-1. **Comprehensive Test Report** - Complete system analysis
-2. **Performance Report** - Valkyrie protocol validation
-3. **Security Report** - Vulnerability assessment
-4. **Individual Component Reports** - Detailed component analysis
-
-## 🔧 Configuration
-
-### Environment Variables
-
+### Run Tests
 ```bash
-# Server configuration
-export BASE_URL="http://localhost:8000"
-export JWT_TOKEN="your-jwt-token"
+# Quick deployment test
+./deployment/quick-deploy-test.sh
 
-# Test configuration
-export VERBOSE=true
-export SKIP_SETUP=true
+# Full test suite
+./testing/test-all-functionalities.sh
 
-# Performance test configuration
-export ITERATIONS=50000
-export CONCURRENT_CLIENTS=20
-export TEST_DURATION=60
+# Performance tests
+./performance/performance-comparison.sh
 ```
 
-### Prerequisites
-
-- **Rust & Cargo** - For compiling performance tests
-- **curl** - For API requests
-- **jq** - For JSON processing (optional but recommended)
-- **Docker** - For containerized testing (optional)
-
-## 🎯 Test Coverage
-
-### Foundation Systems (✅ Completed)
-- Error handling with correlation tracking
-- Configuration validation and hot-reload
-- Database connection pooling and transactions
-- Structured error reporting
-
-### Performance Systems (✅ Completed)
-- Auto-scaling and load balancing
-- Intelligent caching strategies
-- Resource management and quotas
-- Performance monitoring and alerting
-
-### Security & Reliability (✅ Completed)
-- API authentication and rate limiting
-- Circuit breaker patterns
-- Self-healing mechanisms
-- Blue-green deployments
-
-### Valkyrie Protocol (✅ Completed)
-- Sub-millisecond job dispatch
-- Connection pooling optimization
-- SIMD and zero-copy processing
-- Performance metrics collection
-
-### Testing Framework (✅ Completed)
-- Production test suite
-- Integration test manager
-- Performance test runner
-- Security test suite
-- Quality gates and CI integration
-
-## 🚨 Security Testing Features
-
-### Authentication Testing
-- OAuth flow validation
-- JWT token security
-- Invalid token handling
-- Authorization bypass attempts
-
-### Input Validation Testing
-- SQL injection prevention
-- XSS payload sanitization
-- Command injection blocking
-- Oversized payload handling
-
-### API Security Testing
-- HTTP method validation
-- Path traversal prevention
-- API versioning security
-- Rate limiting effectiveness
-
-## ⚡ Performance Validation
-
-### Valkyrie Protocol Claims
-- **Sub-millisecond latency** - P99 < 1ms
-- **High throughput** - >50,000 ops/sec
-- **Zero-copy optimization** - Memory efficiency
-- **Connection pooling** - Resource optimization
-- **Batch processing** - Throughput improvement
-
-### Performance Scoring
-- **90-100**: Outstanding performance
-- **75-89**: Excellent performance
-- **60-74**: Good performance
-- **45-59**: Acceptable performance
-- **<45**: Needs improvement
-
-## 🔄 Continuous Integration
-
-### GitHub Actions Integration
-
-```yaml
-name: RustCI Testing
-on: [push, pull_request]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-      - name: Start RustCI
-        run: cargo run --bin RustAutoDevOps &
-      - name: Run Tests
-        run: |
-          ./scripts/test-all-functionalities.sh --skip-setup
-          ./scripts/test-valkyrie-performance.sh --iterations 10000
-          ./scripts/test-security-features.sh
+### Setup Development Environment
+```bash
+# Complete setup
+./runners/manage-runners.sh setup
+./auth/get-admin-token.sh
+./deployment/quick-deploy-test.sh
 ```
 
-## 📞 Support
+## Prerequisites
 
-For issues or questions about the testing scripts:
+- **Docker**: Required for most runner types and deployment tests
+- **curl**: Required for API interactions
+- **jq**: Required for JSON processing (install with `brew install jq` or `apt install jq`)
+- **RustCI**: Must be running on localhost:8000
 
-1. Check the generated test reports for detailed analysis
-2. Review individual test output files
-3. Ensure all prerequisites are installed
-4. Verify server is running and accessible
-5. Check authentication configuration
+## Environment Variables
 
-## 🎉 Success Criteria
+Some scripts use these environment variables:
+- `RUSTCI_URL`: RustCI server URL (default: http://localhost:8000)
+- `JWT_TOKEN`: Authentication token (usually read from .rustci_token file)
+- `DOCKER_HOST`: Docker daemon host (for remote Docker)
 
-### All Tests Pass ✅
-- Server health check successful
-- Authentication properly configured
-- All API endpoints responding correctly
-- Performance benchmarks meet criteria
-- Security tests show no critical vulnerabilities
-- Valkyrie protocol validates sub-millisecond claims
+## Troubleshooting
 
-### Performance Validation ✅
-- P50 latency < 200μs
-- P95 latency < 500μs
-- P99 latency < 1ms
-- Throughput > 25,000 ops/sec
-- >95% sub-millisecond requests
+### Common Issues
 
-### Security Validation ✅
-- Authentication required for protected endpoints
-- Input validation prevents injection attacks
-- Rate limiting prevents abuse
-- Security headers properly configured
-- Session management secure
+1. **"RustCI not running"**: Start RustCI with `cargo run`
+2. **"No authentication token"**: Run `./auth/get-admin-token.sh`
+3. **"Docker not available"**: Start Docker daemon
+4. **"Permission denied"**: Make scripts executable with `chmod +x script.sh`
 
----
+### Getting Help
 
-**Note:** These scripts test the implemented features based on the completed tasks in `tasks.md`. Some advanced features may require additional configuration or may be placeholders pending full implementation.
+Each script supports `--help` or `-h` flag:
+```bash
+./runners/manage-runners.sh --help
+./deployment/quick-deploy-test.sh --help
+```

@@ -109,7 +109,14 @@ impl ExecutionStrategy for SequentialExecutionStrategy {
         info!(
             execution_id = %context.execution_id,
             strategy = "sequential",
-            "Starting sequential pipeline execution"
+            "🚀 STRATEGY DEBUG - Starting sequential pipeline execution"
+        );
+        
+        info!(
+            execution_id = %context.execution_id,
+            pipeline_name = %context.pipeline.name,
+            stages_count = context.pipeline.stages.len(),
+            "🚀 STRATEGY DEBUG - Pipeline details"
         );
 
         // Create workspace with enhanced context
@@ -144,11 +151,13 @@ impl ExecutionStrategy for SequentialExecutionStrategy {
         let mut artifacts = Vec::new();
 
         // Execute stages sequentially using processed pipeline
-        for stage in &processed_pipeline.stages {
-            debug!(
+        for (stage_index, stage) in processed_pipeline.stages.iter().enumerate() {
+            info!(
                 execution_id = %context.execution_id,
                 stage_name = %stage.name,
-                "Executing stage sequentially"
+                stage_index = stage_index,
+                steps_count = stage.steps.len(),
+                "🔄 STRATEGY DEBUG - Executing stage sequentially"
             );
 
             // Execute stage with workspace context

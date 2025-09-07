@@ -63,7 +63,7 @@ impl CIEngineOrchestrator {
             pipeline_id = %pipeline_id,
             execution_id = %execution_id,
             correlation_id = %correlation_id,
-            "Starting pipeline execution with SAGA orchestration"
+            "🚀 ORCHESTRATOR DEBUG - Starting pipeline execution with SAGA orchestration"
         );
 
         // Get pipeline configuration
@@ -90,10 +90,23 @@ impl CIEngineOrchestrator {
 
         // For now, execute pipeline directly through execution coordinator
         // In a full implementation, we would integrate SAGA steps properly
+        info!(
+            execution_id = %execution_id,
+            "🔄 ORCHESTRATOR DEBUG - About to call execution coordinator"
+        );
+        
+        let coordinator_start_time = std::time::Instant::now();
         let execution_result = self
             .execution_coordinator
             .execute_pipeline(&execution_context)
             .await;
+        let coordinator_duration = coordinator_start_time.elapsed();
+        
+        info!(
+            execution_id = %execution_id,
+            coordinator_duration_ms = coordinator_duration.as_millis(),
+            "⏱️ ORCHESTRATOR DEBUG - Execution coordinator returned"
+        );
 
         // Create SAGA context for potential future rollback support
         let _saga_context = SagaContext::new(execution_id, correlation_id);

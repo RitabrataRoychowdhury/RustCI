@@ -170,7 +170,7 @@ impl ExecutionCoordinator {
             execution_id = %execution_id,
             pipeline_id = %context.pipeline_id,
             correlation_id = %context.correlation_id,
-            "Starting pipeline execution coordination"
+            "🚀 COORDINATOR DEBUG - Starting pipeline execution coordination"
         );
 
         // Set correlation context
@@ -224,7 +224,21 @@ impl ExecutionCoordinator {
         };
 
         // Execute pipeline with selected strategy
+        info!(
+            execution_id = %execution_id,
+            strategy_name = strategy.strategy_name(),
+            "🔄 COORDINATOR DEBUG - About to execute with strategy"
+        );
+        
+        let strategy_start_time = std::time::Instant::now();
         let execution_result = strategy.execute(context).await;
+        let strategy_duration = strategy_start_time.elapsed();
+        
+        info!(
+            execution_id = %execution_id,
+            strategy_duration_ms = strategy_duration.as_millis(),
+            "⏱️ COORDINATOR DEBUG - Strategy execution completed"
+        );
 
         // Unregister from resource manager
         self.resource_manager

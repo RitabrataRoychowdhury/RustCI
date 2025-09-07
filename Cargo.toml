@@ -19,10 +19,17 @@ tokio = { version = "1.45", features = ["full"] }
 
 # Middleware + Layers
 tower = { version = "0.4", features = ["util", "timeout"] }
-tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
+tower-http = { version = "0.5", features = [
+    "cors",
+    "trace",
+    "compression-gzip",
+] }
 
 # HTTP client – Rustls for TLS (musl-compatible)
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.11", default-features = false, features = [
+    "json",
+    "rustls-tls",
+] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -60,7 +67,7 @@ tempfile = "3.20"
 # Configuration and validation
 regex = "1.11"
 tar = "0.4"
-num_cpus = "1.17"  # Used in lockfree implementations
+num_cpus = "1.17" # Used in lockfree implementations
 
 # Kubernetes integration
 kube = { version = "0.87", features = ["runtime", "derive"] }
@@ -69,7 +76,11 @@ k8s-openapi = { version = "0.20", features = ["v1_28"] }
 # Async support & logging
 async-trait = "0.1"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono", "json"] }
+tracing-subscriber = { version = "0.3", features = [
+    "env-filter",
+    "chrono",
+    "json",
+] }
 
 # Observability and metrics
 metrics = "0.21"
@@ -104,7 +115,6 @@ futures-util = "0.3"
 axum-extra = { version = "0.9", features = ["cookie"] }
 
 
-
 # OpenAPI/Swagger documentation
 utoipa = { version = "4.2", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "4.0", features = ["axum"] }
@@ -130,7 +140,7 @@ proptest = "1.4"
 wide = "0.7"
 bytemuck = { version = "1.14", features = ["derive"] }
 memmap2 = "0.9"
-simd-json = "0.13"  # Used in SIMD processor
+simd-json = "0.13"                                     # Used in SIMD processor
 
 # File watching for hot-reload
 notify = "6.1"
@@ -196,9 +206,9 @@ opentelemetry = []
 gzip = []
 
 [profile.release]
-opt-level = 3          # Optimize for speed instead of size
-lto = "thin"           # Use thin LTO for faster builds
-codegen-units = 16     # Increase parallelism for faster builds
+opt-level = 3      # Optimize for speed instead of size
+lto = "thin"       # Use thin LTO for faster builds
+codegen-units = 16 # Increase parallelism for faster builds
 panic = "abort"
 strip = true
 
@@ -206,7 +216,7 @@ strip = true
 [profile.dev]
 opt-level = 0
 debug = true
-split-debuginfo = "unpacked"  # Faster linking on macOS
+split-debuginfo = "unpacked" # Faster linking on macOS
 incremental = true
 
 # Test profile optimizations
