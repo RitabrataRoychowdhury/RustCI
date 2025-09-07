@@ -1,12 +1,14 @@
-# Yggdrasil Cache System — Production-Ready Architecture Brief (AI-First Edition)
+# Yggdrasil Cache System — Production-Ready Architecture Brief (Valkyrie-Integrated Edition)
 
 ## TL;DR Executive Summary
 
-**Yggdrasil** is a distributed, AI-optimized cache delivering DRAM-grade latency (50-200ns hot reads) with rich programmability and cost-efficient durability. Built on shard-per-core architecture with hardware acceleration (FPGA, RDMA, SmartNIC) and native support for large embeddings, vector operations, and model serving workloads.
+**Yggdrasil** is a distributed, high-performance cache system built as a standalone service that integrates seamlessly with Valkyrie's distributed rate limiting and RustCI's caching needs. Delivers sub-microsecond latency (50-200ns hot reads) with Redis-compatible API, hardware acceleration support, and production-ready fallback mechanisms.
 
-**Elevator Pitch**: Redis-compatible cache with 10x lower tail latency for AI workloads through hardware-accelerated admission control, zero-copy streaming, and burst-tolerant QoS.
+**Elevator Pitch**: Standalone cache service with Redis-compatible API that integrates with Valkyrie for distributed rate limiting, delivering 10x lower tail latency through shard-per-core architecture and hardware acceleration.
 
-**One-line Risk**: Requires RDMA-capable hardware and PMem for full performance; software fallbacks increase latency by 2-5x.
+**Integration Strategy**: Built as separate service first, thoroughly tested, then integrated as Valkyrie's cache backend and RustCI's distributed rate limiting system.
+
+**One-line Risk**: Requires careful integration testing with Valkyrie protocol; hardware acceleration optional for initial deployment.
 
 ---
 
@@ -24,9 +26,11 @@
 ```mermaid
 flowchart LR
   %% Client Layer
-  subgraph Client["Client Applications & AI Workloads"]
+  subgraph Client["Client Applications & Integration Points"]
     direction TB
-    Q["Redis/RESP Clients\n• TryConsume (rate limit)\n• Get/Set/Pipeline\n• GET_STREAM for large objects\n• PIN/UNPIN semantics\n• Batch operations for embeddings"]
+    VALKYRIE["Valkyrie Integration\n• TryConsume (rate limit)\n• Distributed token buckets\n• Cross-node coordination\n• QoS enforcement"]
+    RUSTCI["RustCI Integration\n• Pipeline caching\n• Build artifact storage\n• Session management\n• Performance metrics"]
+    REDIS["Redis/RESP Clients\n• Get/Set/Pipeline\n• GET_STREAM for large objects\n• PIN/UNPIN semantics\n• Batch operations"]
   end
 
   %% Frontend & Routing Layer
@@ -121,7 +125,9 @@ flowchart LR
   end
 
   %% Primary Data Flow Connections
-  Q -->|RESP Protocol| RESP
+  VALKYRIE -->|Valkyrie Protocol| RESP
+  RUSTCI -->|HTTP/gRPC API| RESP
+  REDIS -->|RESP Protocol| RESP
   RESP --> Router
   Router -->|Hash routing| Sockets
   Sockets --> S1
