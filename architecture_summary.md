@@ -1,4 +1,4 @@
-# Yggdrasil Cache System — Production-Ready Architecture Brief (Valkyrie-Integrated Edition)
+# Yggdrasil Cache System – Production-Ready Architecture Brief (Valkyrie-Integrated Edition)
 
 ## TL;DR Executive Summary
 
@@ -14,9 +14,9 @@
 
 ## Assumptions & Tradeoffs
 
-- **L0 (core-local DRAM) required for sub-µs decisions** — hot state must fit in allocated DRAM  
-- **Predictive placement and heavy inference run off-FPGA** on CPU/DPU (ms latency budget)  
-- **RDMA and FPGA acceleration are optional** — software fallback exists  
+- **L0 (core-local DRAM) required for sub-µs decisions** – hot state must fit in allocated DRAM
+- **Predictive placement and heavy inference run off-FPGA** on CPU/DPU (ms latency budget)
+- **RDMA and FPGA acceleration are optional** – software fallback exists
 - **Per-user state pinned to cores** for strong per-user consistency; cross-shard ops are eventual or use 2PC
 
 ---
@@ -43,7 +43,7 @@ flowchart LR
   %% Core Node Architecture
   subgraph Node["Yggdrasil Node (Shard-per-core Data Plane)"]
     direction TB
-    
+
     subgraph Hot["Per-Core Shards (Hot Path)"]
       direction LR
       Sockets["Per-Core Accept\n(SO_REUSEPORT)"]
@@ -68,7 +68,7 @@ flowchart LR
 
     subgraph Background["Background Services"]
       direction TB
-      WALAPP["WAL Append Worker\n• Group commits\n• Versioned commit markers\n• Checksums & metadata\n• Quota-limited"]
+      WALAPP["WAL Append Worker\n• Group commits\n• Versioned commit markers\n• Checksums & metadata\n• Quota-limited\n• Backpressure on queue overflow"]
       SNAP["Snapshot Manager\n• Background uploads\n• Incremental sync"]
       COMPACT["Compaction Engine\n• COW segment rotation\n• GC policies"]
       REPAIR["Repair & Verify\n• Checksum validation\n• Slice reconstruction"]
@@ -79,7 +79,7 @@ flowchart LR
   subgraph Replication["Replication & Consistency"]
     direction TB
     POL["Policy Engine\n• Hotness detection\n• RF vs EC mapping\n• Tier placement\n• AI workload prioritization"]
-    REPLICA["Replication Pipeline\n• Per-shard primary semantics\n• RDMA WRITE + CAS atomics\n• WAL ordering coordination\n• Software fallback for non-RDMA"]
+    REPLICA["Replication Pipeline\n• Per-shard primary semantics\n• RDMA WRITE + CAS atomics\n• WAL ordering coordination\n• Software fallback for non-RDMA\n• Primary serves linearizable reads\n• Replicas serve eventual reads (configurable)"]
     NIC["SmartNIC + RDMA\n• One-sided RDMA verbs\n• Hardware acceleration\n• NIC-level caching\n• RDMA atomic operations"]
   end
 
@@ -97,7 +97,7 @@ flowchart LR
     direction TB
     ENCODER["Reed-Solomon Encoder\n• (k,m) parameters\n• Parallel slice creation\n• FPGA offload capable"]
     DECODER["Slice Decoder\n• Reconstruction logic\n• Missing slice repair\n• Hardware acceleration"]
-    OBJMGR["Object Manager\n• Slice metadata (version/checksum)\n• Commit marker tracking\n• Safe partial-write handling"]
+    OBJMGR["Object Manager\n• Slice metadata (version/checksum)\n• Commit marker tracking\n• Safe partial-write handling\n• Invariant: any k-of-(k+m) slices reconstruct full object\n• Partial uploads never advance version"]
   end
 
   %% Hardware Acceleration & Offload
@@ -120,7 +120,7 @@ flowchart LR
   subgraph Control["Control Plane & Observability"]
     direction TB
     METRICS["Metrics Collection\n• Prometheus export\n• Per-shard telemetry\n• Latency histograms"]
-    ADMIN["Admin API\n• Reshard operations (snapshot+WAL stream)\n• Node add/remove with vnode transfer\n• Cluster management\n• Role-based access control"]
+    ADMIN["Admin API\n• Reshard operations (snapshot+WAL stream)\n• Node add/remove with vnode transfer\n• Atomic cutover with rollback path\n• Cluster management\n• Role-based access control"]
     AUDIT["Audit & Security\n• Access logging\n• Wasm signature validation\n• TLS enforcement"]
   end
 
@@ -136,7 +136,7 @@ flowchart LR
   %% Shard to Wasm Integration
   S1 <==> WASM1
   S2 <==> WASMN
-  
+
   %% Wasm to Policy Engine Integration (bidirectional)
   WASM1 <==>|Policy influence| POL
   WASMN <==>|Hotness decisions| POL
@@ -161,7 +161,7 @@ flowchart LR
   PINNING --> HOTDRAM
   VECTOR --> CXL
   QOS --> POL
-  
+
   %% Streaming and Large Object Flows
   S1 --> STREAM
   S2 --> STREAM
@@ -180,7 +180,7 @@ flowchart LR
   %% Background Process Flows
   WALAPP --> Background
   Background --> SNAP
-  Background --> COMPACT  
+  Background --> COMPACT
   Background --> REPAIR
   SNAP --> SNAPSTORE
   REPAIR --> DECODER
@@ -220,7 +220,7 @@ flowchart LR
   PMEM -.->|Fallback| NVME
   CXL -.->|Degraded mode| NVME
   NIC -.->|Software fallback| REPLICA
-  
+
   %% Hardware Fallback Paths
   FPGA -.->|Software fallback| ENCODER
   CXLCHAN -.->|CPU fallback| WARMTIER
@@ -261,19 +261,22 @@ flowchart LR
 
 **CAS + RDMA for global atomicity**
 
-Local atomic operations use hardware CAS for per-core lock-free structures. Cross-node replication and global counters use one-sided RDMA verbs and RDMA atomics (CAS, fetch-and-add) to avoid kernel round trips — with software fallback for non-RDMA environments.
+Local atomic operations use hardware CAS for per-core lock-free structures. Cross-node replication and global counters use one-sided RDMA verbs and RDMA atomics (CAS, fetch-and-add) to avoid kernel round trips – with software fallback for non-RDMA environments.
 
-*Example flow:* Leader issues RDMA WRITE of a log entry to follower log buffer and then an RDMA CAS on the follower's tail pointer to atomically advance the committed tail. If CAS fails, leader retries with updated expected value.
+**Consistency Model**: Each vnode has a primary shard for write ordering; reads default to primary for linearizability, but replicas may serve eventual reads when configured. Per-user state is pinned to cores for strong per-user consistency.
+
+_Example flow:_ Leader issues RDMA WRITE of a log entry to follower log buffer and then an RDMA CAS on the follower's tail pointer to atomically advance the committed tail. If CAS fails, leader retries with updated expected value.
 
 **Security Considerations**: RDMA requires careful permission management and network isolation. Production deployments should use RDMA over Converged Ethernet (RoCE) with proper VLAN segmentation.
 
 ---
 
-## AI Workloads — Requirements & Design Considerations
+## AI Workloads – Requirements & Design Considerations
 
 Yggdrasil targets caching/storage for large-scale AI model serving and training: large-value support (chunking, zero-copy streaming), native vector primitives + ANN hooks, burst-tolerant QoS, and pin/unpin semantics for inference-critical models.
 
 **Key Requirements**:
+
 - **Large Values**: Support for multi-MB embeddings and model weights through chunking
 - **Vector Operations**: Native ANN hooks and batch operations for similarity search
 - **Burst Tolerance**: QoS admission control handles 10x inference spikes without degradation
@@ -284,11 +287,13 @@ Yggdrasil targets caching/storage for large-scale AI model serving and training:
 ## Large-object & Streaming API
 
 **Large-object primitives**
+
 - Chunked values (configurable chunk size, default 64KB)
 - `GET_STREAM(key, offset, length)` for zero-copy streaming into accelerator buffers
 - `PIN(key)` / `UNPIN(key)` to guarantee L0 residency for a TTL
 
 **Rust client example (streaming GET)**
+
 ```rust
 async fn stream_get(client: &YggdrasilClient, key: &str, mut out: impl AsyncWrite) -> Result<(), Error> {
     let mut offset = 0;
@@ -322,14 +327,75 @@ Per-model and per-tenant token-bucket budgets, request prioritization (HIGH/NORM
 
 **Implementation**: Hardware CAS-based token buckets per shard with configurable burst tolerance. During 10x inference spikes, system maintains P99 latency by selectively degrading low-priority requests.
 
+**Backpressure Handling**: If WAL or replication queues exceed thresholds, ingress applies backpressure (reject or rate-limit) to maintain latency SLOs and prevent queue overflow.
+
 **Per-Model Budgets**: Configure separate quotas for different models based on computational cost and business priority.
 
 ---
 
 ## Performance Targets (with Assumptions)
 
-| Operation | P50 Latency | P99 Latency | Assumptions |
-|-----------|-------------|-------------|-------------|
-| Hot GET (DRAM) | 50-200ns | 1-3µs | 80% DRAM hit rate, single-word values |
-| Warm GET (PMem/CXL) | 1-10µs | 50µs | PMem DAX mode, 64B-4KB values |
-| Cold GET (Reconstruct) | 1-10ms | 50ms | k=6,m=3 EC, network
+| Operation              | P50 Latency | P99 Latency | Assumptions                               |
+| ---------------------- | ----------- | ----------- | ----------------------------------------- |
+| Hot GET (DRAM)         | 50-200ns    | 1-3µs       | 80% DRAM hit rate, single-word values     |
+| Hot SET (Fast ACK)     | 200ns-1µs   | 5µs         | WAL append + in-memory, async replication |
+| Hot SET (Semi-Sync)    | 10-50µs     | 200µs       | N-1 replica WAL confirmation              |
+| Hot SET (Sync)         | 100µs-1ms   | 5ms         | Physical persistence confirmation         |
+| Warm GET (PMem/CXL)    | 1-10µs      | 50µs        | PMem DAX mode, 64B-4KB values             |
+| Cold GET (Reconstruct) | 1-10ms      | 50ms        | k=6,m=3 EC, network bandwidth limited     |
+
+---
+
+## Operational Maturity & Reshard Safety
+
+**Reshard Operations**: Atomic cutover using snapshot + WAL stream with coordinated vnode transfer. If resharding cutover fails, routing atomically reverts to source vnodes, preserving service continuity without data loss.
+
+**Rollback Path**: Failed reshard operations maintain source vnode availability throughout the process. Destination vnodes are only activated after full verification of data integrity and replication health.
+
+---
+
+## Deployment & Cost Modes
+
+| Mode              | Storage Tiers        | Performance Profile | Cost Profile  | Use Cases                          |
+| ----------------- | -------------------- | ------------------- | ------------- | ---------------------------------- |
+| **DRAM-Only**     | Hot DRAM only        | P50: 50-200ns       | High $/GB     | Ultra-low latency, small datasets  |
+| **DRAM+PMem**     | Hot DRAM + Warm PMem | P50: 200ns-10µs     | Medium $/GB   | AI inference, large working sets   |
+| **Cold-First EC** | Minimal DRAM + EC    | P50: 1-10ms         | Low $/GB      | Archive, backup, bulk storage      |
+| **Hybrid Tiered** | All tiers active     | Adaptive latency    | Balanced $/GB | Production workloads (recommended) |
+
+**Hardware Acceleration**: All modes support pluggable FPGA and CXL devices with automatic detection and graceful software fallback.
+
+---
+
+## Data Structure Specifications
+
+### WAL Entry Schema
+
+```
+WAL_Entry {
+  key: String,
+  value: ValuePtr | InlineData,
+  seqno: u64,
+  checksum: u32,
+  commit_flag: bool,
+  timestamp: u64,
+  shard_id: u16
+}
+```
+
+### EC Slice Manifest Schema
+
+```
+EC_Slice_Manifest {
+  stripe_id: u128,
+  slice_id: u8,
+  version: u64,
+  checksum: u32,
+  commit_flag: bool,
+  k_param: u8,
+  m_param: u8,
+  object_size: u64
+}
+```
+
+---
