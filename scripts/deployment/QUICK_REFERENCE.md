@@ -44,6 +44,8 @@ rustci run mac-to-windows-pipeline.yaml
 
 # Testing
 ./scripts/deployment/test-cross-platform-setup.sh        # Full test
+./scripts/runners/test-runner-container-connection.sh    # Container connectivity test
+./scripts/runners/test-rustci-runner-integration.sh      # RustCI integration test
 ./scripts/deployment/test-cross-platform-setup.sh ssh    # SSH test only
 ./scripts/deployment/test-cross-platform-setup.sh network # Network test only
 ```

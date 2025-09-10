@@ -41,10 +41,35 @@ scripts/
 
 ### 2. Setup Runners
 ```bash
-./runners/manage-runners.sh setup
+# Check current runner status
+./runners/manage-runners.sh status
+
+# Setup basic DIND environment
+./runners/setup-dind-environment.sh start
+
+# Simple DIND deployment (works with existing cargo run server)
+./runners/simple-dind-fake-deployment.sh deploy
+
+# Setup comprehensive server-runner simulation
+./runners/dind-server-runner-simulation.sh start
+
+# Setup DIND to fake server deployment (full simulation)
+./runners/dind-to-fake-server-setup.sh setup
 ```
 
-### 3. Test Deployment
+### 3. Test Runners
+```bash
+# Run comprehensive runner tests
+./runners/comprehensive-runner-test.sh
+
+# Test DIND to fake server deployment
+./runners/test-dind-fake-deployment.sh
+
+# Test specific runner integration
+./runners/test-rustci-runner-integration.sh
+```
+
+### 4. Test Deployment
 ```bash
 ./deployment/quick-deploy-test.sh
 ```
@@ -96,6 +121,14 @@ scripts/
 ### Runner Scripts (`runners/`)
 - **manage-runners.sh**: Central script to manage all runner types
 - **setup-dind-environment.sh**: Setup Docker-in-Docker for isolated execution
+- **dind-server-runner-simulation.sh**: Complete server-runner simulation environment
+- **dind-to-fake-server-setup.sh**: Complete DIND to fake server deployment setup
+- **simple-dind-fake-deployment.sh**: Simple DIND deployment (works with cargo run)
+- **comprehensive-runner-test.sh**: Comprehensive testing of all runner types
+- **test-dind-fake-deployment.sh**: Test DIND to fake server deployment
+- **mac-dind-runner.sh**: Mac-specific DIND runner for cross-platform testing
+- **test-rustci-runner-integration.sh**: Integration testing for runners
+- **test-runner-container-connection.sh**: Container connectivity testing
 - **setup-fake-ec2.sh**: Create fake EC2-like instances for testing
 - **k8s-test-server.sh**: Setup Kubernetes test environment
 
