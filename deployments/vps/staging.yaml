@@ -1,0 +1,86 @@
+name: "RustCI VPS Staging Deployment"
+description: "Deploy RustCI and Valkyrie to staging environment with rolling strategy"
+
+# VPS Configuration (using same VPS with different ports for staging)
+vps_config:
+  hostname: "ubuntu-ritabrata11092025"
+  ip: "46.37.122.118"
+  username: "root"
+  password: "Bs4g>^W36(|&D]3"
+  ssh_port: 22
+
+triggers:
+  - trigger_type: manual
+    config: {}
+  - trigger_type: webhook
+    config:
+      path: "/deploy/staging"
+
+stages:
+  - name: "Pre-deployment"
+    jobs:
+      - name: "environment-setup"
+        runner: "native"
+        steps:
+          - name: "validate-vps-connection"
+            run: |
+              echo "🔍 Validating VPS connection for staging..."
+              sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                ${VPS_USERNAME}@${VPS_IP} "echo 'Staging VPS connection successful'"
+
+  - name: "Build"
+    jobs:
+      - name: "build-staging"
+        runner: "docker"
+        steps:
+          - name: "build-images"
+            run: |
+              echo "🔨 Building staging images..."
+              git clone https://github.com/RitabrataRoychowdhury/RustCI.git rustci-staging
+              cd rustci-staging
+              docker build -t rustci:staging .
+              docker tag rustci:staging valkyrie:staging
+
+  - name: "Deploy"
+    jobs:
+      - name: "rolling-deployment"
+        runner: "native"
+        steps:
+          - name: "deploy-staging"
+            run: |
+              echo "🚀 Deploying to staging environment..."
+              docker save rustci:staging | gzip | \
+                sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} \
+                "gunzip | docker load"
+              
+              sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} "
+                # Stop existing staging containers
+                docker stop rustci-staging valkyrie-staging 2>/dev/null || true
+                docker rm rustci-staging valkyrie-staging 2>/dev/null || true
+                
+                # Deploy staging containers
+                docker run -d --name rustci-staging \
+                  -p 8082:8000 \
+                  -e MONGODB_URI='${MONGODB_URI}' \
+                  -e MONGODB_DATABASE='${MONGODB_DATABASE}_staging' \
+                  -e JWT_SECRET='${JWT_SECRET}' \
+                  -e RUST_ENV=staging \
+                  -e RUST_LOG=debug \
+                  rustci:staging
+                
+                docker run -d --name valkyrie-staging \
+                  -p 9092:9090 \
+                  -e VALKYRIE_ENV=staging \
+                  valkyrie:staging
+              "
+
+environment:
+  VPS_IP: "46.37.122.118"
+  VPS_USERNAME: "root"
+  VPS_PASSWORD: "Bs4g>^W36(|&D]3"
+  MONGODB_URI: "mongodb+srv://ritabrataroychowdhury2002:Physics676@cluster0.uyzku.mongodb.net/dqms?retryWrites=true&w=majority"
+  MONGODB_DATABASE: "dqms"
+  JWT_SECRET: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+
+timeout: 1800
+retry_count: 1

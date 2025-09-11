@@ -1,0 +1,74 @@
+name: "RustCI VPS Development Deployment"
+description: "Deploy RustCI and Valkyrie to development environment with recreate strategy"
+
+# VPS Configuration (using same VPS with different ports for development)
+vps_config:
+  hostname: "ubuntu-ritabrata11092025"
+  ip: "46.37.122.118"
+  username: "root"
+  password: "Bs4g>^W36(|&D]3"
+  ssh_port: 22
+
+triggers:
+  - trigger_type: manual
+    config: {}
+  - trigger_type: push
+    config:
+      branch: "develop"
+
+stages:
+  - name: "Build and Deploy"
+    jobs:
+      - name: "simple-deployment"
+        runner: "native"
+        steps:
+          - name: "build-and-deploy"
+            run: |
+              echo "🔨 Building and deploying development version..."
+              git clone https://github.com/RitabrataRoychowdhury/RustCI.git rustci-dev
+              cd rustci-dev
+              docker build -t rustci:dev .
+              
+              # Transfer and deploy
+              docker save rustci:dev | gzip | \
+                sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} \
+                "gunzip | docker load"
+              
+              sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} "
+                # Stop and remove existing dev containers
+                docker stop rustci-dev valkyrie-dev 2>/dev/null || true
+                docker rm rustci-dev valkyrie-dev 2>/dev/null || true
+                
+                # Deploy development containers
+                docker run -d --name rustci-dev \
+                  -p 8083:8000 \
+                  -e MONGODB_URI='${MONGODB_URI}' \
+                  -e MONGODB_DATABASE='${MONGODB_DATABASE}_dev' \
+                  -e JWT_SECRET='${JWT_SECRET}' \
+                  -e RUST_ENV=development \
+                  -e RUST_LOG=debug \
+                  -e ENABLE_METRICS=false \
+                  rustci:dev
+                
+                docker run -d --name valkyrie-dev \
+                  -p 9093:9090 \
+                  -e VALKYRIE_ENV=development \
+                  rustci:dev
+              "
+              
+          - name: "quick-health-check"
+            run: |
+              echo "🏥 Quick health check..."
+              sleep 20
+              curl -f http://${VPS_IP}:8083/api/healthchecker || echo "Development deployment may need more time to start"
+
+environment:
+  VPS_IP: "46.37.122.118"
+  VPS_USERNAME: "root"
+  VPS_PASSWORD: "Bs4g>^W36(|&D]3"
+  MONGODB_URI: "mongodb+srv://ritabrataroychowdhury2002:Physics676@cluster0.uyzku.mongodb.net/dqms?retryWrites=true&w=majority"
+  MONGODB_DATABASE: "dqms"
+  JWT_SECRET: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+
+timeout: 1200
+retry_count: 0

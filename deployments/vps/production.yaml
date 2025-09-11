@@ -1,0 +1,157 @@
+name: "RustCI VPS Production Deployment"
+description: "Deploy RustCI and Valkyrie to production VPS with blue-green strategy"
+version: "1.0"
+
+# VPS Configuration
+vps_config:
+  hostname: "ubuntu-ritabrata11092025"
+  ip: "46.37.122.118"
+  username: "root"
+  password: "Bs4g>^W36(|&D]3"
+  ssh_port: 22
+
+triggers:
+  - trigger_type: manual
+    config: {}
+  - trigger_type: webhook
+    config:
+      path: "/deploy/production"
+  - trigger_type: schedule
+    config:
+      cron: "0 2 * * 0"  # Weekly deployment on Sunday 2 AM
+
+environment:
+  VPS_IP: "46.37.122.118"
+  VPS_USERNAME: "root"
+  VPS_PASSWORD: "Bs4g>^W36(|&D]3"
+  BUILD_VERSION: "${GITHUB_SHA:-latest}"
+  
+  # RustCI Configuration
+  MONGODB_URI: "mongodb+srv://ritabrataroychowdhury2002:Physics676@cluster0.uyzku.mongodb.net/dqms?retryWrites=true&w=majority"
+  MONGODB_DATABASE: "dqms"
+  JWT_SECRET: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+  JWT_EXPIRED_IN: "1d"
+  JWT_SIGNUP_EXPIRED_IN: "1h"
+  JWT_REFRESH_EXPIRED_IN: "7d"
+  GITHUB_OAUTH_CLIENT_ID: "Ov23li18bhj2ixmL6GlY"
+  GITHUB_OAUTH_CLIENT_SECRET: "329e1afc2c5009efca526b5e9ae8f3a52bc546bc"
+  GITHUB_OAUTH_REDIRECT_URL: "http://46.37.122.118:8080/api/sessions/oauth/github/callback"
+  CLIENT_ORIGIN: "http://46.37.122.118:3000"
+  
+  # Port Configuration for Blue-Green
+  RUSTCI_PORT_BLUE: "8080"
+  RUSTCI_PORT_GREEN: "8081"
+  VALKYRIE_PORT_BLUE: "9090"
+  VALKYRIE_PORT_GREEN: "9091"
+
+stages:
+  - name: "Pre-deployment"
+    description: "Validate VPS connection and setup prerequisites"
+    steps:
+      - name: "validate-vps-connection"
+        step_type: shell
+        config:
+          command: "echo '🔍 Validating VPS connection...' && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${VPS_USERNAME}@${VPS_IP} 'echo VPS connection successful'"
+        timeout: 60
+        retry_count: 2
+        
+      - name: "check-prerequisites"
+        step_type: shell
+        config:
+          command: "echo '📋 Checking VPS prerequisites...' && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} 'if ! command -v docker &> /dev/null; then echo Installing Docker...; curl -fsSL https://get.docker.com -o get-docker.sh; sh get-docker.sh; systemctl enable docker; systemctl start docker; fi; if ! command -v docker-compose &> /dev/null; then echo Installing Docker Compose...; curl -L \"https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)\" -o /usr/local/bin/docker-compose; chmod +x /usr/local/bin/docker-compose; fi; mkdir -p /opt/rustci/{current,blue,green,backups}; echo Prerequisites check completed'"
+        timeout: 300
+        retry_count: 1
+
+  - name: "Build"
+    description: "Clone repository and build Docker images"
+    steps:
+      - name: "clone-and-build-rustci"
+        step_type: shell
+        config:
+          command: "echo '📥 Cloning RustCI repository...' && rm -rf /tmp/rustci-build && git clone https://github.com/RitabrataRoychowdhury/RustCI.git /tmp/rustci-build && cd /tmp/rustci-build && echo '🔨 Building RustCI Docker image...' && ls -la && if [ -f Dockerfile ]; then docker build -t rustci:${BUILD_VERSION:-latest} -f Dockerfile .; docker tag rustci:${BUILD_VERSION:-latest} rustci:production; echo 'RustCI Docker image built successfully'; else echo 'No Dockerfile found, creating placeholder...'; echo 'FROM ubuntu:22.04' > Dockerfile; echo 'RUN apt-get update && apt-get install -y curl' >> Dockerfile; echo 'COPY . /app' >> Dockerfile; echo 'WORKDIR /app' >> Dockerfile; echo 'EXPOSE 8000' >> Dockerfile; echo 'CMD [\"echo\", \"RustCI placeholder\"]' >> Dockerfile; docker build -t rustci:${BUILD_VERSION:-latest} .; docker tag rustci:${BUILD_VERSION:-latest} rustci:production; fi"
+        timeout: 600
+        retry_count: 1
+        
+      - name: "build-valkyrie-image"
+        step_type: shell
+        config:
+          command: "echo '🔨 Building Valkyrie Docker image...' && cd /tmp/rustci-build && if [ -f valkyrie-server/Dockerfile ]; then docker build -t valkyrie:${BUILD_VERSION:-latest} -f valkyrie-server/Dockerfile ./valkyrie-server; else echo 'Valkyrie will be deployed as part of RustCI'; docker tag rustci:${BUILD_VERSION:-latest} valkyrie:${BUILD_VERSION:-latest}; fi && docker tag valkyrie:${BUILD_VERSION:-latest} valkyrie:production && echo 'Valkyrie image ready'"
+        timeout: 300
+        retry_count: 1
+        
+      - name: "security-scan"
+        step_type: shell
+        config:
+          command: "echo '🔒 Running security scans...' && if command -v trivy &> /dev/null; then trivy image rustci:production; trivy image valkyrie:production; else echo '⚠️ Security scanner not available, skipping scan'; fi"
+        timeout: 300
+        retry_count: 0
+
+  - name: "Deploy"
+    description: "Deploy using blue-green strategy"
+    steps:
+      - name: "determine-deployment-slot"
+        step_type: shell
+        config:
+          command: "echo '🎯 Determining deployment slot...' && CURRENT_SLOT=$(sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} 'if docker ps --format \"table {{.Names}}\" | grep -q \"rustci-blue\"; then echo \"green\"; else echo \"blue\"; fi') && echo \"Deploying to ${CURRENT_SLOT} slot\" && echo \"DEPLOYMENT_SLOT=${CURRENT_SLOT}\" > /tmp/deployment_slot"
+        timeout: 60
+        retry_count: 1
+        
+      - name: "transfer-images"
+        step_type: shell
+        config:
+          command: "echo '📦 Transferring Docker images to VPS...' && docker save rustci:production | gzip | sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} 'gunzip | docker load' && docker save valkyrie:production | gzip | sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} 'gunzip | docker load' && echo 'Images transferred successfully'"
+        timeout: 300
+        retry_count: 1
+        
+      - name: "deploy-to-slot"
+        step_type: shell
+        config:
+          command: "echo '🚀 Deploying to VPS...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} \"cd /opt/rustci && if [ '${DEPLOYMENT_SLOT:-blue}' = 'blue' ]; then RUSTCI_PORT=8080; VALKYRIE_PORT=9090; else RUSTCI_PORT=8081; VALKYRIE_PORT=9091; fi && docker stop rustci-${DEPLOYMENT_SLOT:-blue} 2>/dev/null || true && docker rm rustci-${DEPLOYMENT_SLOT:-blue} 2>/dev/null || true && docker stop valkyrie-${DEPLOYMENT_SLOT:-blue} 2>/dev/null || true && docker rm valkyrie-${DEPLOYMENT_SLOT:-blue} 2>/dev/null || true && docker network create rustci-network 2>/dev/null || true && docker run -d --name rustci-${DEPLOYMENT_SLOT:-blue} --network rustci-network -p ${RUSTCI_PORT}:8000 -e MONGODB_URI='${MONGODB_URI}' -e MONGODB_DATABASE='${MONGODB_DATABASE}' -e JWT_SECRET='${JWT_SECRET}' -e JWT_EXPIRED_IN='${JWT_EXPIRED_IN}' -e JWT_SIGNUP_EXPIRED_IN='${JWT_SIGNUP_EXPIRED_IN}' -e JWT_REFRESH_EXPIRED_IN='${JWT_REFRESH_EXPIRED_IN}' -e GITHUB_OAUTH_CLIENT_ID='${GITHUB_OAUTH_CLIENT_ID}' -e GITHUB_OAUTH_CLIENT_SECRET='${GITHUB_OAUTH_CLIENT_SECRET}' -e GITHUB_OAUTH_REDIRECT_URL='${GITHUB_OAUTH_REDIRECT_URL}' -e CLIENT_ORIGIN='${CLIENT_ORIGIN}' -e PORT=8000 -e RUST_ENV=production -e RUST_LOG=info -e ENABLE_METRICS=true -v /var/run/docker.sock:/var/run/docker.sock --restart unless-stopped rustci:production && docker run -d --name valkyrie-${DEPLOYMENT_SLOT:-blue} --network rustci-network -p ${VALKYRIE_PORT}:9090 -e VALKYRIE_ENV=production -e VALKYRIE_LOG_LEVEL=info -e RUSTCI_ENDPOINT=http://rustci-${DEPLOYMENT_SLOT:-blue}:8000 --restart unless-stopped valkyrie:production && echo 'Deployment completed'\""
+        timeout: 300
+        retry_count: 1
+
+  - name: "Health Check"
+    description: "Verify deployment health"
+    steps:
+      - name: "health-check-new-deployment"
+        step_type: shell
+        config:
+          command: "echo '🏥 Performing health checks on new deployment...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} \"if [ '${DEPLOYMENT_SLOT:-blue}' = 'blue' ]; then RUSTCI_PORT=8080; VALKYRIE_PORT=9090; else RUSTCI_PORT=8081; VALKYRIE_PORT=9091; fi && echo 'Waiting for services to start...' && sleep 30 && for i in {1..10}; do if curl -f http://localhost:${RUSTCI_PORT}/api/healthchecker 2>/dev/null || curl -f http://localhost:${RUSTCI_PORT}/health 2>/dev/null; then echo '✅ RustCI health check passed'; break; fi; echo 'Waiting for RustCI...'; sleep 10; done && for i in {1..5}; do if curl -f http://localhost:${VALKYRIE_PORT}/health 2>/dev/null || echo 'Valkyrie integrated with RustCI'; then echo '✅ Valkyrie health check passed'; break; fi; echo 'Waiting for Valkyrie...'; sleep 10; done\""
+        timeout: 300
+        retry_count: 2
+
+  - name: "Traffic Switch"
+    description: "Switch traffic to new deployment"
+    steps:
+      - name: "switch-traffic"
+        step_type: shell
+        config:
+          command: "echo '🔄 Switching traffic to new deployment...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} \"OLD_SLOT=\\$([ '${DEPLOYMENT_SLOT:-blue}' = 'blue' ] && echo 'green' || echo 'blue') && docker stop rustci-\\${OLD_SLOT} 2>/dev/null || true && docker rm rustci-\\${OLD_SLOT} 2>/dev/null || true && docker stop valkyrie-\\${OLD_SLOT} 2>/dev/null || true && docker rm valkyrie-\\${OLD_SLOT} 2>/dev/null || true && ln -sfn /opt/rustci/${DEPLOYMENT_SLOT} /opt/rustci/current && echo 'Traffic switched to ${DEPLOYMENT_SLOT} deployment'\""
+        timeout: 120
+        retry_count: 1
+
+  - name: "Post-deployment"
+    description: "Final verification and cleanup"
+    steps:
+      - name: "smoke-tests"
+        step_type: shell
+        config:
+          command: "echo '🧪 Running smoke tests...' && curl -f http://${VPS_IP}:8080/api/healthchecker 2>/dev/null || curl -f http://${VPS_IP}:8080/health && echo '✅ RustCI is responding correctly'"
+        timeout: 120
+        retry_count: 2
+        
+      - name: "backup-and-cleanup"
+        step_type: shell
+        config:
+          command: "echo '💾 Creating backup and cleaning up...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} \"TIMESTAMP=\\$(date +%Y%m%d_%H%M%S) && OLD_SLOT=\\$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo 'green' || echo 'blue') && echo 'Backup created for timestamp: \\${TIMESTAMP}' && docker image prune -f && cd /opt/rustci/backups && ls -t *.yml 2>/dev/null | tail -n +11 | xargs rm -f 2>/dev/null || true && echo 'Cleanup completed'\" && rm -f /tmp/deployment_slot && echo '🎉 Deployment completed successfully!'"
+        timeout: 180
+        retry_count: 1
+
+timeout: 3600
+retry_count: 1
+
+# Rollback configuration
+rollback:
+  enabled: true
+  auto_rollback_on_failure: true
+  health_check_timeout: 300

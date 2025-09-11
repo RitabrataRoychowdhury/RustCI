@@ -1,0 +1,86 @@
+name: "Rolling Deployment Strategy"
+description: "Gradual instance replacement with zero downtime"
+
+strategy:
+  type: "rolling"
+  config:
+    # Rolling deployment configuration
+    max_unavailable: 1
+    max_surge: 1
+    batch_size: 2
+    health_check_timeout: 180
+    rollback_on_failure: true
+    pause_between_batches: 30
+
+stages:
+  - name: "Pre-deployment"
+    jobs:
+      - name: "prepare-rolling"
+        runner: "native"
+        steps:
+          - name: "get-current-instances"
+            run: |
+              echo "📊 Getting current running instances..."
+              # Get list of current running instances
+              CURRENT_INSTANCES=$(curl -s http://${TARGET_HOST}/api/instances | jq -r '.instances[]')
+              echo "CURRENT_INSTANCES=${CURRENT_INSTANCES}" >> $GITHUB_ENV
+              
+          - name: "calculate-batches"
+            run: |
+              echo "🧮 Calculating deployment batches..."
+              # Calculate how many batches needed based on batch_size
+              TOTAL_INSTANCES=$(echo "${CURRENT_INSTANCES}" | wc -l)
+              BATCHES=$(( (TOTAL_INSTANCES + BATCH_SIZE - 1) / BATCH_SIZE ))
+              echo "BATCHES=${BATCHES}" >> $GITHUB_ENV
+              echo "Total instances: ${TOTAL_INSTANCES}, Batches: ${BATCHES}"
+
+  - name: "Rolling Deploy"
+    jobs:
+      - name: "deploy-batches"
+        runner: "native"
+        steps:
+          - name: "deploy-batch"
+            run: |
+              echo "🔄 Starting rolling deployment..."
+              for batch in $(seq 1 ${BATCHES}); do
+                echo "📦 Deploying batch ${batch}/${BATCHES}..."
+                
+                # Deploy new instances for this batch
+                # This should be customized for your infrastructure
+                
+                # Health check new instances
+                echo "🏥 Health checking batch ${batch}..."
+                # Add health check logic
+                
+                # Remove old instances from this batch
+                echo "🗑️ Removing old instances from batch ${batch}..."
+                # Add cleanup logic
+                
+                # Pause between batches
+                if [ ${batch} -lt ${BATCHES} ]; then
+                  echo "⏸️ Pausing ${PAUSE_BETWEEN_BATCHES}s before next batch..."
+                  sleep ${PAUSE_BETWEEN_BATCHES}
+                fi
+              done
+              
+          - name: "verify-deployment"
+            run: |
+              echo "✅ Verifying rolling deployment..."
+              # Verify all instances are healthy and running new version
+              
+  - name: "Post-deployment"
+    jobs:
+      - name: "cleanup"
+        runner: "native"
+        steps:
+          - name: "final-cleanup"
+            run: |
+              echo "🧹 Final cleanup after rolling deployment..."
+              # Clean up any remaining old resources
+
+environment:
+  STRATEGY_TYPE: "rolling"
+  BATCH_SIZE: 2
+  MAX_UNAVAILABLE: 1
+  MAX_SURGE: 1
+  PAUSE_BETWEEN_BATCHES: 30

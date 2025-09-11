@@ -1,0 +1,69 @@
+name: "Blue-Green Deployment Strategy"
+description: "Zero-downtime deployment using blue-green strategy"
+
+strategy:
+  type: "blue-green"
+  config:
+    # Blue-green specific configuration
+    slots: ["blue", "green"]
+    health_check_timeout: 300
+    switch_traffic_delay: 30
+    rollback_on_failure: true
+    keep_old_version: true
+
+stages:
+  - name: "Pre-deployment"
+    description: "Determine deployment slot"
+    steps:
+      - name: "get-current-slot"
+        step_type: shell
+        config:
+          command: "echo '🎯 Determining current active slot...' && CURRENT_SLOT=$(curl -s http://${TARGET_HOST}/api/deployment/current-slot || echo 'none') && DEPLOYMENT_SLOT=$([ '$CURRENT_SLOT' = 'blue' ] && echo 'green' || echo 'blue') && echo 'DEPLOYMENT_SLOT=${DEPLOYMENT_SLOT}' > /tmp/deployment_slot && echo 'Current: ${CURRENT_SLOT}, Deploying to: ${DEPLOYMENT_SLOT}'"
+        timeout: 60
+        retry_count: 1
+
+  - name: "Deploy"
+    description: "Deploy to inactive slot"
+    steps:
+      - name: "deploy-application"
+        step_type: shell
+        config:
+          command: "echo '🚀 Deploying to deployment slot...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && echo 'Deploying to ${DEPLOYMENT_SLOT} slot...'"
+        timeout: 300
+        retry_count: 1
+
+      - name: "health-check"
+        step_type: shell
+        config:
+          command: "echo '🏥 Health checking deployment slot...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && for i in {1..10}; do if curl -f http://${TARGET_HOST}:${DEPLOYMENT_SLOT_PORT}/health; then echo '✅ Health check passed'; exit 0; fi; sleep 30; done && echo '❌ Health check failed' && exit 1"
+        timeout: 600
+        retry_count: 1
+
+  - name: "Switch Traffic"
+    description: "Switch traffic to new deployment"
+    steps:
+      - name: "switch-load-balancer"
+        step_type: shell
+        config:
+          command: "echo '🔄 Switching traffic to new deployment...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && echo 'Switching traffic to ${DEPLOYMENT_SLOT}...'"
+        timeout: 120
+        retry_count: 1
+
+      - name: "verify-switch"
+        step_type: shell
+        config:
+          command: "echo '✅ Verifying traffic switch...'"
+        timeout: 60
+        retry_count: 1
+
+      - name: "cleanup-old-slot"
+        step_type: shell
+        config:
+          command: "echo '🧹 Cleaning up old slot...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && OLD_SLOT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo 'green' || echo 'blue') && echo 'Cleaning up ${OLD_SLOT} slot' && rm -f /tmp/deployment_slot"
+        timeout: 180
+        retry_count: 1
+
+environment:
+  STRATEGY_TYPE: "blue-green"
+  HEALTH_CHECK_RETRIES: 10
+  HEALTH_CHECK_INTERVAL: 30

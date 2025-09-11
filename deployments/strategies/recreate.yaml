@@ -1,0 +1,92 @@
+name: "Recreate Deployment Strategy"
+description: "Simple stop-and-start deployment with brief downtime"
+
+strategy:
+  type: "recreate"
+  config:
+    # Recreate deployment configuration
+    stop_timeout: 30
+    start_timeout: 300
+    health_check_timeout: 180
+    backup_before_deploy: true
+    rollback_on_failure: true
+
+stages:
+  - name: "Pre-deployment"
+    jobs:
+      - name: "prepare-recreate"
+        runner: "native"
+        steps:
+          - name: "backup-current"
+            run: |
+              echo "💾 Creating backup of current deployment..."
+              TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+              # Create backup of current deployment
+              # This should be customized based on your backup strategy
+              
+          - name: "prepare-new-version"
+            run: |
+              echo "📦 Preparing new version for deployment..."
+              # Prepare new version (build, test, etc.)
+
+  - name: "Deploy"
+    jobs:
+      - name: "stop-and-start"
+        runner: "native"
+        steps:
+          - name: "stop-current"
+            run: |
+              echo "🛑 Stopping current deployment..."
+              # Stop current running instances
+              # Add graceful shutdown logic with timeout
+              
+              # Wait for graceful shutdown
+              echo "⏱️ Waiting for graceful shutdown..."
+              sleep ${STOP_TIMEOUT}
+              
+          - name: "deploy-new-version"
+            run: |
+              echo "🚀 Deploying new version..."
+              # Deploy new version
+              # This should be customized for your deployment method
+              
+          - name: "start-new-version"
+            run: |
+              echo "▶️ Starting new version..."
+              # Start new deployment
+              
+          - name: "health-check"
+            run: |
+              echo "🏥 Performing health check..."
+              for i in {1..10}; do
+                if curl -f http://${TARGET_HOST}/health; then
+                  echo "✅ Health check passed"
+                  exit 0
+                fi
+                echo "⏳ Waiting for application to start..."
+                sleep 18
+              done
+              echo "❌ Health check failed"
+              exit 1
+
+  - name: "Post-deployment"
+    jobs:
+      - name: "verify-and-cleanup"
+        runner: "native"
+        steps:
+          - name: "verify-deployment"
+            run: |
+              echo "✅ Verifying new deployment..."
+              # Run smoke tests or verification checks
+              
+          - name: "cleanup-old-resources"
+            run: |
+              echo "🧹 Cleaning up old resources..."
+              # Clean up old deployment artifacts
+              # Keep backups for rollback capability
+
+environment:
+  STRATEGY_TYPE: "recreate"
+  STOP_TIMEOUT: 30
+  START_TIMEOUT: 300
+  HEALTH_CHECK_TIMEOUT: 180
