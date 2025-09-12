@@ -58,29 +58,101 @@ stages:
                 docker stop rustci-staging valkyrie-staging 2>/dev/null || true
                 docker rm rustci-staging valkyrie-staging 2>/dev/null || true
                 
-                # Deploy staging containers
+                # Deploy staging containers with consistent environment variables
                 docker run -d --name rustci-staging \
-                  -p 8082:8000 \
+                  -p ${RUSTCI_PORT}:8000 \
                   -e MONGODB_URI='${MONGODB_URI}' \
-                  -e MONGODB_DATABASE='${MONGODB_DATABASE}_staging' \
+                  -e MONGODB_DATABASE='${MONGODB_DATABASE}' \
                   -e JWT_SECRET='${JWT_SECRET}' \
-                  -e RUST_ENV=staging \
-                  -e RUST_LOG=debug \
+                  -e JWT_EXPIRED_IN='${JWT_EXPIRED_IN}' \
+                  -e JWT_SIGNUP_EXPIRED_IN='${JWT_SIGNUP_EXPIRED_IN}' \
+                  -e JWT_REFRESH_EXPIRED_IN='${JWT_REFRESH_EXPIRED_IN}' \
+                  -e GITHUB_OAUTH_CLIENT_ID='${GITHUB_OAUTH_CLIENT_ID}' \
+                  -e GITHUB_OAUTH_CLIENT_SECRET='${GITHUB_OAUTH_CLIENT_SECRET}' \
+                  -e GITHUB_OAUTH_REDIRECT_URL='${GITHUB_OAUTH_REDIRECT_URL}' \
+                  -e CLIENT_ORIGIN='${CLIENT_ORIGIN}' \
+                  -e PORT='${PORT}' \
+                  -e RUST_ENV='${RUST_ENV}' \
+                  -e RUST_LOG='${RUST_LOG}' \
+                  -e ENABLE_METRICS='${ENABLE_METRICS}' \
+                  --restart unless-stopped \
                   rustci:staging
                 
-                docker run -d --name valkyrie-staging \
-                  -p 9092:9090 \
-                  -e VALKYRIE_ENV=staging \
-                  valkyrie:staging
+                # Deploy Valkyrie if separate image exists, otherwise it's integrated with RustCI
+                if docker images | grep -q 'valkyrie.*staging'; then
+                  docker run -d --name valkyrie-staging \
+                    -p ${VALKYRIE_PORT}:9090 \
+                    -e VALKYRIE_ENV='${VALKYRIE_ENV}' \
+                    -e VALKYRIE_LOG_LEVEL='${VALKYRIE_LOG_LEVEL}' \
+                    -e RUSTCI_ENDPOINT=http://rustci-staging:8000 \
+                    --restart unless-stopped \
+                    valkyrie:staging
+                else
+                  echo 'Valkyrie integrated with RustCI - no separate container needed'
+                fi
               "
+
+          - name: "health-check-staging"
+            run: |
+              echo "🏥 Performing health check for staging deployment..."
+              sleep 30
+              
+              # Check RustCI health endpoints
+              for i in {1..10}; do
+                if curl -f -s http://${VPS_IP}:${RUSTCI_PORT}/api/healthchecker 2>/dev/null; then
+                  echo "✅ RustCI staging health check passed (primary endpoint)"
+                  break
+                elif curl -f -s http://${VPS_IP}:${RUSTCI_PORT}/health 2>/dev/null; then
+                  echo "✅ RustCI staging health check passed (fallback endpoint)"
+                  break
+                else
+                  echo "Attempt $i/10: RustCI staging health check not ready, retrying..."
+                  if [ $i -eq 10 ]; then
+                    echo "❌ RustCI staging health check failed after 10 attempts"
+                    exit 1
+                  fi
+                  sleep 15
+                fi
+              done
+              
+              # Check Valkyrie if separate container exists
+              if sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} "docker ps | grep valkyrie-staging"; then
+                if curl -f -s http://${VPS_IP}:${VALKYRIE_PORT}/health 2>/dev/null; then
+                  echo "✅ Valkyrie staging health check passed"
+                else
+                  echo "⚠️ Valkyrie staging health endpoint not responding (may be integrated with RustCI)"
+                fi
+              else
+                echo "ℹ️ Valkyrie integrated with RustCI - no separate health check needed"
+              fi
 
 environment:
   VPS_IP: "46.37.122.118"
   VPS_USERNAME: "root"
   VPS_PASSWORD: "Bs4g>^W36(|&D]3"
+  VPS_HOSTNAME: "ubuntu-ritabrata11092025"
   MONGODB_URI: "mongodb+srv://ritabrataroychowdhury2002:Physics676@cluster0.uyzku.mongodb.net/dqms?retryWrites=true&w=majority"
-  MONGODB_DATABASE: "dqms"
+  MONGODB_DATABASE: "dqms_staging"
   JWT_SECRET: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+  JWT_EXPIRED_IN: "1d"
+  JWT_SIGNUP_EXPIRED_IN: "1h"
+  JWT_REFRESH_EXPIRED_IN: "7d"
+  GITHUB_OAUTH_CLIENT_ID: "Ov23li18bhj2ixmL6GlY"
+  GITHUB_OAUTH_CLIENT_SECRET: "329e1afc2c5009efca526b5e9ae8f3a52bc546bc"
+  GITHUB_OAUTH_REDIRECT_URL: "http://46.37.122.118:8082/api/sessions/oauth/github/callback"
+  CLIENT_ORIGIN: "http://46.37.122.118:3001"
+  PORT: "8000"
+  RUST_ENV: "staging"
+  RUST_LOG: "debug"
+  ENABLE_METRICS: "true"
+  VALKYRIE_ENV: "staging"
+  VALKYRIE_LOG_LEVEL: "debug"
+  VALKYRIE_PORT: "9090"
+  DEPLOYMENT_STRATEGY: "rolling"
+  HEALTH_CHECK_TIMEOUT: "180"
+  ROLLBACK_ON_FAILURE: "true"
+  RUSTCI_PORT: "8082"
+  VALKYRIE_PORT: "9092"
 
 timeout: 1800
 retry_count: 1

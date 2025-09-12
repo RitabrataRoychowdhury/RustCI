@@ -117,15 +117,39 @@ For development and small-scale deployments:
 docker-compose up -d
 ```
 
-### Multi-Node Cluster Deployment
+### Production VPS Deployment
 
-For production environments with high availability:
+For production environments with blue-green deployment strategy:
 
 ```bash
 # Set up environment variables
+export VPS_PASSWORD="your-vps-password"
+export MONGODB_URI="your-mongodb-connection-string"
+export JWT_SECRET="your-jwt-secret"
 export GITHUB_OAUTH_CLIENT_ID=your_client_id
 export GITHUB_OAUTH_CLIENT_SECRET=your_client_secret
 
+# Deploy to production VPS with blue-green strategy
+./deployments/scripts/deploy.sh production blue-green
+
+# Or use the main pipeline
+rustci pipeline run --file pipeline.yaml
+```
+
+This deployment includes:
+- Secure Docker image transfer (no private repository cloning on VPS)
+- Blue-green deployment with zero downtime
+- Automatic health checks on RustCI endpoints
+- Rollback capability on deployment failure
+- Comprehensive error handling and retry logic
+
+For detailed deployment instructions, see the [Deployment Guide](docs/deployment/guide.md) and [Pipeline Configuration Guide](docs/deployment/pipeline-configuration-guide.md).
+
+### Multi-Node Cluster Deployment
+
+For high availability environments:
+
+```bash
 # Deploy multi-node cluster
 docker-compose -f docker-compose.multi-node.yaml up -d
 ```
@@ -342,7 +366,30 @@ docker-compose logs mongodb
    ```
 3. Monitor metrics: http://localhost:8080/metrics
 
-#### 4. Cluster Nodes Not Joining
+#### 4. Deployment Health Check Failures
+
+**Problem**: Deployment fails health checks
+
+**Solution**:
+1. Check RustCI application logs:
+   ```bash
+   docker logs rustci-production
+   ```
+2. Verify health endpoints are responding:
+   ```bash
+   curl -f http://your-vps:8080/api/healthchecker
+   curl -f http://your-vps:8080/health
+   ```
+3. Check container status:
+   ```bash
+   docker ps | grep rustci
+   ```
+4. Review deployment configuration:
+   ```bash
+   ./deployments/scripts/health-check.sh production
+   ```
+
+#### 5. Cluster Nodes Not Joining
 
 **Problem**: Worker nodes cannot join cluster
 
@@ -379,7 +426,10 @@ export RUST_LOG=rustci=debug
 Monitor system health:
 
 ```bash
-# Overall health
+# Primary health endpoint (RustCI)
+curl http://localhost:8080/api/healthchecker
+
+# Fallback health endpoint
 curl http://localhost:8080/health
 
 # Cluster status
@@ -387,6 +437,9 @@ curl http://localhost:8080/api/cluster/status
 
 # Individual node health
 curl http://localhost:8080/api/cluster/nodes/{node_id}/health
+
+# Use deployment scripts for comprehensive health checks
+./deployments/scripts/health-check.sh production
 ```
 
 ### Log Analysis
@@ -462,4 +515,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-For more information, visit our [documentation](docs/) or join our [community discussions](https://github.com/your-org/rustci/discussions).
+For more information, visit our [documentation](docs/README.md) or check out the [user guide](docs/user/README.md).
+
+## 📖 Documentation
+
+- [Deployment Guide](docs/deployment/guide.md) - Comprehensive deployment instructions
+- [Pipeline Configuration Guide](docs/deployment/pipeline-configuration-guide.md) - Pipeline setup and configuration
+- [Quick Start Guide](docs/user/quick-start.md) - Fast deployment commands
+- [Simple DIND Guide](docs/development/runners/dind-setup.md) - DIND runner deployment
+- [Architecture Documentation](docs/architecture/README.md) - System design and architecture
+- [API Documentation](docs/api/README.md) - API reference and usage
+- [Pipeline Examples](docs/user/pipeline-examples/README.md) - Real-world pipeline examples
+- [Development Setup](docs/development/README.md) - Development environment setup

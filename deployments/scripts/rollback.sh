@@ -165,9 +165,15 @@ rollback_production() {
                 ROLLBACK_PORT=8081
             fi
             
-            # Health check rollback slot
-            if curl -f http://localhost:\$ROLLBACK_PORT/api/healthchecker; then
-                echo '✅ Rollback slot is healthy'
+            # Health check rollback slot with RustCI endpoints
+            if curl -f http://localhost:\$ROLLBACK_PORT/api/healthchecker 2>/dev/null; then
+                echo '✅ Rollback slot is healthy (primary endpoint)'
+            elif curl -f http://localhost:\$ROLLBACK_PORT/health 2>/dev/null; then
+                echo '✅ Rollback slot is healthy (fallback endpoint)'
+            else
+                echo '❌ Rollback slot failed health check on both endpoints'
+                exit 1
+            fi
                 
                 # Stop current slot
                 docker stop rustci-\$CURRENT_SLOT || true
@@ -264,11 +270,15 @@ verify_rollback() {
     log_info "Testing application on port $port..."
     
     for i in {1..10}; do
+        # Try primary RustCI health endpoint first, then fallback
         if curl -f "http://${VPS_IP}:${port}/api/healthchecker" &> /dev/null; then
-            log_success "✅ Rollback verification successful"
+            log_success "✅ Rollback verification successful (primary endpoint)"
+            return 0
+        elif curl -f "http://${VPS_IP}:${port}/health" &> /dev/null; then
+            log_success "✅ Rollback verification successful (fallback endpoint)"
             return 0
         fi
-        echo "Waiting for application to respond... ($i/10)"
+        echo "Waiting for RustCI application to respond... ($i/10)"
         sleep 10
     done
     

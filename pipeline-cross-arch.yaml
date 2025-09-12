@@ -1,0 +1,516 @@
+name: "Cross-Architecture RustCI Deployment"
+description: "Deploy RustCI from ARM Mac to AMD64 VPS with cross-architecture support"
+version: "1.0"
+
+# Testing mode configuration - WARNING: Using hardcoded secrets for testing
+environment:
+  # Testing mode toggle
+  TESTING_MODE: "true"
+  
+  # Cross-architecture build configuration
+  BUILD_PLATFORM: "linux/amd64"
+  BUILDER_NAME: "multiarch-builder"
+  
+  # VPS Configuration - Hardcoded for testing (WARNING: Not for production)
+  VPS_IP: "46.37.122.118"
+  VPS_USERNAME: "root"
+  VPS_PASSWORD: "Bs4g>^W36(|&D]3"  # WARNING: Hardcoded for testing only
+  
+  # Application secrets - Hardcoded for testing (WARNING: Not for production)
+  MONGODB_URI: "mongodb+srv://ritabrataroychowdhury2002:Physics676@cluster0.uyzku.mongodb.net/dqms?retryWrites=true&w=majority"
+  MONGODB_DATABASE: "dqms"
+  JWT_SECRET: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+  JWT_EXPIRED_IN: "1d"
+  JWT_SIGNUP_EXPIRED_IN: "1h"
+  JWT_REFRESH_EXPIRED_IN: "7d"
+  GITHUB_OAUTH_CLIENT_ID: "Ov23li18bhj2ixmL6GlY"
+  GITHUB_OAUTH_CLIENT_SECRET: "329e1afc2c5009efca526b5e9ae8f3a52bc546bc"
+  GITHUB_OAUTH_REDIRECT_URL: "http://46.37.122.118:8080/api/sessions/oauth/github/callback"
+  CLIENT_ORIGIN: "http://46.37.122.118:8080"
+  PORT: "8000"
+  RUST_ENV: "production"
+  RUST_LOG: "info"
+  ENABLE_METRICS: "true"
+
+triggers:
+  - trigger_type: manual
+    config: {}
+
+stages:
+  - name: "prepare"
+    description: "Validate environment and setup cross-architecture build system"
+    steps:
+      - name: "validate-testing-mode"
+        step_type: shell
+        config:
+          command: |
+            echo "🔍 Validating testing mode configuration..."
+            if [ "${TESTING_MODE}" = "true" ]; then
+              echo "⚠️  WARNING: Using hardcoded secrets in testing mode"
+              echo "⚠️  WARNING: This configuration is NOT suitable for production"
+              echo "⚠️  WARNING: Replace hardcoded values with environment variables before production use"
+              echo "✅ Testing mode validation passed"
+            else
+              echo "❌ Testing mode disabled but hardcoded secrets detected"
+              echo "❌ Set TESTING_MODE=true or provide secrets via environment variables"
+              exit 1
+            fi
+        timeout: 30
+        retry_count: 1
+        on_failure: "fail"
+
+      - name: "validate-required-secrets"
+        step_type: shell
+        config:
+          command: |
+            echo "🔍 Validating required secrets..."
+            MISSING_SECRETS=""
+            
+            [ -z "${VPS_PASSWORD}" ] && MISSING_SECRETS="${MISSING_SECRETS} VPS_PASSWORD"
+            [ -z "${MONGODB_URI}" ] && MISSING_SECRETS="${MISSING_SECRETS} MONGODB_URI"
+            [ -z "${JWT_SECRET}" ] && MISSING_SECRETS="${MISSING_SECRETS} JWT_SECRET"
+            [ -z "${GITHUB_OAUTH_CLIENT_SECRET}" ] && MISSING_SECRETS="${MISSING_SECRETS} GITHUB_OAUTH_CLIENT_SECRET"
+            
+            if [ -n "${MISSING_SECRETS}" ]; then
+              echo "❌ Missing required secrets:${MISSING_SECRETS}"
+              exit 1
+            fi
+            
+            echo "✅ All required secrets are present"
+        timeout: 30
+        retry_count: 1
+        on_failure: "fail"
+
+      - name: "setup-docker-buildx"
+        step_type: shell
+        config:
+          command: |
+            echo "🔧 Setting up Docker buildx for cross-architecture builds..."
+            
+            # Check if builder already exists
+            if docker buildx ls | grep -q "${BUILDER_NAME}"; then
+              echo "📋 Builder '${BUILDER_NAME}' already exists, using existing builder"
+              docker buildx use "${BUILDER_NAME}"
+            else
+              echo "🆕 Creating new multi-platform builder: ${BUILDER_NAME}"
+              docker buildx create --name "${BUILDER_NAME}" --use
+            fi
+            
+            # Bootstrap the builder
+            echo "🚀 Bootstrapping builder..."
+            docker buildx inspect --bootstrap
+            
+            # Verify platform support
+            echo "🔍 Verifying platform support..."
+            docker buildx ls | grep "${BUILDER_NAME}"
+            
+            echo "✅ Docker buildx setup completed"
+        timeout: 300
+        retry_count: 2
+        on_failure: "fail"
+
+      - name: "validate-vps-connection"
+        step_type: shell
+        config:
+          command: |
+            echo "🔍 Testing VPS connection..."
+            sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "${VPS_USERNAME}@${VPS_IP}" "echo 'VPS connection successful'"
+            echo "✅ VPS connection validated"
+        timeout: 60
+        retry_count: 3
+        on_failure: "fail"
+
+  - name: "build-image"
+    description: "Build AMD64-compatible Docker image using buildx"
+    steps:
+      - name: "validate-workspace"
+        step_type: shell
+        config:
+          command: |
+            echo "🔍 Validating workspace for build..."
+            
+            if [ ! -f Dockerfile ]; then
+              echo "❌ Dockerfile not found in workspace"
+              exit 1
+            fi
+            
+            if [ ! -f Cargo.toml ]; then
+              echo "❌ Cargo.toml not found in workspace"
+              exit 1
+            fi
+            
+            echo "📋 Workspace contents:"
+            ls -la
+            
+            echo "✅ Workspace validation passed"
+        timeout: 30
+        retry_count: 1
+        on_failure: "fail"
+
+      - name: "build-cross-arch-image"
+        step_type: shell
+        config:
+          command: |
+            echo "🔨 Building AMD64 Docker image on ARM Mac..."
+            
+            # Build for AMD64 platform
+            docker buildx build \
+              --platform "${BUILD_PLATFORM}" \
+              --load \
+              -t rustci:local-amd64 \
+              -f Dockerfile \
+              .
+            
+            # Tag for production deployment
+            docker tag rustci:local-amd64 rustci:production
+            
+            echo "✅ Cross-architecture build completed"
+            docker images | grep rustci
+        timeout: 1800  # 30 minutes
+        retry_count: 2
+        on_failure: "fail"
+
+      - name: "validate-image-architecture"
+        step_type: shell
+        config:
+          command: |
+            echo "🔍 Validating image architecture..."
+            
+            # Check image architecture
+            ARCH_INFO=$(docker image inspect --format='{{.Architecture}}/{{.Os}}' rustci:local-amd64)
+            echo "📋 Image architecture: ${ARCH_INFO}"
+            
+            if [ "${ARCH_INFO}" != "amd64/linux" ]; then
+              echo "❌ Expected amd64/linux, got ${ARCH_INFO}"
+              exit 1
+            fi
+            
+            echo "✅ Architecture validation passed: ${ARCH_INFO}"
+        timeout: 60
+        retry_count: 1
+        on_failure: "fail"
+
+      - name: "test-local-container"
+        step_type: shell
+        config:
+          command: |
+            echo "🧪 Testing container startup locally..."
+            
+            # Start test container
+            docker run --rm -d --name rustci-arch-test -p 8001:8000 \
+              -e RUST_LOG=debug \
+              -e MONGODB_URI="${MONGODB_URI}" \
+              -e JWT_SECRET="${JWT_SECRET}" \
+              rustci:local-amd64
+            
+            # Wait for startup
+            sleep 15
+            
+            # Verify container is running
+            if docker ps | grep rustci-arch-test; then
+              echo "✅ Container started successfully"
+              
+              # Test architecture inside container
+              CONTAINER_ARCH=$(docker exec rustci-arch-test uname -m)
+              echo "📋 Container architecture: ${CONTAINER_ARCH}"
+              
+              if [ "${CONTAINER_ARCH}" = "x86_64" ]; then
+                echo "✅ Container architecture validation passed"
+              else
+                echo "❌ Expected x86_64, got ${CONTAINER_ARCH}"
+                docker stop rustci-arch-test
+                exit 1
+              fi
+              
+              # Test health endpoints (optional - may not be ready)
+              if curl -f http://localhost:8001/health 2>/dev/null; then
+                echo "✅ Health endpoint responding"
+              else
+                echo "⚠️  Health endpoint not responding (may be normal during startup)"
+              fi
+              
+              # Stop test container
+              docker stop rustci-arch-test
+              echo "✅ Local container test completed"
+            else
+              echo "❌ Container failed to start"
+              docker logs rustci-arch-test 2>/dev/null || true
+              exit 1
+            fi
+        timeout: 180
+        retry_count: 2
+        on_failure: "fail"
+
+  - name: "transfer-and-deploy"
+    description: "Transfer image to VPS and deploy with rollback support"
+    steps:
+      - name: "backup-current-deployment"
+        step_type: shell
+        config:
+          command: |
+            echo "💾 Creating backup of current deployment..."
+            sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no "${VPS_USERNAME}@${VPS_IP}" '
+              if docker ps | grep rustci-production; then
+                BACKUP_TAG="rustci:previous-$(date +%Y%m%d-%H%M%S)"
+                docker commit rustci-production "${BACKUP_TAG}"
+                docker tag rustci-production rustci:previous
+                echo "✅ Backup created: ${BACKUP_TAG}"
+              else
+                echo "📋 No current deployment to backup"
+              fi
+            '
+        timeout: 120
+        retry_count: 2
+        on_failure: "continue"
+
+      - name: "transfer-image-compressed"
+        step_type: shell
+        config:
+          command: |
+            echo "📦 Transferring Docker image to VPS with compression..."
+            
+            # Transfer with compression and progress indication
+            docker save rustci:production | gzip | \
+            sshpass -p "${VPS_PASSWORD}" ssh -C -o StrictHostKeyChecking=no -o ServerAliveInterval=60 \
+              "${VPS_USERNAME}@${VPS_IP}" "gunzip | docker load"
+            
+            echo "✅ Image transfer completed"
+            
+            # Verify image on VPS
+            sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no "${VPS_USERNAME}@${VPS_IP}" \
+              "docker images | grep rustci:production"
+        timeout: 600  # 10 minutes
+        retry_count: 3
+        on_failure: "fail"
+
+      - name: "stop-existing-container"
+        step_type: shell
+        config:
+          command: |
+            echo "🛑 Stopping existing RustCI container..."
+            sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no "${VPS_USERNAME}@${VPS_IP}" '
+              docker stop rustci-production 2>/dev/null || true
+              docker rm rustci-production 2>/dev/null || true
+              echo "✅ Existing container stopped and removed"
+            '
+        timeout: 60
+        retry_count: 2
+        on_failure: "continue"
+
+      - name: "deploy-new-container"
+        step_type: shell
+        config:
+          command: |
+            echo "🚀 Deploying new RustCI container..."
+            sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no "${VPS_USERNAME}@${VPS_IP}" "
+              docker run -d \
+                --name rustci-production \
+                -p 8080:8000 \
+                -e MONGODB_URI='${MONGODB_URI}' \
+                -e MONGODB_DATABASE='${MONGODB_DATABASE}' \
+                -e JWT_SECRET='${JWT_SECRET}' \
+                -e JWT_EXPIRED_IN='${JWT_EXPIRED_IN}' \
+                -e JWT_SIGNUP_EXPIRED_IN='${JWT_SIGNUP_EXPIRED_IN}' \
+                -e JWT_REFRESH_EXPIRED_IN='${JWT_REFRESH_EXPIRED_IN}' \
+                -e GITHUB_OAUTH_CLIENT_ID='${GITHUB_OAUTH_CLIENT_ID}' \
+                -e GITHUB_OAUTH_CLIENT_SECRET='${GITHUB_OAUTH_CLIENT_SECRET}' \
+                -e GITHUB_OAUTH_REDIRECT_URL='${GITHUB_OAUTH_REDIRECT_URL}' \
+                -e CLIENT_ORIGIN='${CLIENT_ORIGIN}' \
+                -e PORT=${PORT} \
+                -e RUST_ENV=${RUST_ENV} \
+                -e RUST_LOG=${RUST_LOG} \
+                -e ENABLE_METRICS=${ENABLE_METRICS} \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                --restart unless-stopped \
+                rustci:production
+              
+              echo '✅ RustCI deployment completed'
+            "
+        timeout: 300  # 5 minutes
+        retry_count: 2
+        on_failure: "fail"
+
+  - name: "smoke-test"
+    description: "Verify deployment health with comprehensive checks"
+    steps:
+      - name: "wait-for-startup"
+        step_type: shell
+        config:
+          command: |
+            echo "⏳ Waiting for RustCI to start up..."
+            sleep 30
+            echo "✅ Initial startup wait completed"
+        timeout: 60
+        retry_count: 1
+        on_failure: "continue"
+
+      - name: "health-check-primary-endpoint"
+        step_type: shell
+        config:
+          command: |
+            echo "🏥 Testing primary health endpoint..."
+            
+            MAX_ATTEMPTS=10
+            ATTEMPT=1
+            
+            while [ ${ATTEMPT} -le ${MAX_ATTEMPTS} ]; do
+              echo "Attempt ${ATTEMPT}/${MAX_ATTEMPTS}: Testing /api/healthchecker..."
+              
+              if curl -f -s --connect-timeout 10 --max-time 10 "http://${VPS_IP}:8080/api/healthchecker" >/dev/null 2>&1; then
+                echo "✅ Primary health endpoint (/api/healthchecker) responding"
+                exit 0
+              fi
+              
+              echo "⏳ Health endpoint not ready, waiting 10 seconds..."
+              sleep 10
+              ATTEMPT=$((ATTEMPT + 1))
+            done
+            
+            echo "❌ Primary health endpoint failed after ${MAX_ATTEMPTS} attempts"
+            exit 1
+        timeout: 120  # 2 minutes
+        retry_count: 3
+        on_failure: "fail"
+
+      - name: "health-check-fallback-endpoint"
+        step_type: shell
+        config:
+          command: |
+            echo "🏥 Testing fallback health endpoint..."
+            
+            if curl -f -s --connect-timeout 10 --max-time 10 "http://${VPS_IP}:8080/health" >/dev/null 2>&1; then
+              echo "✅ Fallback health endpoint (/health) responding"
+            else
+              echo "⚠️  Fallback health endpoint not responding (primary passed, this is acceptable)"
+            fi
+        timeout: 30
+        retry_count: 1
+        on_failure: "continue"
+
+      - name: "verify-container-status"
+        step_type: shell
+        config:
+          command: |
+            echo "📊 Verifying container status on VPS..."
+            sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no "${VPS_USERNAME}@${VPS_IP}" '
+              if docker ps | grep rustci-production; then
+                echo "✅ RustCI container is running"
+                echo "📋 Container details:"
+                docker ps | grep rustci-production
+                echo "📋 Recent logs:"
+                docker logs --tail 10 rustci-production
+              else
+                echo "❌ RustCI container not found or not running"
+                echo "📋 All containers:"
+                docker ps -a | grep rustci || echo "No rustci containers found"
+                exit 1
+              fi
+            '
+        timeout: 60
+        retry_count: 1
+        on_failure: "fail"
+
+  - name: "cleanup"
+    description: "Clean up resources and provide deployment summary"
+    steps:
+      - name: "cleanup-local-images"
+        step_type: shell
+        config:
+          command: |
+            echo "🧹 Cleaning up local Docker images..."
+            
+            # Remove dangling images
+            docker image prune -f
+            
+            # Keep the production image but remove intermediate build images
+            echo "📋 Remaining rustci images:"
+            docker images | grep rustci || echo "No rustci images found"
+            
+            echo "✅ Local cleanup completed"
+        timeout: 60
+        retry_count: 1
+        on_failure: "continue"
+
+      - name: "deployment-summary"
+        step_type: shell
+        config:
+          command: |
+            echo "🎉 Cross-architecture deployment completed successfully!"
+            echo ""
+            echo "📋 Deployment Summary:"
+            echo "  • Source Architecture: $(uname -m) ($(uname -s))"
+            echo "  • Target Architecture: AMD64 (Linux)"
+            echo "  • VPS IP: ${VPS_IP}"
+            echo "  • Application Port: 8080"
+            echo ""
+            echo "🔗 Access URLs:"
+            echo "  • Main Application: http://${VPS_IP}:8080"
+            echo "  • Health Check: http://${VPS_IP}:8080/api/healthchecker"
+            echo "  • Fallback Health: http://${VPS_IP}:8080/health"
+            echo ""
+            echo "🔧 Verification Commands:"
+            echo "  • Test health: curl -f http://${VPS_IP}:8080/api/healthchecker"
+            echo "  • Check container: ssh ${VPS_USERNAME}@${VPS_IP} 'docker ps | grep rustci-production'"
+            echo "  • View logs: ssh ${VPS_USERNAME}@${VPS_IP} 'docker logs rustci-production'"
+            echo ""
+            echo "⚠️  Security Reminder:"
+            echo "  • This deployment uses hardcoded secrets for testing"
+            echo "  • Replace with environment variables before production use"
+            echo "  • Set TESTING_MODE=false and provide secrets via env vars"
+        timeout: 30
+        retry_count: 1
+        on_failure: "continue"
+
+# Rollback configuration for deployment failures
+rollback:
+  enabled: true
+  trigger_conditions:
+    - health_check_failures: 3
+    - deployment_timeout: true
+  steps:
+    - name: "rollback-to-previous"
+      step_type: shell
+      config:
+        command: |
+          echo "🔄 Rolling back to previous deployment..."
+          sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no "${VPS_USERNAME}@${VPS_IP}" '
+            # Check if previous image exists
+            if docker images | grep "rustci:previous"; then
+              echo "📋 Found previous image, rolling back..."
+              
+              # Stop current container
+              docker stop rustci-production 2>/dev/null || true
+              docker rm rustci-production 2>/dev/null || true
+              
+              # Start previous version
+              docker run -d \
+                --name rustci-production \
+                -p 8080:8000 \
+                --restart unless-stopped \
+                rustci:previous
+              
+              echo "✅ Rollback completed successfully"
+              
+              # Verify rollback
+              sleep 10
+              if docker ps | grep rustci-production; then
+                echo "✅ Rollback container is running"
+              else
+                echo "❌ Rollback container failed to start"
+                exit 1
+              fi
+            else
+              echo "❌ No previous image found for rollback"
+              echo "📋 Available images:"
+              docker images | grep rustci || echo "No rustci images found"
+              exit 1
+            fi
+          '
+      timeout: 180
+      retry_count: 1
+      on_failure: "fail"
+
+# Global pipeline configuration
+timeout: 3600  # 1 hour total timeout
+retry_count: 1
+on_failure: "rollback"

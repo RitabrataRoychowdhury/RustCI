@@ -1,5 +1,5 @@
 name: "Blue-Green Deployment Strategy"
-description: "Zero-downtime deployment using blue-green strategy"
+description: "Zero-downtime deployment using blue-green strategy for RustCI applications"
 
 strategy:
   type: "blue-green"
@@ -7,63 +7,206 @@ strategy:
     # Blue-green specific configuration
     slots: ["blue", "green"]
     health_check_timeout: 300
+    health_check_retries: 15
+    health_check_interval: 10
     switch_traffic_delay: 30
     rollback_on_failure: true
     keep_old_version: true
+    validation_timeout: 180
+    # RustCI-specific health endpoints
+    health_endpoints:
+      primary: "/api/healthchecker"
+      fallback: "/health"
+      valkyrie: "/health"
+    # Port configuration for blue-green slots
+    ports:
+      blue:
+        rustci: 8080
+        valkyrie: 9090
+      green:
+        rustci: 8081
+        valkyrie: 9091
+    # RustCI-specific validation
+    validation:
+      rustci_binary_check: true
+      api_endpoint_validation: true
+      container_health_validation: true
+      service_discovery_validation: true
 
 stages:
   - name: "Pre-deployment"
-    description: "Determine deployment slot"
+    description: "Determine deployment slot and validate environment"
     steps:
+      - name: "validate-environment"
+        step_type: shell
+        config:
+          command: "echo '🔍 Validating environment for blue-green deployment...' && if [ -z '${TARGET_HOST}' ]; then echo '❌ TARGET_HOST not set'; exit 1; fi && echo '✅ Environment validation passed'"
+        timeout: 30
+        retry_count: 1
+
       - name: "get-current-slot"
         step_type: shell
         config:
-          command: "echo '🎯 Determining current active slot...' && CURRENT_SLOT=$(curl -s http://${TARGET_HOST}/api/deployment/current-slot || echo 'none') && DEPLOYMENT_SLOT=$([ '$CURRENT_SLOT' = 'blue' ] && echo 'green' || echo 'blue') && echo 'DEPLOYMENT_SLOT=${DEPLOYMENT_SLOT}' > /tmp/deployment_slot && echo 'Current: ${CURRENT_SLOT}, Deploying to: ${DEPLOYMENT_SLOT}'"
+          command: "echo '🎯 Determining current active slot...' && CURRENT_SLOT=$(sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${TARGET_HOST} 'if docker ps --format \"table {{.Names}}\" | grep -q \"rustci-blue\"; then echo \"blue\"; elif docker ps --format \"table {{.Names}}\" | grep -q \"rustci-green\"; then echo \"green\"; else echo \"none\"; fi' 2>/dev/null || echo 'none') && DEPLOYMENT_SLOT=$([ '$CURRENT_SLOT' = 'blue' ] && echo 'green' || echo 'blue') && echo 'DEPLOYMENT_SLOT=${DEPLOYMENT_SLOT}' > /tmp/deployment_slot && echo 'Current active slot: ${CURRENT_SLOT}, Deploying to: ${DEPLOYMENT_SLOT}'"
         timeout: 60
-        retry_count: 1
+        retry_count: 2
 
   - name: "Deploy"
-    description: "Deploy to inactive slot"
+    description: "Deploy RustCI application to inactive slot"
     steps:
-      - name: "deploy-application"
+      - name: "deploy-rustci-application"
         step_type: shell
         config:
-          command: "echo '🚀 Deploying to deployment slot...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && echo 'Deploying to ${DEPLOYMENT_SLOT} slot...'"
+          command: "echo '🚀 Deploying RustCI to deployment slot...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && RUSTCI_PORT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo '8080' || echo '8081') && echo 'Deploying RustCI to ${DEPLOYMENT_SLOT} slot on port ${RUSTCI_PORT}...' && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${TARGET_HOST} \"docker stop rustci-${DEPLOYMENT_SLOT} 2>/dev/null || true && docker rm rustci-${DEPLOYMENT_SLOT} 2>/dev/null || true && docker run -d --name rustci-${DEPLOYMENT_SLOT} --network rustci-network -p ${RUSTCI_PORT}:8000 -e MONGODB_URI='${MONGODB_URI}' -e JWT_SECRET='${JWT_SECRET}' -e RUST_ENV='${RUST_ENV:-production}' -e RUST_LOG='${RUST_LOG:-info}' -v /var/run/docker.sock:/var/run/docker.sock --restart unless-stopped rustci:production && echo '✅ RustCI deployed to ${DEPLOYMENT_SLOT} slot'\""
         timeout: 300
-        retry_count: 1
+        retry_count: 2
 
-      - name: "health-check"
+      - name: "validate-rustci-deployment"
         step_type: shell
         config:
-          command: "echo '🏥 Health checking deployment slot...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && for i in {1..10}; do if curl -f http://${TARGET_HOST}:${DEPLOYMENT_SLOT_PORT}/health; then echo '✅ Health check passed'; exit 0; fi; sleep 30; done && echo '❌ Health check failed' && exit 1"
-        timeout: 600
-        retry_count: 1
+          command: "echo '🔍 Validating RustCI deployment in slot...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && RUSTCI_PORT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo '8080' || echo '8081') && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${TARGET_HOST} \"if docker ps | grep rustci-${DEPLOYMENT_SLOT}; then echo '✅ RustCI container is running in ${DEPLOYMENT_SLOT} slot'; docker logs --tail 5 rustci-${DEPLOYMENT_SLOT} | grep -E '(rustci|server|listening)' || echo 'Container logs available'; else echo '❌ RustCI container not found in ${DEPLOYMENT_SLOT} slot'; exit 1; fi\""
+        timeout: 60
+        retry_count: 2
+        on_failure: "fail"
 
-  - name: "Switch Traffic"
-    description: "Switch traffic to new deployment"
-    steps:
-      - name: "switch-load-balancer"
+      - name: "health-check-primary"
         step_type: shell
         config:
-          command: "echo '🔄 Switching traffic to new deployment...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && echo 'Switching traffic to ${DEPLOYMENT_SLOT}...'"
+          command: "echo '🏥 Health checking RustCI primary endpoint...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && RUSTCI_PORT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo '8080' || echo '8081') && echo 'Testing RustCI health on ${TARGET_HOST}:${RUSTCI_PORT}' && for i in {1..15}; do if curl -f -s --max-time 10 http://${TARGET_HOST}:${RUSTCI_PORT}/api/healthchecker 2>/dev/null; then echo '✅ RustCI primary health check passed on ${DEPLOYMENT_SLOT} slot'; HEALTH_RESPONSE=$(curl -s --max-time 5 http://${TARGET_HOST}:${RUSTCI_PORT}/api/healthchecker 2>/dev/null || echo 'No response'); echo 'Health response: ${HEALTH_RESPONSE}'; exit 0; fi; echo 'Attempt $i/15: Waiting for RustCI primary health endpoint...'; sleep 10; done && echo '⚠️ Primary health check failed, trying fallback...'"
+        timeout: 180
+        retry_count: 1
+        on_failure: "continue"
+
+      - name: "health-check-fallback"
+        step_type: shell
+        config:
+          command: "echo '🏥 Health checking RustCI fallback endpoint...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && RUSTCI_PORT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo '8080' || echo '8081') && for i in {1..10}; do if curl -f -s --max-time 10 http://${TARGET_HOST}:${RUSTCI_PORT}/health 2>/dev/null; then echo '✅ RustCI fallback health check passed on ${DEPLOYMENT_SLOT} slot'; HEALTH_RESPONSE=$(curl -s --max-time 5 http://${TARGET_HOST}:${RUSTCI_PORT}/health 2>/dev/null || echo 'No response'); echo 'Health response: ${HEALTH_RESPONSE}'; exit 0; fi; echo 'Attempt $i/10: Waiting for RustCI fallback health endpoint...'; sleep 10; done && echo '❌ Both health endpoints failed - triggering rollback' && exit 1"
         timeout: 120
         retry_count: 1
+        on_failure: "rollback"
+
+      - name: "validate-rustci-api-endpoints"
+        step_type: shell
+        config:
+          command: "echo '🔍 Validating RustCI API endpoints...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && RUSTCI_PORT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo '8080' || echo '8081') && echo 'Testing additional RustCI endpoints on ${TARGET_HOST}:${RUSTCI_PORT}' && API_TESTS=0 && if curl -f -s --max-time 5 http://${TARGET_HOST}:${RUSTCI_PORT}/api/healthchecker 2>/dev/null; then echo '✅ /api/healthchecker endpoint working'; API_TESTS=$((API_TESTS + 1)); fi && if curl -f -s --max-time 5 http://${TARGET_HOST}:${RUSTCI_PORT}/health 2>/dev/null; then echo '✅ /health endpoint working'; API_TESTS=$((API_TESTS + 1)); fi && if [ $API_TESTS -gt 0 ]; then echo '✅ RustCI API validation passed (${API_TESTS} endpoints working)'; else echo '❌ No RustCI API endpoints responding'; exit 1; fi"
+        timeout: 60
+        retry_count: 2
+        on_failure: "rollback"
+
+      - name: "health-check-valkyrie"
+        step_type: shell
+        config:
+          command: "echo '🏥 Health checking Valkyrie endpoint...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && VALKYRIE_PORT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo '9090' || echo '9091') && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${TARGET_HOST} \"if docker ps | grep valkyrie-${DEPLOYMENT_SLOT}; then echo 'Valkyrie container found in ${DEPLOYMENT_SLOT} slot'; for i in {1..5}; do if curl -f -s --max-time 5 http://localhost:${VALKYRIE_PORT}/health 2>/dev/null; then echo '✅ Valkyrie health check passed on ${DEPLOYMENT_SLOT} slot'; exit 0; fi; echo 'Attempt \\$i/5: Waiting for Valkyrie health endpoint...'; sleep 10; done && echo '⚠️ Valkyrie health check failed (may be integrated with RustCI)'; else echo '⚠️ Valkyrie container not found (integrated with RustCI)'; fi\""
+        timeout: 60
+        retry_count: 1
+        on_failure: "continue"
+
+  - name: "Switch Traffic"
+    description: "Switch traffic to new RustCI deployment"
+    steps:
+      - name: "validate-new-deployment"
+        step_type: shell
+        config:
+          command: "echo '🔍 Final validation before traffic switch...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && RUSTCI_PORT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo '8080' || echo '8081') && echo 'Performing comprehensive validation of ${DEPLOYMENT_SLOT} slot...' && VALIDATION_PASSED=0 && if curl -f -s --max-time 10 http://${TARGET_HOST}:${RUSTCI_PORT}/api/healthchecker 2>/dev/null; then echo '✅ Primary health endpoint validation passed'; VALIDATION_PASSED=$((VALIDATION_PASSED + 1)); elif curl -f -s --max-time 10 http://${TARGET_HOST}:${RUSTCI_PORT}/health 2>/dev/null; then echo '✅ Fallback health endpoint validation passed'; VALIDATION_PASSED=$((VALIDATION_PASSED + 1)); fi && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${TARGET_HOST} \"if docker ps | grep rustci-${DEPLOYMENT_SLOT} | grep -q 'Up'; then echo '✅ RustCI container is running and healthy'; VALIDATION_PASSED=$((VALIDATION_PASSED + 1)); fi\" && if [ $VALIDATION_PASSED -ge 2 ]; then echo '✅ New RustCI deployment validation passed (${VALIDATION_PASSED} checks)'; else echo '❌ New RustCI deployment validation failed (${VALIDATION_PASSED} checks passed) - aborting traffic switch'; exit 1; fi"
+        timeout: 60
+        retry_count: 3
+        on_failure: "rollback"
+
+      - name: "backup-old-deployment"
+        step_type: shell
+        config:
+          command: "echo '💾 Creating backup of old deployment before switch...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && OLD_SLOT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo 'green' || echo 'blue') && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${TARGET_HOST} \"if docker ps | grep rustci-${OLD_SLOT}; then echo 'Creating backup of ${OLD_SLOT} slot...'; docker commit rustci-${OLD_SLOT} rustci:backup-${OLD_SLOT}-$(date +%Y%m%d-%H%M%S) && echo '✅ Backup created for ${OLD_SLOT} slot'; else echo 'No active deployment in ${OLD_SLOT} slot to backup'; fi\""
+        timeout: 60
+        retry_count: 1
+        on_failure: "continue"
+
+      - name: "switch-traffic"
+        step_type: shell
+        config:
+          command: "echo '🔄 Switching traffic to new RustCI deployment...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && OLD_SLOT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo 'green' || echo 'blue') && echo 'Switching from ${OLD_SLOT} to ${DEPLOYMENT_SLOT} slot' && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${TARGET_HOST} \"echo 'Gracefully stopping old RustCI deployment in ${OLD_SLOT} slot...' && if docker ps | grep rustci-${OLD_SLOT}; then echo 'Stopping rustci-${OLD_SLOT}...'; docker stop rustci-${OLD_SLOT} && sleep 5 && docker rm rustci-${OLD_SLOT}; echo '✅ Old RustCI container stopped and removed'; else echo 'No rustci container in ${OLD_SLOT} slot'; fi && if docker ps | grep valkyrie-${OLD_SLOT}; then echo 'Stopping valkyrie-${OLD_SLOT}...'; docker stop valkyrie-${OLD_SLOT} && docker rm valkyrie-${OLD_SLOT}; echo '✅ Old Valkyrie container stopped and removed'; else echo 'No valkyrie container in ${OLD_SLOT} slot'; fi && echo '✅ Traffic switched to ${DEPLOYMENT_SLOT} deployment'\""
+        timeout: 120
+        retry_count: 2
+        on_failure: "rollback"
 
       - name: "verify-switch"
         step_type: shell
         config:
-          command: "echo '✅ Verifying traffic switch...'"
+          command: "echo '✅ Verifying traffic switch...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && RUSTCI_PORT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo '8080' || echo '8081') && OLD_SLOT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo 'green' || echo 'blue') && echo 'Verifying ${DEPLOYMENT_SLOT} slot is active and ${OLD_SLOT} slot is inactive...' && VERIFICATION_PASSED=0 && if curl -f -s --max-time 10 http://${TARGET_HOST}:${RUSTCI_PORT}/api/healthchecker 2>/dev/null; then echo '✅ Primary health endpoint responding on ${DEPLOYMENT_SLOT} slot'; VERIFICATION_PASSED=$((VERIFICATION_PASSED + 1)); elif curl -f -s --max-time 10 http://${TARGET_HOST}:${RUSTCI_PORT}/health 2>/dev/null; then echo '✅ Fallback health endpoint responding on ${DEPLOYMENT_SLOT} slot'; VERIFICATION_PASSED=$((VERIFICATION_PASSED + 1)); fi && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${TARGET_HOST} \"if docker ps | grep rustci-${DEPLOYMENT_SLOT} | grep -q 'Up'; then echo '✅ RustCI container active in ${DEPLOYMENT_SLOT} slot'; VERIFICATION_PASSED=$((VERIFICATION_PASSED + 1)); fi && if ! docker ps | grep rustci-${OLD_SLOT}; then echo '✅ Old ${OLD_SLOT} slot properly deactivated'; VERIFICATION_PASSED=$((VERIFICATION_PASSED + 1)); fi\" && if [ $VERIFICATION_PASSED -ge 2 ]; then echo '✅ Traffic switch verification passed (${VERIFICATION_PASSED} checks) - RustCI responding on ${DEPLOYMENT_SLOT} slot'; else echo '❌ Traffic switch verification failed (${VERIFICATION_PASSED} checks passed)'; exit 1; fi"
+        timeout: 60
+        retry_count: 3
+        on_failure: "rollback"
+
+      - name: "post-switch-validation"
+        step_type: shell
+        config:
+          command: "echo '🔍 Post-switch validation...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && RUSTCI_PORT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo '8080' || echo '8081') && echo 'Performing comprehensive post-switch validation...' && VALIDATION_SCORE=0 && if curl -f -s --max-time 10 http://${TARGET_HOST}:${RUSTCI_PORT}/api/healthchecker 2>/dev/null; then echo '✅ Primary health endpoint working'; VALIDATION_SCORE=$((VALIDATION_SCORE + 1)); fi && if curl -f -s --max-time 10 http://${TARGET_HOST}:${RUSTCI_PORT}/health 2>/dev/null; then echo '✅ Fallback health endpoint working'; VALIDATION_SCORE=$((VALIDATION_SCORE + 1)); fi && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${TARGET_HOST} \"if docker ps | grep rustci-${DEPLOYMENT_SLOT} | grep -q 'Up'; then echo '✅ RustCI container healthy in ${DEPLOYMENT_SLOT} slot'; VALIDATION_SCORE=$((VALIDATION_SCORE + 1)); fi && if docker logs rustci-${DEPLOYMENT_SLOT} 2>/dev/null | tail -10 | grep -qE '(listening|server|ready|started)'; then echo '✅ RustCI application logs look healthy'; VALIDATION_SCORE=$((VALIDATION_SCORE + 1)); fi\" && if [ $VALIDATION_SCORE -ge 3 ]; then echo '✅ Post-switch validation passed (${VALIDATION_SCORE}/4 checks)'; else echo '⚠️ Post-switch validation concerns (${VALIDATION_SCORE}/4 checks passed)'; fi"
         timeout: 60
         retry_count: 1
+        on_failure: "continue"
 
       - name: "cleanup-old-slot"
         step_type: shell
         config:
-          command: "echo '🧹 Cleaning up old slot...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && OLD_SLOT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo 'green' || echo 'blue') && echo 'Cleaning up ${OLD_SLOT} slot' && rm -f /tmp/deployment_slot"
-        timeout: 180
+          command: "echo '🧹 Cleaning up old slot...' && DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2) && OLD_SLOT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo 'green' || echo 'blue') && echo 'Cleaned up ${OLD_SLOT} slot, active deployment is now ${DEPLOYMENT_SLOT}' && echo '🎉 Blue-green deployment completed successfully!' && echo 'Active slot: ${DEPLOYMENT_SLOT}' && echo 'RustCI available at: http://${TARGET_HOST}:$([ \"${DEPLOYMENT_SLOT}\" = \"blue\" ] && echo \"8080\" || echo \"8081\")' && rm -f /tmp/deployment_slot"
+        timeout: 30
         retry_count: 1
+        on_failure: "continue"
 
 environment:
   STRATEGY_TYPE: "blue-green"
-  HEALTH_CHECK_RETRIES: 10
-  HEALTH_CHECK_INTERVAL: 30
+  HEALTH_CHECK_RETRIES: 15
+  HEALTH_CHECK_INTERVAL: 10
+  VALIDATION_TIMEOUT: 180
+  # RustCI-specific configuration
+  RUSTCI_HEALTH_PRIMARY: "/api/healthchecker"
+  RUSTCI_HEALTH_FALLBACK: "/health"
+  VALKYRIE_HEALTH_ENDPOINT: "/health"
+  # Blue-green port configuration
+  RUSTCI_PORT_BLUE: "8080"
+  RUSTCI_PORT_GREEN: "8081"
+  VALKYRIE_PORT_BLUE: "9090"
+  VALKYRIE_PORT_GREEN: "9091"
+  # RustCI deployment configuration
+  RUSTCI_IMAGE: "rustci:production"
+  RUSTCI_NETWORK: "rustci-network"
+  # Rollback configuration
+  AUTO_ROLLBACK_ENABLED: "true"
+  ROLLBACK_HEALTH_CHECK_RETRIES: 10
+  BACKUP_RETENTION_COUNT: 3
+
+# Rollback configuration for blue-green failures
+rollback:
+  enabled: true
+  auto_rollback_on_failure: true
+  health_check_timeout: 180
+  max_rollback_attempts: 3
+  steps:
+    - name: "detect-rollback-target"
+      step_type: shell
+      config:
+        command: "echo '🔍 Detecting rollback target...' && if [ -f /tmp/deployment_slot ]; then DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2); ROLLBACK_SLOT=$([ '${DEPLOYMENT_SLOT}' = 'blue' ] && echo 'green' || echo 'blue'); else echo 'No deployment slot info, defaulting to blue'; ROLLBACK_SLOT='blue'; fi && echo 'ROLLBACK_SLOT=${ROLLBACK_SLOT}' > /tmp/rollback_slot && echo 'Rollback target: ${ROLLBACK_SLOT} slot'"
+      timeout: 30
+
+    - name: "stop-failed-deployment"
+      step_type: shell
+      config:
+        command: "echo '🛑 Stopping failed deployment...' && if [ -f /tmp/deployment_slot ]; then DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2); sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${TARGET_HOST} \"echo 'Stopping failed deployment in ${DEPLOYMENT_SLOT} slot...'; docker stop rustci-${DEPLOYMENT_SLOT} 2>/dev/null || echo 'Container already stopped'; docker stop valkyrie-${DEPLOYMENT_SLOT} 2>/dev/null || echo 'Valkyrie container already stopped'\"; else echo 'No failed deployment to stop'; fi"
+      timeout: 60
+
+    - name: "restore-previous-deployment"
+      step_type: shell
+      config:
+        command: "echo '🔄 Restoring previous deployment...' && ROLLBACK_SLOT=$(cat /tmp/rollback_slot | cut -d= -f2) && ROLLBACK_PORT=$([ '${ROLLBACK_SLOT}' = 'blue' ] && echo '8080' || echo '8081') && sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${TARGET_HOST} \"echo 'Attempting to restore ${ROLLBACK_SLOT} slot...'; if docker ps -a | grep rustci-${ROLLBACK_SLOT}; then echo 'Starting existing container in ${ROLLBACK_SLOT} slot...'; docker start rustci-${ROLLBACK_SLOT} && docker start valkyrie-${ROLLBACK_SLOT} 2>/dev/null || echo 'Valkyrie not available'; elif docker images | grep 'rustci:backup-${ROLLBACK_SLOT}' | head -1; then BACKUP_IMAGE=\\$(docker images | grep 'rustci:backup-${ROLLBACK_SLOT}' | head -1 | awk '{print \\$1\\\":\\\"\\$2}'); echo 'Restoring from backup image: \\$BACKUP_IMAGE'; docker run -d --name rustci-${ROLLBACK_SLOT} --network rustci-network -p ${ROLLBACK_PORT}:8000 -e RUST_ENV=production --restart unless-stopped \\$BACKUP_IMAGE; else echo 'No previous deployment or backup found for ${ROLLBACK_SLOT} slot'; exit 1; fi\""
+      timeout: 120
+
+    - name: "verify-rollback-health"
+      step_type: shell
+      config:
+        command: "echo '🏥 Verifying rollback health...' && ROLLBACK_SLOT=$(cat /tmp/rollback_slot | cut -d= -f2) && ROLLBACK_PORT=$([ '${ROLLBACK_SLOT}' = 'blue' ] && echo '8080' || echo '8081') && echo 'Testing rollback deployment on ${TARGET_HOST}:${ROLLBACK_PORT}' && for i in {1..10}; do if curl -f -s --max-time 10 http://${TARGET_HOST}:${ROLLBACK_PORT}/api/healthchecker 2>/dev/null || curl -f -s --max-time 10 http://${TARGET_HOST}:${ROLLBACK_PORT}/health 2>/dev/null; then echo '✅ Rollback health check passed for ${ROLLBACK_SLOT} slot'; rm -f /tmp/deployment_slot /tmp/rollback_slot; exit 0; fi; echo 'Attempt $i/10: Waiting for rollback deployment to be healthy...'; sleep 10; done && echo '❌ Rollback health check failed' && exit 1"
+      timeout: 120
+
+    - name: "cleanup-failed-deployment"
+      step_type: shell
+      config:
+        command: "echo '🧹 Cleaning up failed deployment...' && if [ -f /tmp/deployment_slot ]; then DEPLOYMENT_SLOT=$(cat /tmp/deployment_slot | cut -d= -f2); sshpass -p '${VPS_PASSWORD}' ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${TARGET_HOST} \"echo 'Removing failed containers from ${DEPLOYMENT_SLOT} slot...'; docker rm rustci-${DEPLOYMENT_SLOT} 2>/dev/null || echo 'No rustci container to remove'; docker rm valkyrie-${DEPLOYMENT_SLOT} 2>/dev/null || echo 'No valkyrie container to remove'; echo 'Failed deployment cleanup completed'\"; fi && rm -f /tmp/deployment_slot /tmp/rollback_slot"
+      timeout: 60

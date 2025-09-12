@@ -16,7 +16,7 @@ Thank you for your interest in contributing to RustCI! This document provides gu
 
 ## 🤝 Code of Conduct
 
-This project adheres to a code of conduct that we expect all contributors to follow. Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
+This project adheres to a code of conduct that we expect all contributors to follow. Please follow standard open source community guidelines for respectful collaboration.
 
 ## 🚀 Getting Started
 

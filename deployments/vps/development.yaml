@@ -39,36 +39,80 @@ stages:
                 docker stop rustci-dev valkyrie-dev 2>/dev/null || true
                 docker rm rustci-dev valkyrie-dev 2>/dev/null || true
                 
-                # Deploy development containers
+                # Deploy development containers with consistent environment variables
                 docker run -d --name rustci-dev \
-                  -p 8083:8000 \
+                  -p ${RUSTCI_PORT}:8000 \
                   -e MONGODB_URI='${MONGODB_URI}' \
-                  -e MONGODB_DATABASE='${MONGODB_DATABASE}_dev' \
+                  -e MONGODB_DATABASE='${MONGODB_DATABASE}' \
                   -e JWT_SECRET='${JWT_SECRET}' \
-                  -e RUST_ENV=development \
-                  -e RUST_LOG=debug \
-                  -e ENABLE_METRICS=false \
+                  -e JWT_EXPIRED_IN='${JWT_EXPIRED_IN}' \
+                  -e JWT_SIGNUP_EXPIRED_IN='${JWT_SIGNUP_EXPIRED_IN}' \
+                  -e JWT_REFRESH_EXPIRED_IN='${JWT_REFRESH_EXPIRED_IN}' \
+                  -e GITHUB_OAUTH_CLIENT_ID='${GITHUB_OAUTH_CLIENT_ID}' \
+                  -e GITHUB_OAUTH_CLIENT_SECRET='${GITHUB_OAUTH_CLIENT_SECRET}' \
+                  -e GITHUB_OAUTH_REDIRECT_URL='${GITHUB_OAUTH_REDIRECT_URL}' \
+                  -e CLIENT_ORIGIN='${CLIENT_ORIGIN}' \
+                  -e PORT='${PORT}' \
+                  -e RUST_ENV='${RUST_ENV}' \
+                  -e RUST_LOG='${RUST_LOG}' \
+                  -e ENABLE_METRICS='${ENABLE_METRICS}' \
+                  --restart unless-stopped \
                   rustci:dev
                 
-                docker run -d --name valkyrie-dev \
-                  -p 9093:9090 \
-                  -e VALKYRIE_ENV=development \
-                  rustci:dev
+                # Deploy Valkyrie if separate image exists, otherwise it's integrated with RustCI
+                if docker images | grep -q 'valkyrie.*dev'; then
+                  docker run -d --name valkyrie-dev \
+                    -p ${VALKYRIE_PORT}:9090 \
+                    -e VALKYRIE_ENV='${VALKYRIE_ENV}' \
+                    -e VALKYRIE_LOG_LEVEL='${VALKYRIE_LOG_LEVEL}' \
+                    -e RUSTCI_ENDPOINT=http://rustci-dev:8000 \
+                    --restart unless-stopped \
+                    valkyrie:dev
+                else
+                  echo 'Valkyrie integrated with RustCI - no separate container needed'
+                fi
               "
               
           - name: "quick-health-check"
             run: |
               echo "🏥 Quick health check..."
               sleep 20
-              curl -f http://${VPS_IP}:8083/api/healthchecker || echo "Development deployment may need more time to start"
+              # Try primary RustCI health endpoint first, then fallback
+              if curl -f http://${VPS_IP}:8083/api/healthchecker 2>/dev/null; then
+                echo "✅ RustCI health check passed (primary endpoint)"
+              elif curl -f http://${VPS_IP}:8083/health 2>/dev/null; then
+                echo "✅ RustCI health check passed (fallback endpoint)"
+              else
+                echo "⚠️ RustCI health endpoints not ready yet - deployment may need more time to start"
+              fi
 
 environment:
   VPS_IP: "46.37.122.118"
   VPS_USERNAME: "root"
   VPS_PASSWORD: "Bs4g>^W36(|&D]3"
+  VPS_HOSTNAME: "ubuntu-ritabrata11092025"
   MONGODB_URI: "mongodb+srv://ritabrataroychowdhury2002:Physics676@cluster0.uyzku.mongodb.net/dqms?retryWrites=true&w=majority"
-  MONGODB_DATABASE: "dqms"
+  MONGODB_DATABASE: "dqms_dev"
   JWT_SECRET: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+  JWT_EXPIRED_IN: "1d"
+  JWT_SIGNUP_EXPIRED_IN: "1h"
+  JWT_REFRESH_EXPIRED_IN: "7d"
+  GITHUB_OAUTH_CLIENT_ID: "Ov23li18bhj2ixmL6GlY"
+  GITHUB_OAUTH_CLIENT_SECRET: "329e1afc2c5009efca526b5e9ae8f3a52bc546bc"
+  GITHUB_OAUTH_REDIRECT_URL: "http://46.37.122.118:8083/api/sessions/oauth/github/callback"
+  CLIENT_ORIGIN: "http://46.37.122.118:3002"
+  PORT: "8000"
+  RUST_ENV: "development"
+  RUST_LOG: "debug"
+  ENABLE_METRICS: "false"
+  VALKYRIE_ENV: "development"
+  VALKYRIE_LOG_LEVEL: "debug"
+  VALKYRIE_PORT: "9090"
+  DEPLOYMENT_STRATEGY: "recreate"
+  HEALTH_CHECK_TIMEOUT: "120"
+  ROLLBACK_ON_FAILURE: "false"
+  RUSTCI_PORT: "8083"
+  VALKYRIE_PORT: "9093"
 
 timeout: 1200
 retry_count: 0

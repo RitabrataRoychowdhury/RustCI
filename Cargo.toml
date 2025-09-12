@@ -2,7 +2,11 @@
 name = "RustAutoDevOps"
 version = "0.1.0"
 edition = "2021"
-default-run = "RustAutoDevOps"
+default-run = "rustci"
+
+[[bin]]
+name = "rustci"
+path = "src/main.rs"
 
 [[bin]]
 name = "valkyrie-config"

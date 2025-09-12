@@ -10,22 +10,23 @@ RustCI provides **universal YAML compatibility** allowing DevOps teams to use th
 
 ### ✅ Fully Supported Formats
 
-| Platform | Support Level | Auto-Detection | Conversion |
-|----------|---------------|----------------|------------|
-| **GitHub Actions** | 100% | ✅ | ✅ |
-| **GitLab CI** | 100% | ✅ | ✅ |
-| **Jenkins Pipeline** | 95% | ✅ | ✅ |
-| **Azure DevOps** | 95% | ✅ | ✅ |
-| **CircleCI** | 90% | ✅ | ✅ |
-| **Travis CI** | 90% | ✅ | ✅ |
-| **Bitbucket Pipelines** | 85% | ✅ | ✅ |
-| **Native RustCI** | 100% | ✅ | N/A |
+| Platform                | Support Level | Auto-Detection | Conversion |
+| ----------------------- | ------------- | -------------- | ---------- |
+| **GitHub Actions**      | 100%          | ✅             | ✅         |
+| **GitLab CI**           | 100%          | ✅             | ✅         |
+| **Jenkins Pipeline**    | 95%           | ✅             | ✅         |
+| **Azure DevOps**        | 95%           | ✅             | ✅         |
+| **CircleCI**            | 90%           | ✅             | ✅         |
+| **Travis CI**           | 90%           | ✅             | ✅         |
+| **Bitbucket Pipelines** | 85%           | ✅             | ✅         |
+| **Native RustCI**       | 100%          | ✅             | N/A        |
 
 ## 🔄 Format Examples & Conversions
 
 ### GitHub Actions → RustCI
 
 **Original GitHub Actions:**
+
 ```yaml
 name: CI
 on:
@@ -35,7 +36,7 @@ on:
     branches: [main]
 
 env:
-  NODE_VERSION: '18'
+  NODE_VERSION: "18"
   REGISTRY: ghcr.io
 
 jobs:
@@ -47,19 +48,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-          
+          cache: "npm"
+
       - name: Install dependencies
         run: npm ci
-        
+
       - name: Run tests
         run: npm test
-        
+
       - name: Upload coverage
         uses: codecov/codecov-action@v3
         if: matrix.node-version == '18'
@@ -77,6 +78,7 @@ jobs:
 ```
 
 **Auto-converted to RustCI:**
+
 ```yaml
 version: "1.0"
 name: "CI"
@@ -88,8 +90,8 @@ triggers:
     branches: [main]
 
 variables:
-  NODE_VERSION: '18'
-  REGISTRY: 'ghcr.io'
+  NODE_VERSION: "18"
+  REGISTRY: "ghcr.io"
 
 stages:
   - name: test
@@ -100,19 +102,19 @@ stages:
     steps:
       - name: Checkout
         action: checkout@v4
-        
+
       - name: Setup Node.js
         action: setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-          
+          cache: "npm"
+
       - name: Install dependencies
         run: npm ci
-        
+
       - name: Run tests
         run: npm test
-        
+
       - name: Upload coverage
         action: codecov@v3
         condition: matrix.node-version == '18'
@@ -132,6 +134,7 @@ stages:
 ### GitLab CI → RustCI
 
 **Original GitLab CI:**
+
 ```yaml
 stages:
   - build
@@ -232,6 +235,7 @@ deploy:production:
 ```
 
 **Auto-converted to RustCI:**
+
 ```yaml
 version: "1.0"
 name: "GitLab CI Pipeline"
@@ -336,23 +340,24 @@ stages:
 ### Jenkins Pipeline → RustCI
 
 **Original Jenkinsfile:**
+
 ```groovy
 pipeline {
     agent any
-    
+
     environment {
         DOCKER_REGISTRY = 'registry.company.com'
         APP_NAME = 'myapp'
         KUBECONFIG = credentials('kubeconfig')
     }
-    
+
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
-        
+
         stage('Build') {
             parallel {
                 stage('Backend') {
@@ -372,7 +377,7 @@ pipeline {
                         }
                     }
                 }
-                
+
                 stage('Frontend') {
                     agent {
                         docker {
@@ -391,7 +396,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Test') {
             parallel {
                 stage('Unit Tests') {
@@ -412,7 +417,7 @@ pipeline {
                         }
                     }
                 }
-                
+
                 stage('Integration Tests') {
                     steps {
                         sh 'mvn verify -Dskip.unit.tests=true'
@@ -420,7 +425,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Docker Build') {
             when {
                 branch 'main'
@@ -435,7 +440,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Deploy') {
             when {
                 branch 'main'
@@ -450,7 +455,7 @@ pipeline {
             }
         }
     }
-    
+
     post {
         always {
             cleanWs()
@@ -474,14 +479,15 @@ pipeline {
 ```
 
 **Auto-converted to RustCI:**
+
 ```yaml
 version: "1.0"
 name: "Jenkins Pipeline"
 
 variables:
-  DOCKER_REGISTRY: 'registry.company.com'
-  APP_NAME: 'myapp'
-  KUBECONFIG: '${KUBECONFIG_SECRET}'
+  DOCKER_REGISTRY: "registry.company.com"
+  APP_NAME: "myapp"
+  KUBECONFIG: "${KUBECONFIG_SECRET}"
 
 stages:
   - name: checkout
@@ -568,8 +574,8 @@ stages:
 
 notifications:
   slack:
-    webhook: '${SLACK_WEBHOOK}'
-    channel: '#deployments'
+    webhook: "${SLACK_WEBHOOK}"
+    channel: "#deployments"
     on_success:
       message: "✅ Pipeline succeeded for ${PIPELINE_NAME} - ${BUILD_NUMBER}"
     on_failure:
@@ -589,7 +595,7 @@ RustCI supports all common variable formats:
 # GitHub Actions style
 - run: echo "Building version ${{ github.sha }}"
 
-# GitLab CI style  
+# GitLab CI style
 - run: echo "Building version $CI_COMMIT_SHA"
 
 # Jenkins style
@@ -614,7 +620,7 @@ only:
 
 # Jenkins conditions
 when:
-  branch: 'main'
+  branch: "main"
 
 # Native RustCI conditions
 condition: branch == 'main'
@@ -710,35 +716,36 @@ echo "🚀 Deploy with: rustci deploy pipeline.yml"
 
 ### Feature Support
 
-| Feature | GitHub Actions | GitLab CI | Jenkins | Azure DevOps | RustCI |
-|---------|----------------|-----------|---------|--------------|--------|
-| **Basic Stages** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Parallel Jobs** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Matrix Builds** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Conditional Execution** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Artifacts** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Caching** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Secrets Management** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Environment Variables** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Docker Support** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Kubernetes Support** | ⚠️ | ✅ | ✅ | ⚠️ | ✅ |
-| **Custom Actions** | ✅ | ⚠️ | ✅ | ✅ | ✅ |
-| **Notifications** | ⚠️ | ✅ | ✅ | ✅ | ✅ |
+| Feature                   | GitHub Actions | GitLab CI | Jenkins | Azure DevOps | RustCI |
+| ------------------------- | -------------- | --------- | ------- | ------------ | ------ |
+| **Basic Stages**          | ✅             | ✅        | ✅      | ✅           | ✅     |
+| **Parallel Jobs**         | ✅             | ✅        | ✅      | ✅           | ✅     |
+| **Matrix Builds**         | ✅             | ✅        | ✅      | ✅           | ✅     |
+| **Conditional Execution** | ✅             | ✅        | ✅      | ✅           | ✅     |
+| **Artifacts**             | ✅             | ✅        | ✅      | ✅           | ✅     |
+| **Caching**               | ✅             | ✅        | ✅      | ✅           | ✅     |
+| **Secrets Management**    | ✅             | ✅        | ✅      | ✅           | ✅     |
+| **Environment Variables** | ✅             | ✅        | ✅      | ✅           | ✅     |
+| **Docker Support**        | ✅             | ✅        | ✅      | ✅           | ✅     |
+| **Kubernetes Support**    | ⚠️             | ✅        | ✅      | ⚠️           | ✅     |
+| **Custom Actions**        | ✅             | ⚠️        | ✅      | ✅           | ✅     |
+| **Notifications**         | ⚠️             | ✅        | ✅      | ✅           | ✅     |
 
 **Legend:**
+
 - ✅ Full support
 - ⚠️ Partial support
 - ❌ Not supported
 
 ### Performance Comparison
 
-| Platform | Startup Time | Build Speed | Resource Usage | Scalability |
-|----------|--------------|-------------|----------------|-------------|
-| **GitHub Actions** | ~30s | Medium | Medium | High |
-| **GitLab CI** | ~20s | Medium | Medium | High |
-| **Jenkins** | ~45s | Slow | High | Medium |
-| **Azure DevOps** | ~25s | Medium | Medium | High |
-| **RustCI** | **~5s** | **Fast** | **Low** | **Very High** |
+| Platform           | Startup Time | Build Speed | Resource Usage | Scalability   |
+| ------------------ | ------------ | ----------- | -------------- | ------------- |
+| **GitHub Actions** | ~30s         | Medium      | Medium         | High          |
+| **GitLab CI**      | ~20s         | Medium      | Medium         | High          |
+| **Jenkins**        | ~45s         | Slow        | High           | Medium        |
+| **Azure DevOps**   | ~25s         | Medium      | Medium         | High          |
+| **RustCI**         | **~5s**      | **Fast**    | **Low**        | **Very High** |
 
 ## 🎯 Best Practices
 
@@ -790,6 +797,7 @@ rustci examples create --type=training
 ### Common Conversion Issues
 
 #### Issue: Unsupported Action
+
 ```yaml
 # Original (GitHub Actions)
 - uses: some-custom-action@v1
@@ -802,6 +810,7 @@ rustci examples create --type=training
 ```
 
 #### Issue: Complex Conditionals
+
 ```yaml
 # Original (GitLab CI)
 only:
@@ -814,6 +823,7 @@ condition: branch == 'main' and env.DEPLOY_ENV == 'production'
 ```
 
 #### Issue: Platform-Specific Features
+
 ```yaml
 # Original (Jenkins)
 when {

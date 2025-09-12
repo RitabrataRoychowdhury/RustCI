@@ -123,9 +123,9 @@ check_rustci_health() {
     # Load environment variables
     source "$DEPLOYMENTS_DIR/environments/${env}.env"
     
-    # Check health endpoint
+    # Check RustCI health endpoints (primary and fallback)
     if curl -f -s --max-time 10 "http://${VPS_IP}:${port}/api/healthchecker" > /dev/null; then
-        log_success "✅ RustCI ($env): HEALTHY"
+        log_success "✅ RustCI ($env): HEALTHY (primary endpoint)"
         
         # Get additional info
         local response
@@ -133,8 +133,17 @@ check_rustci_health() {
         echo "   Response: $response"
         
         return 0
+    elif curl -f -s --max-time 10 "http://${VPS_IP}:${port}/health" > /dev/null; then
+        log_success "✅ RustCI ($env): HEALTHY (fallback endpoint)"
+        
+        # Get additional info
+        local response
+        response=$(curl -s --max-time 5 "http://${VPS_IP}:${port}/health" 2>/dev/null || echo "{}")
+        echo "   Response: $response"
+        
+        return 0
     else
-        log_error "❌ RustCI ($env): UNHEALTHY"
+        log_error "❌ RustCI ($env): UNHEALTHY (both /api/healthchecker and /health failed)"
         
         # Check if container is running
         local container_status

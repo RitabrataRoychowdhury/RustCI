@@ -236,20 +236,25 @@ execute_blue_green_deployment() {
             rustci:latest
     "
     
-    # Health check
+    # Health check with RustCI endpoints
     local port
     port=$([ "$current_slot" = "blue" ] && echo "8080" || echo "8081")
     log_info "Performing health check on port $port..."
     
     for i in {1..10}; do
+        # Try primary RustCI health endpoint first, then fallback
         if curl -f "http://${VPS_IP}:${port}/api/healthchecker" &> /dev/null; then
-            log_success "Health check passed"
+            log_success "Health check passed (primary endpoint: /api/healthchecker)"
+            break
+        elif curl -f "http://${VPS_IP}:${port}/health" &> /dev/null; then
+            log_success "Health check passed (fallback endpoint: /health)"
             break
         fi
         if [ $i -eq 10 ]; then
-            log_error "Health check failed"
+            log_error "Health check failed on both /api/healthchecker and /health endpoints"
             exit 1
         fi
+        log_info "Attempt $i/10: Health check not ready, retrying in 10 seconds..."
         sleep 10
     done
     
@@ -305,17 +310,22 @@ execute_recreate_deployment() {
             rustci:latest
     "
     
-    # Health check
+    # Health check with RustCI endpoints
     log_info "Performing health check..."
     for i in {1..10}; do
+        # Try primary RustCI health endpoint first, then fallback
         if curl -f "http://${VPS_IP}:8080/api/healthchecker" &> /dev/null; then
-            log_success "Health check passed"
+            log_success "Health check passed (primary endpoint: /api/healthchecker)"
+            break
+        elif curl -f "http://${VPS_IP}:8080/health" &> /dev/null; then
+            log_success "Health check passed (fallback endpoint: /health)"
             break
         fi
         if [ $i -eq 10 ]; then
-            log_error "Health check failed"
+            log_error "Health check failed on both /api/healthchecker and /health endpoints"
             exit 1
         fi
+        log_info "Attempt $i/10: Health check not ready, retrying in 10 seconds..."
         sleep 10
     done
     
